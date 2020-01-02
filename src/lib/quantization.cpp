@@ -13,7 +13,7 @@
 
 // static helper function
 static inline short getBitCount (EntropyCoder& entrCoder, const int sfIndex, const int sfIndexPred,
-                                 const unsigned char groupLength, const unsigned char* coeffQuant,
+                                 const uint8_t groupLength, const uint8_t* coeffQuant,
                                  const uint16_t coeffOffset, const uint16_t numCoeffs)
 {
   unsigned bitCount = (sfIndex != UCHAR_MAX && sfIndexPred == UCHAR_MAX ? 8 : entrCoder.indexGetBitCount (sfIndex - sfIndexPred));
@@ -27,8 +27,8 @@ static inline short getBitCount (EntropyCoder& entrCoder, const int sfIndex, con
 }
 
 // private helper functions
-double SfbQuantizer::getQuantDist (const unsigned* const coeffMagn, const unsigned char scaleFactor,
-                                   const unsigned char* coeffQuant, const uint16_t numCoeffs)
+double SfbQuantizer::getQuantDist (const unsigned* const coeffMagn, const uint8_t scaleFactor,
+                                   const uint8_t* coeffQuant, const uint16_t numCoeffs)
 {
   const double stepSizeDiv = m_lutSfNorm[scaleFactor];
   double dDist = 0.0;
@@ -44,9 +44,9 @@ double SfbQuantizer::getQuantDist (const unsigned* const coeffMagn, const unsign
   return dDist * m_lut2ExpX4[scaleFactor] * m_lut2ExpX4[scaleFactor];
 }
 
-unsigned char SfbQuantizer::quantizeMagn (const unsigned* const coeffMagn, const unsigned char scaleFactor,
-                                          unsigned char* const coeffQuant, const uint16_t numCoeffs,
-                                          short* const sigMaxQ /*= NULL*/, short* const sigNumQ /*= NULL*/)
+uint8_t SfbQuantizer::quantizeMagn (const unsigned* const coeffMagn, const uint8_t scaleFactor,
+                                   /*mod*/uint8_t* const coeffQuant, const uint16_t numCoeffs,
+                                    short* const sigMaxQ /*= NULL*/, short* const sigNumQ /*= NULL*/)
 {
   const double stepSizeDiv = m_lutSfNorm[scaleFactor];
   double  dNum = 0.0, dDen = 0.0;
@@ -112,7 +112,7 @@ unsigned char SfbQuantizer::quantizeMagn (const unsigned* const coeffMagn, const
       dDen += normalizedMagn * normalizedMagn;
     }
 #endif
-    coeffQuant[i] = (unsigned char) q;
+    coeffQuant[i] = (uint8_t) q;
   }
 
   if (sigMaxQ) *sigMaxQ = maxQ; // max. quantized value magnitude
@@ -121,7 +121,7 @@ unsigned char SfbQuantizer::quantizeMagn (const unsigned* const coeffMagn, const
   // compute least-squares optimal gain multiplied onto step-size
   numQ = scaleFactor + short (SF_QUANT_OFFSET + FOUR_LOG102 * log10 (dNum <= 0.0 ? 1.0 : dNum / dDen) - (dNum < dDen ? 1.0 : 0.0));
 
-  return (unsigned char) __max (0, numQ); // optimal scale factor
+  return (uint8_t) __max (0, numQ); // optimal scale factor index
 }
 
 // constructor
@@ -168,14 +168,14 @@ SfbQuantizer::~SfbQuantizer ()
 // public functions
 unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 #if EC_TRELLIS_OPT_CODING
-                                        const unsigned char numSwb, const unsigned char bitRateMode,
+                                        const uint8_t numSwb, const uint8_t bitRateMode,
 #endif
-                                        const unsigned char maxScaleFacIndex /*= SCHAR_MAX*/)
+                                        const uint8_t maxScaleFacIndex /*= SCHAR_MAX*/)
 {
   const unsigned numScaleFactors = (unsigned) maxScaleFacIndex + 1;
 #if EC_TRELLIS_OPT_CODING
-  const unsigned char numIStates = 8 - __min (5, (bitRateMode + 2) >> 2);  // states per SFB
-  const unsigned char numDStates = numIStates * numIStates; // interdependent states per SFB
+  const uint8_t numTrellisStates = 8 - __min (5, (bitRateMode + 2) >> 2);  // states per SFB
+  const uint8_t numSquaredStates = numTrellisStates * numTrellisStates;
 #endif
   unsigned x;
 
@@ -194,13 +194,13 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
     return 2; // memory allocation error
   }
 #if EC_TRELLIS_OPT_CODING
-  m_numCStates = numIStates;
+  m_numCStates = numTrellisStates;
 
   for (x = 0; x < __min (52u, numSwb); x++)
   {
-    if ((m_quantDist[x] = (double*  ) malloc (numIStates * sizeof (double  ))) == nullptr ||
-        (m_quantInSf[x] = (uint8_t* ) malloc (numIStates * sizeof (uint8_t ))) == nullptr ||
-        (m_quantRate[x] = (uint16_t*) malloc (numDStates * sizeof (uint16_t))) == nullptr)
+    if ((m_quantDist[x] = (double*  ) malloc (numTrellisStates * sizeof (double  ))) == nullptr ||
+        (m_quantInSf[x] = (uint8_t* ) malloc (numTrellisStates * sizeof (uint8_t ))) == nullptr ||
+        (m_quantRate[x] = (uint16_t*) malloc (numSquaredStates * sizeof (uint16_t))) == nullptr)
     {
       return 2;
     }
@@ -223,12 +223,12 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
   return 0; // no error
 }
 
-uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t* const inputCoeffs, const unsigned char grpLength,
+uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t* const inputCoeffs, const uint8_t grpLength,
                                        const uint16_t* const grpOffsets, uint32_t* const grpStats,  // quant./coding statistics
-                                       const unsigned sfb, const unsigned char sfIndex, const unsigned char sfIndexPred /*= UCHAR_MAX*/,
-                                       unsigned char* const quantCoeffs /*= nullptr*/) // returns the RD optimized scale factor index
+                                       const unsigned sfb, const uint8_t sfIndex, const uint8_t sfIndexPred /*= UCHAR_MAX*/,
+                                       uint8_t* const quantCoeffs /*= nullptr*/) // returns the RD optimized scale factor index
 {
-  unsigned char sfBest = sfIndex;
+  uint8_t sfBest = sfIndex;
 
   if ((inputCoeffs == nullptr) || (grpOffsets == nullptr) || (sfb >= 52) || (sfIndex > m_maxSfIndex))
   {
@@ -258,7 +258,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
 
     if (quantCoeffs)
     {
-      memset (&quantCoeffs[sfbStart], 0, sfbWidth * sizeof (unsigned char));  // zero output
+      memset (&quantCoeffs[sfbStart], 0, sfbWidth * sizeof (uint8_t)); // SFB output zeroing
       if (grpStats) // approximate bit count
       {
         grpStats[sfb] = getBitCount (entropyCoder, 0, 0, grpLength, &quantCoeffs[grpStart], sfbStart - grpStart, sfbWidth);
@@ -271,7 +271,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
     const uint16_t   grpStart = grpOffsets[0];
     const uint16_t   sfbStart = grpOffsets[sfb];
     const uint16_t   sfbWidth = grpOffsets[sfb + 1] - sfbStart;
-    const uint16_t   cpyWidth = sfbWidth * sizeof (unsigned char);
+    const uint16_t   cpyWidth = sfbWidth * sizeof (uint8_t);
     uint32_t* const coeffMagn = &m_coeffMagn[sfbStart];
     unsigned codStart = 0, ctxStart = 0;
     unsigned codFinal = 0, ctxFinal = 0;
@@ -283,9 +283,9 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
 #else
     bool rdOptimQuant = true;
 #endif
-    unsigned char* ptrBest = &m_coeffTemp[0];
-    unsigned char* ptrCurr = &m_coeffTemp[100];
-    unsigned char  sfCurr  = sfIndex;
+    uint8_t* ptrBest  = &m_coeffTemp[0];
+    uint8_t* ptrCurr  = &m_coeffTemp[100];
+    uint8_t  sfCurr   = sfIndex;
 
     for (int i = sfbWidth - 1; i >= 0; i--) // back up magnitudes. TODO: use SIMD for speed?
     {
@@ -297,7 +297,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
 
     if (maxQBest > SCHAR_MAX) // limit SNR via scale factor index
     {
-      for (unsigned char c = 0; (c < 2) && (maxQBest > SCHAR_MAX); c++) // rarely done twice
+      for (uint8_t c = 0; (c < 2) && (maxQBest > SCHAR_MAX); c++)  // very rarely done twice
       {
         sfCurr += getScaleFacOffset (pow ((double) maxQBest, 4.0 / 3.0) / m_lutXExp43[SCHAR_MAX]) + c;
         sfBest = quantizeMagn (coeffMagn, sfCurr, ptrBest, sfbWidth, &maxQBest, &numQBest);
@@ -373,7 +373,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
         // rate-distortion decision with empirical rate threshold
         if ((numQCurr <= numQBest + (distCurr >= distBest ? -1 : short (0.5 + distBest / __max (1.0, distCurr)))))
         {
-          unsigned char* ptrTemp = ptrBest;
+          uint8_t* ptrTemp = ptrBest;
 
           ptrBest  = ptrCurr;
           ptrCurr  = ptrTemp;
@@ -397,7 +397,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
 
     if ((sfCurr != sfIndexPred) && (sfBest != sfIndexPred) && rdOptimQuant && (sfIndexPred > 0) && (sfIndexPred < m_maxSfIndex))
     {
-      unsigned char sf;
+      uint8_t sf;
 
       // try quantization with repeated scale factor to save bits
       for (sf = (sfCurr = sfIndexPred + 1); (sf >= sfIndexPred) && (sfCurr > sfIndexPred); sf--)
@@ -506,9 +506,9 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
 #if EC_TRELLIS_OPT_CODING
 # define EC_TRAIN 0
 
-unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned char* const optimalSf, const unsigned targetBitCount,
+unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* const optimalSf, const unsigned targetBitCount,
                                          const uint16_t* const grpOffsets, uint32_t* const grpStats,  // quant./coding statistics
-                                         const unsigned numSfb, unsigned char* const quantCoeffs)  // returns RD optimization bit count
+                                         const unsigned numSfb, uint8_t* const quantCoeffs)  // returns RD optimization bit count
 {
   // numSfb: number of trellis stages. Based on: A. Aggarwal, S. L. Regunathan, and K. Rose,
   // "Trellis-Based Optimization of MPEG-4 Advanced Audio Coding," in Proc. IEEE Workshop on
@@ -518,16 +518,16 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
   const uint32_t codFinal = entropyCoder.arithGetCodState ();
   const uint32_t ctxFinal = entropyCoder.arithGetCtxState (); // after quantizeSfb()
   const uint16_t grpStart = grpOffsets[0];
-  unsigned char* const inScaleFac = &m_coeffTemp[716];
-  uint32_t    prevCodState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  uint32_t    prevCtxState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  unsigned char   prevScaleFac[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  double          prevVtrbCost[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  uint32_t    tempCodState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  uint32_t    tempCtxState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  unsigned char   tempScaleFac[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  double          tempVtrbCost[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  unsigned tempBitCount, sfb, is;
+  uint8_t* const inScaleFac = &m_coeffTemp[716];
+  uint32_t  prevCodState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  uint32_t  prevCtxState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  uint8_t   prevScaleFac[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  double    prevVtrbCost[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  uint32_t  tempCodState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  uint32_t  tempCtxState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  uint8_t   tempScaleFac[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  double    tempVtrbCost[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  unsigned  tempBitCount, sfb, is;
   int ds;
 #if EC_TRAIN
   double refGrpDist = 0.0, tempGrpDist;
@@ -542,17 +542,17 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
 
   for (sfb = 0; sfb < numSfb; sfb++) // SFB-wise scale factor, weighted distortion, and rate
   {
-    const unsigned char refSf = m_quantInSf[sfb][1];
+    const uint8_t       refSf = m_quantInSf[sfb][1];
     const uint16_t    refNumQ = m_quantRate[sfb][1];
     const double refQuantDist = m_quantDist[sfb][1];
     const double refQuantNorm = m_lutSfNorm[refSf] * m_lutSfNorm[refSf];
     const uint16_t   sfbStart = grpOffsets[sfb];
     const uint16_t   sfbWidth = grpOffsets[sfb + 1] - sfbStart;
     uint32_t* const coeffMagn = &m_coeffMagn[sfbStart];
-    unsigned char* const tempMagn = &m_coeffTemp[sfbStart];
+    uint8_t* const   tempMagn = &m_coeffTemp[sfbStart];
     bool maxSnrReached = false;
 
-    if (refQuantDist < 0.0) memset (tempMagn, 0, sfbWidth * sizeof (unsigned char));
+    if (refQuantDist < 0.0) memset (tempMagn, 0, sfbWidth * sizeof (uint8_t));
 #if EC_TRAIN
     else refGrpDist += refQuantDist;
 #endif
@@ -563,10 +563,10 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
 
     for (is = 0; is < m_numCStates; is++) // populate the trellis
     {
-      unsigned char* const mag = (is != 1 || quantCoeffs == nullptr ? &m_coeffTemp[grpStart] : &quantCoeffs[grpStart]);
-      double* const currDist = &m_quantDist[sfb][is];
-      uint16_t*     currRate = &m_quantRate[sfb][is * m_numCStates];
-      unsigned char     sfBest = optimalSf[sfb]; // optimal refSf
+      uint8_t* const mag = (is != 1 || quantCoeffs == nullptr ? &m_coeffTemp[grpStart] : &quantCoeffs[grpStart]);
+      double*   currDist = &m_quantDist[sfb][is];
+      uint16_t* currRate = &m_quantRate[sfb][is * m_numCStates];
+      uint8_t     sfBest = optimalSf[sfb]; // optimal refSf
       short maxQCurr = 0, numQCurr = 0; // for sign bits counting
 
       if (refQuantDist < 0.0) // -1.0 means SFB is zero-quantized
@@ -576,7 +576,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
       }
       else if (is != 1) // quantization & distortion not computed
       {
-        const unsigned char sfCurr = __max (0, __min (m_maxSfIndex, refSf + 1 - (int) is));
+        const uint8_t sfCurr = __max (0, __min (m_maxSfIndex, refSf + 1 - (int) is));
 
         *currDist = -1.0;
         if ((sfCurr == 0) || maxSnrReached)
@@ -596,7 +596,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
             *currDist = getQuantDist (coeffMagn, sfBest, tempMagn, sfbWidth) * refQuantNorm;
           }
         }
-        if (*currDist < 0.0) memset (tempMagn, 0, sfbWidth * sizeof (unsigned char));
+        if (*currDist < 0.0) memset (tempMagn, 0, sfbWidth * sizeof (uint8_t));
         m_quantInSf[sfb][is] = sfCurr; // store initial scale fac
       }
       else // is == 1, quant. & dist. computed with quantizeSfb()
@@ -645,7 +645,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
 
     memcpy (prevCodState, tempCodState, m_numCStates * sizeof (uint32_t));
     memcpy (prevCtxState, tempCtxState, m_numCStates * sizeof (uint32_t));
-    memcpy (prevScaleFac, tempScaleFac, m_numCStates * sizeof (unsigned char));
+    memcpy (prevScaleFac, tempScaleFac, m_numCStates * sizeof (uint8_t ));
   } // for sfb
 
   entropyCoder.arithSetCodState (codFinal); // back to last state
@@ -656,8 +656,8 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
   for (double lambda = 0.015625; (lambda <= 0.375) && (tempBitCount > targetBitCount); lambda += 0.0078125)
 #endif
   {
-    double* const        prevCost = prevVtrbCost;
-    unsigned char* const prevPath = m_coeffTemp; // for backtrack
+    double* const  prevCost = prevVtrbCost;
+    uint8_t* const prevPath = m_coeffTemp; // trellis backtracker
     double   costMinIs = (double) UINT_MAX;
 #if EC_TRAIN
     double tempGrpDist = 0.0;
@@ -674,14 +674,14 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
 
     for (sfb = 1; sfb < numSfb; sfb++) // search for minimum path
     {
-      double* const        currCost = tempVtrbCost;
-      unsigned char* const currPath = &prevPath[sfb * m_numCStates];
+      double* const  currCost = tempVtrbCost;
+      uint8_t* const currPath = &prevPath[sfb * m_numCStates];
 
       for (is = 0; is < m_numCStates; is++) // SFB's minimum path
       {
         uint16_t* currRate = &m_quantRate[sfb][is * m_numCStates];
         double   costMinDs = (double) UINT_MAX;
-        unsigned char  pathMinDs = 1;
+        uint8_t  pathMinDs = 1;
 
         for (ds = m_numCStates - 1; ds >= 0; ds--) // transitions
         {
@@ -690,7 +690,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
           if (costMinDs > costCurr)
           {
             costMinDs = costCurr;
-            pathMinDs = (unsigned char) ds;
+            pathMinDs = (uint8_t) ds;
           }
         }
         if (costMinDs < UINT_MAX) costMinDs += __max (0.0, m_quantDist[sfb][is]);
@@ -713,8 +713,8 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
 
     for (tempBitCount = 0; sfb > 0; sfb--) // min-cost group rate
     {
-      const unsigned char* currPath = &prevPath[sfb * m_numCStates];
-      const unsigned char pathMinDs = currPath[pathMinIs];
+      const uint8_t* currPath = &prevPath[sfb * m_numCStates];
+      const uint8_t pathMinDs = currPath[pathMinIs];
 
       inScaleFac[sfb] = (m_quantDist[sfb][pathMinIs] < 0.0 ? UCHAR_MAX : m_quantInSf[sfb][pathMinIs]);
       tempBitCount   +=  m_quantRate[sfb][pathMinDs + pathMinIs * m_numCStates];
@@ -736,7 +736,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
   if (quantCoeffs != nullptr)
 #endif
   {
-    unsigned char sfIndexPred = UCHAR_MAX;
+    uint8_t sfIndexPred = UCHAR_MAX;
 
     if (grpStats)
     {
@@ -753,7 +753,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
       if (inScaleFac[sfb] == UCHAR_MAX)  // forced zero-quantized
       {
         optimalSf[sfb] = sfIndexPred;
-        memset (&quantCoeffs[sfbStart], 0, sfbWidth * sizeof (unsigned char));
+        memset (&quantCoeffs[sfbStart], 0, sfbWidth * sizeof (uint8_t));
       }
       else if (inScaleFac[sfb] != m_quantInSf[sfb][1]) // speedup
       {
@@ -775,7 +775,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, unsigned ch
 
       if ((sfb > 0) && (optimalSf[sfb] < UCHAR_MAX) && (sfIndexPred == UCHAR_MAX))
       {
-        memset (optimalSf, optimalSf[sfb], sfb * sizeof (unsigned char));  // back-propagate
+        memset (optimalSf, optimalSf[sfb], sfb * sizeof (uint8_t)); // back-propagate factor
       }
       sfIndexPred = optimalSf[sfb];
     } // for sfb

@@ -1,11 +1,11 @@
 ## makefile - master user make-file for compiling exhale on Linux and MacOS platforms
- # written by C. R. Helmrich, last modified 2019 - see License.txt for legal notices
+ # written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  #
- # The copyright in this software is being made available under a Modified BSD License
+ # The copyright in this software is being made available under a Modified BSD-Style License
  # and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  # party rights, including patent rights. No such rights are granted under this License.
  #
- # Copyright (c) 2018-2019 Christian R. Helmrich, project ecodis. All rights reserved.
+ # Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
  ##
 
 ## BUILD32=1: compile for 32-bit platforms, BUILD32=0: compile for 64-bit platforms

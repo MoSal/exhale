@@ -1,11 +1,11 @@
 ## makefile - code library make-file for compiling exhale on Linux and MacOS platforms
- # written by C. R. Helmrich, last modified 2019 - see License.txt for legal notices
+ # written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  #
- # The copyright in this software is being made available under a Modified BSD License
+ # The copyright in this software is being made available under a Modified BSD-Style License
  # and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  # party rights, including patent rights. No such rights are granted under this License.
  #
- # Copyright (c) 2018-2019 Christian R. Helmrich, project ecodis. All rights reserved.
+ # Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
  ##
 
 # define as source code library
@@ -22,7 +22,7 @@ DIR_SRC   = ../../src/lib
 DEFS      = -DMSYS_LINUX -DMSYS_UNIX_LARGEFILE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
 
 # name of product / binary file
-PRD_NAME  = Exhale
+PRD_NAME  = exhale
 
 # name of temporary object file
 OBJS      = \

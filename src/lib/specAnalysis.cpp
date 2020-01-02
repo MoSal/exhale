@@ -13,7 +13,7 @@
 
 // static helper function
 static inline uint32_t packAvgSpecAnalysisStats (const uint64_t sumAvgBand, const uint64_t sumMaxBand,
-                                                 const unsigned char predGain,
+                                                 const uint8_t  predGain,
                                                  const uint16_t idxMaxSpec, const uint16_t idxLpStart)
 {
   // temporal flatness, normalized for a value of 256 for a linear prediction gain of 1 (0 dB)

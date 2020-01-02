@@ -1,11 +1,11 @@
 /* exhaleEnc.cpp - source file for class providing Extended HE-AAC encoding capability
- * written by C. R. Helmrich, last modified 2019 - see License.txt for legal notices
+ * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
  *
- * The copyright in this software is being made available under a Modified BSD License
+ * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2019 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -82,12 +82,12 @@ static uint32_t quantizeSfbWithMinSnr (const unsigned* const coeffMagn, const ui
                                        const unsigned char groupLength, unsigned char*  const quantMagn, char* const arithTuples,
                                        const bool nonZeroSnr = false)
 {
-  const unsigned short sfbStart = sfbOffset[b];
-  const unsigned short sfbWidth = sfbOffset[b + 1] - sfbStart;
+  const uint16_t sfbStart = sfbOffset[b];
+  const uint16_t sfbWidth = sfbOffset[b + 1] - sfbStart;
   const unsigned* const sfbMagn = &coeffMagn[sfbStart];
   uint32_t maxIndex = 0, maxLevel = sfbMagn[0];
 
-  for (unsigned short s = sfbWidth - 1; s > 0; s--)
+  for (uint16_t s = sfbWidth - 1; s > 0; s--)
   {
     if (maxLevel < sfbMagn[s])  // find largest-level magn. in SFB
     {
@@ -104,7 +104,7 @@ static uint32_t quantizeSfbWithMinSnr (const unsigned* const coeffMagn, const ui
 
   if (arithTuples != nullptr)  // update entropy coding two-tuples
   {
-    const unsigned short swbStart = ((sfbStart - sfbOffset[0]) * oneTwentyEightOver[groupLength]) >> 7;
+    const uint16_t swbStart = ((sfbStart - sfbOffset[0]) * oneTwentyEightOver[groupLength]) >> 7;
 
     memset (&arithTuples[swbStart >> 1], 1, ((sfbWidth * oneTwentyEightOver[groupLength]) >> 8) * sizeof (char));
 
@@ -172,73 +172,73 @@ static const ELEM_TYPE      elementTypeConfig[USAC_MAX_NUM_ELCONFIGS][USAC_MAX_N
 };
 
 // ISO/IEC 14496-3, Table 4.140
-static const unsigned short sfbOffsetL0[42] = { // 88.2 and 96 kHz
+static const uint16_t sfbOffsetL0[42] = { // 88.2 and 96 kHz
     0,   4,   8,  12,  16,  20,  24,  28,  32,  36,  40,  44,  48,  52,  56,  64,  72,  80,  88,  96, 108,
   120, 132, 144, 156, 172, 188, 212, 240, 276, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024
 };
 // ISO/IEC 14496-3, Table 4.141
-static const unsigned short sfbOffsetS0[13] = {
+static const uint16_t sfbOffsetS0[13] = {
   0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 92, 128
 };
 
 // ISO/IEC 14496-3, Table 4.138
-static const unsigned short sfbOffsetL1[48] = { // 64 kHz
+static const uint16_t sfbOffsetL1[48] = { // 64 kHz
     0,   4,   8,  12,  16,  20,  24,  28,  32,  36,  40,  44,  48,  52,  56,  64,  72,  80,  88, 100, 112, 124, 140, 156,
   172, 192, 216, 240, 268, 304, 344, 384, 424, 464, 504, 544, 584, 624, 664, 704, 744, 784, 824, 864, 904, 944, 984, 1024
 };
 // ISO/IEC 14496-3, Table 4.139
-static const unsigned short sfbOffsetS1[13] = {
+static const uint16_t sfbOffsetS1[13] = {
   0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 92, 128
 };
 
 // ISO/IEC 14496-3, Table 4.131
-static const unsigned short sfbOffsetL2[52] = { // 32, 44.1, and 48 kHz
+static const uint16_t sfbOffsetL2[52] = { // 32, 44.1, and 48 kHz
     0,   4,   8,  12,  16,  20,  24,  28,  32,  36,  40,  48,  56,  64,  72,  80,  88,  96, 108, 120, 132, 144, 160, 176, 196, 216, 240,
   264, 292, 320, 352, 384, 416, 448, 480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800, 832, 864, 896, 928, 960/*!*/, 992/*!*/, 1024
 };
 // ISO/IEC 14496-3, Table 4.130
-static const unsigned short sfbOffsetS2[15] = {
+static const uint16_t sfbOffsetS2[15] = {
   0, 4, 8, 12, 16, 20, 28, 36, 44, 56, 68, 80, 96, 112, 128
 };
 
 // ISO/IEC 14496-3, Table 4.136
-static const unsigned short sfbOffsetL3[48] = { // 22.05 and 24 kHz
+static const uint16_t sfbOffsetL3[48] = { // 22.05 and 24 kHz
     0,   4,   8,  12,  16,  20,  24,  28,  32,  36,  40,  44,  52,  60,  68,  76,  84,  92, 100, 108, 116, 124, 136, 148,
   160, 172, 188, 204, 220, 240, 260, 284, 308, 336, 364, 396, 432, 468, 508, 552, 600, 652, 704, 768, 832, 896, 960, 1024
 };
 // ISO/IEC 14496-3, Table 4.137
-static const unsigned short sfbOffsetS3[16] = {
+static const uint16_t sfbOffsetS3[16] = {
   0, 4, 8, 12, 16, 20, 24, 28, 36, 44, 52, 64, 76, 92, 108, 128
 };
 
 // ISO/IEC 14496-3, Table 4.134
-static const unsigned short sfbOffsetL4[44] = { // 11.025, 12, and 16 kHz
+static const uint16_t sfbOffsetL4[44] = { // 11.025, 12, and 16 kHz
     0,   8,  16,  24,  32,  40,  48,  56,  64,  72,  80,  88, 100, 112, 124, 136, 148, 160, 172, 184, 196, 212,
   228, 244, 260, 280, 300, 320, 344, 368, 396, 424, 456, 492, 532, 572, 616, 664, 716, 772, 832, 896, 960, 1024
 };
 // ISO/IEC 14496-3, Table 4.135
-static const unsigned short sfbOffsetS4[16] = {
+static const uint16_t sfbOffsetS4[16] = {
   0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 60, 72, 88, 108, 128
 };
 
 // ISO/IEC 14496-3, Table 4.132
-static const unsigned short sfbOffsetL5[41] = { // 8 kHz
+static const uint16_t sfbOffsetL5[41] = { // 8 kHz
     0,  12,  24,  36,  48,  60,  72,  84,  96, 108, 120, 132, 144, 156, 172, 188, 204, 220, 236, 252, 268,
   288, 308, 328, 348, 372, 396, 420, 448, 476, 508, 544, 580, 620, 664, 712, 764, 820, 880, 944, 1024
 };
 // ISO/IEC 14496-3, Table 4.133
-static const unsigned short sfbOffsetS5[16] = {
+static const uint16_t sfbOffsetS5[16] = {
   0, 4, 8, 12, 16, 20, 24, 28, 36, 44, 52, 60, 72, 88, 108, 128
 };
 
 // long-window SFB offset tables
-static const unsigned short* swbOffsetsL[USAC_NUM_FREQ_TABLES] = {
+static const uint16_t* swbOffsetsL[USAC_NUM_FREQ_TABLES] = {
   sfbOffsetL0, sfbOffsetL1, sfbOffsetL2, sfbOffsetL3, sfbOffsetL4, sfbOffsetL5
 };
 static const unsigned char numSwbOffsetL[USAC_NUM_FREQ_TABLES] = {42, 48, 52, 48, 44, 41};
 
 // short-window SFB offset tables
-static const unsigned short* swbOffsetsS[USAC_NUM_FREQ_TABLES] = {
+static const uint16_t* swbOffsetsS[USAC_NUM_FREQ_TABLES] = {
   sfbOffsetS0, sfbOffsetS1, sfbOffsetS2, sfbOffsetS3, sfbOffsetS4, sfbOffsetS5
 };
 static const unsigned char numSwbOffsetS[USAC_NUM_FREQ_TABLES] = {13, 13, 15, 16, 16, 16};
@@ -293,8 +293,8 @@ static const USAC_WSEQ windowSequenceSynch[5][5] = {  // first: chan. index 0, s
 unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpData, const bool eightShorts, const unsigned char maxSfb,
                                             const unsigned channelIndex)
 {
-  const unsigned short filtOrder = tnsData.filterOrder[0];
-  const uint16_t* grpSO  = &grpData.sfbOffsets[m_numSwbShort * tnsData.filteredWindow];
+  const uint16_t filtOrder = tnsData.filterOrder[0];
+  const uint16_t* grpSO    = &grpData.sfbOffsets[m_numSwbShort * tnsData.filteredWindow];
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   unsigned errorValue = 0; // no error
 
@@ -333,7 +333,7 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
     {
       int32_t* const mdctSignal = m_mdctSignals[channelIndex];
       const short offs = grpSO[tnsStartSfb];
-      unsigned short s = grpSO[tnsMaxBands] - offs;
+      uint16_t       s = grpSO[tnsMaxBands] - offs;
       short filterC[MAX_PREDICTION_ORDER] = {0, 0, 0, 0};
       int32_t* predSig = &mdctSignal[grpSO[tnsMaxBands]]; // end of spectrum to be predicted
 
@@ -401,7 +401,7 @@ unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* con
     uint16_t* grpOffset = &grpOffsets[m_numSwbShort * gr];
     int32_t* const   grpMdctSig = &mdctSignal[grpStartLine -= nSamplesInShort * grpLength];
 
-    for (unsigned short b = 0; b < m_numSwbShort; b++)
+    for (uint16_t b = 0; b < m_numSwbShort; b++)
     {
       const unsigned  swbOffset = grpOffsets[b];
       const unsigned  numCoeffs = __min (grpOffsets[b + 1], nSamplesInShort) - swbOffset;
@@ -409,7 +409,7 @@ unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* con
       // adjust scale factor band offsets
       grpOffset[b] = uint16_t (grpStartLine + swbOffset * grpLength);
       // interleave spectral coefficients
-      for (unsigned short w = 0; w < grpLength; w++)
+      for (uint16_t w = 0; w < grpLength; w++)
       {
         memcpy (&m_tempIntBuf[grpOffset[b] + w * numCoeffs], &grpMdctSig[swbOffset + w * nSamplesInShort], numCoeffs * sizeof (int32_t));
       }
@@ -445,8 +445,8 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
 #if EE_OPT_TNS_SPEC_RANGE
     if (tnsData.filterOrder[0] > 0) // try to reduce TNS start band as long as SNR increases
     {
-      const unsigned short filtOrder = tnsData.filterOrder[0];
-      unsigned short b = __min (m_specAnaCurr[channelIndex] & 31, (nSamplesInFrame - filtOrder) >> SA_BW_SHIFT);
+      const uint16_t filtOrder = tnsData.filterOrder[0];
+      uint16_t b = __min (m_specAnaCurr[channelIndex] & 31, (nSamplesInFrame - filtOrder) >> SA_BW_SHIFT);
       short filterC[MAX_PREDICTION_ORDER] = {0, 0, 0, 0};
       int32_t* predSig = &m_mdctSignals[channelIndex][b << SA_BW_SHIFT]; // TNS start offset
 
@@ -458,7 +458,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
 
         if (filtOrder >= 4) // max. order 4
         {
-          for (unsigned short s = 1 << SA_BW_SHIFT; s > 0; s--) // generate the TNS residual
+          for (uint16_t s = 1 << SA_BW_SHIFT; s > 0; s--) // produce the TNS filter residual
           {
             const int64_t predSample = *(predSig - 1) * (int64_t) filterC[0] + *(predSig - 2) * (int64_t) filterC[1] +
                                        *(predSig - 3) * (int64_t) filterC[2] + *(predSig - 4) * (int64_t) filterC[3];
@@ -470,7 +470,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
         }
         else if (filtOrder == 3) // order 3
         {
-          for (unsigned short s = 1 << SA_BW_SHIFT; s > 0; s--) // generate the TNS residual
+          for (uint16_t s = 1 << SA_BW_SHIFT; s > 0; s--) // produce the TNS filter residual
           {
             const int64_t predSample = *(predSig - 1) * (int64_t) filterC[0] + *(predSig - 2) * (int64_t) filterC[1] +
                                        *(predSig - 3) * (int64_t) filterC[2];
@@ -482,7 +482,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
         }
         else // save 1-2 MACs, order 2 or 1
         {
-          for (unsigned short s = 1 << SA_BW_SHIFT; s > 0; s--) // generate the TNS residual
+          for (uint16_t s = 1 << SA_BW_SHIFT; s > 0; s--) // produce the TNS filter residual
           {
             const int64_t predSample = *(predSig - 1) * (int64_t) filterC[0] + *(predSig - 2) * (int64_t) filterC[1];
             const int64_t mdctSample = *(predSig--);
@@ -569,7 +569,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       const uint32_t* rms = grpData.sfbRmsValues;
       unsigned char* scaleFactors = grpData.scaleFactors;
 
-      for (unsigned short b = 0; b < grpData.sfbsPerGroup; b++)
+      for (uint16_t b = 0; b < grpData.sfbsPerGroup; b++)
       {
         const unsigned char sfbWidth = off[b + 1] - off[b];
         const unsigned highPassAtten = 4 + b * 2; // LF SNR increase, my M.Sc. thesis, p. 54
@@ -598,7 +598,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         }
         memset (grpData.scaleFactors, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (unsigned char));
 
-        for (unsigned short gr = 0; gr < grpData.numWindowGroups; gr++)
+        for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
         {
           const uint16_t* grpOff = &grpData.sfbOffsets[m_numSwbShort * gr];
           const uint32_t* grpRms = &grpData.sfbRmsValues[m_numSwbShort * gr];
@@ -672,7 +672,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         if (tnsData.numFilters > 0) // convert TNS group index to window index for write-out
         {
           s = 0;
-          for (unsigned short gr = 0; gr < grpData.numWindowGroups; gr++)
+          for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
           {
             if (gr == tnsData.filteredWindow)
             {
@@ -722,7 +722,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
       memset (m_mdctQuantMag[ci], 0, nSamplesInFrame * sizeof (unsigned char));  // zero out
 
-      for (unsigned short gr = 0; gr < grpData.numWindowGroups; gr++)
+      for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
       {
         const unsigned char  grpLength = grpData.windowGroupLength[gr];
         const uint16_t* grpOff = &grpData.sfbOffsets[m_numSwbShort * gr];
@@ -734,11 +734,11 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
         errorValue |= entrCoder.initWindowCoding (m_indepFlag && (gr == 0), shortWinCurr);
         s = 0;
 
-        for (unsigned short b = 0; b < grpData.sfbsPerGroup; b++)
+        for (uint16_t b = 0; b < grpData.sfbsPerGroup; b++)
         {
           // partial SFB ungrouping for entropy coding setup below
-          const unsigned short swbSize = ((grpOff[b + 1] - grpOff[b]) * oneTwentyEightOver[grpLength]) >> 7; // sfbWidth / grpLength
-          unsigned char* const swbMagn = &m_mdctQuantMag[ci][grpOff[b + 1] - swbSize];
+          const uint16_t swbSize = ((grpOff[b + 1] - grpOff[b]) * oneTwentyEightOver[grpLength]) >> 7; // sfbWidth / grpLength
+          uint8_t* const swbMagn = &m_mdctQuantMag[ci][grpOff[b + 1] - swbSize];
 
           grpScaleFactors[b] = m_sfbQuantizer.quantizeSpecSfb (entrCoder, m_mdctSignals[ci], grpLength, grpOff, grpRms,
                                                                b, grpScaleFactors[b], sfIdxPred, m_mdctQuantMag[ci]);
@@ -752,9 +752,9 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           // correct previous scale factor if the delta exceeds 60
           if ((b > 0) && (grpScaleFactors[b] > grpScaleFactors[b - 1] + INDEX_OFFSET))
           {
-            const unsigned short sfbM1Start = grpOff[b - 1];
-            const unsigned short sfbM1Width = grpOff[b] - sfbM1Start;
-            const unsigned short swbM1Size  = (sfbM1Width * oneTwentyEightOver[grpLength]) >> 7; // sfbM1Width / grpLength
+            const uint16_t sfbM1Start = grpOff[b - 1];
+            const uint16_t sfbM1Width = grpOff[b] - sfbM1Start;
+            const uint16_t swbM1Size  = (sfbM1Width * oneTwentyEightOver[grpLength]) >> 7; // sfbM1Width / grpLength
 
             grpScaleFactors[b - 1] = grpScaleFactors[b] - INDEX_OFFSET; // reset SFB to zero
             memset (&m_mdctQuantMag[ci][sfbM1Start], 0, sfbM1Width * sizeof (unsigned char));
@@ -772,7 +772,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           }
           // set up entropy coding 2-tuples for next SFB or window
           lastSOff = s;
-          for (unsigned short c = 0; c < swbSize; c += 2)
+          for (uint16_t c = 0; c < swbSize; c += 2)
           {
             arithTuples[s++] = __min (0xF, swbMagn[c] + swbMagn[c + 1] + 1); // 23003-3, 7.4
           }
@@ -782,7 +782,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
         {
           const unsigned char maxSfbLong  = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           const unsigned char maxSfbShort = (samplingRate < 37566 ? 14 /*32 kHz*/ : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
-          const unsigned short peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
+          const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
 #if RESTRICT_TO_AAC
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort : maxSfbLong) - 6 + (m_bitRateMode >> 1) + ((m_specAnaCurr[ci] >> 21) & 7);
 #else
@@ -1041,7 +1041,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
               (abs (specFlat[0] - specFlat[1]) <= (UCHAR_MAX >> 3)) &&
               (abs (tnsStart[0] - tnsStart[1]) <= (UCHAR_MAX >> 5)))  // TNS synchronization
           {
-            const unsigned short maxTnsOrder = __max (coreConfig.tnsData[0].filterOrder[0], coreConfig.tnsData[1].filterOrder[0]);
+            const uint16_t maxTnsOrder = __max (coreConfig.tnsData[0].filterOrder[0], coreConfig.tnsData[1].filterOrder[0]);
             TnsData& tnsData0 = coreConfig.tnsData[0];
             TnsData& tnsData1 = coreConfig.tnsData[1];
 
@@ -1095,7 +1095,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         coreConfig.icsInfoCurr[ch].windowGrouping = scaleFactorGrouping[icsCurr.windowGrouping];
       }
 
-      for (unsigned short gr = 0; gr < grpData.numWindowGroups; gr++)
+      for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
       {
         const unsigned grpSOStart = grpSO[grpData.sfbsPerGroup + m_numSwbShort * gr];
 

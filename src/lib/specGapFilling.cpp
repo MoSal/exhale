@@ -22,15 +22,15 @@ SpecGapFiller::SpecGapFiller ()
 }
 
 // public functions
-unsigned char SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, const unsigned char* const quantMagn,
-                                                   const unsigned char numSwbShort,  SfbGroupData& grpData /*modified*/,
-                                                   const unsigned nSamplesInFrame /*= 1024*/)
+uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, const uint8_t* const quantMagn,
+                                             const uint8_t numSwbShort, SfbGroupData& grpData /*modified*/,
+                                             const unsigned nSamplesInFrame /*= 1024*/)
 {
   const unsigned* const coeffMagn = sfbQuantizer.getCoeffMagnPtr ();
   const double* const  sfNormFacs = sfbQuantizer.getSfNormTabPtr ();
   const uint16_t       sfbsPerGrp = grpData.sfbsPerGroup;
   const uint16_t       windowNfso = noiseFillingStartOffset[grpData.numWindowGroups == 1 ? 0 : 1][nSamplesInFrame >> 10];
-  unsigned char  scaleFactorLimit = 0;
+  uint8_t scaleFactorLimit = 0;
   uint16_t u = 0;
   short diff = 0, s = 0;
   double  magnSum = 0.0;
@@ -47,9 +47,9 @@ unsigned char SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuanti
 
   for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
   {
-    const uint16_t* grpOff = &grpData.sfbOffsets[numSwbShort * gr];
-    const uint32_t* grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant./coding stats
-    const unsigned char* grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
+    const uint16_t*   grpOff = &grpData.sfbOffsets[numSwbShort * gr];
+    const uint32_t*   grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant/coder stats
+    const uint8_t* grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
     const uint16_t grpLength = grpData.windowGroupLength[gr];
     const uint16_t   grpNfso = grpOff[0] + grpLength * windowNfso;
     const uint16_t  sfbLimit = (grpData.numWindowGroups == 1 ? sfbsPerGrp - (grpOff[sfbsPerGrp] >= nSamplesInFrame ? 1 : 0)
@@ -59,8 +59,8 @@ unsigned char SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuanti
       const uint16_t sfbStart = grpOff[b];
       const uint16_t sfbWidth = grpOff[b + 1] - sfbStart;
       const unsigned* const sfbMagn = &coeffMagn[sfbStart];
-      const unsigned char* sfbQuant = &quantMagn[sfbStart];
-      const unsigned char      sFac = grpScFacs[b];
+      const uint8_t* sfbQuant = &quantMagn[sfbStart];
+      const uint8_t      sFac = grpScFacs[b];
 
       if (sfbStart < grpNfso) // SFBs below noiseFillingStartOffset
       {
@@ -83,8 +83,8 @@ unsigned char SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuanti
 #if SGF_OPT_SHORT_WIN_CALC
           if (grpLength > 1) // eight-short windows: SFB ungrouping
           {
-            const uint32_t*   sfbMagnPtr = sfbMagn;
-            const unsigned char* sfbQuantPtr = sfbQuant;
+            const uint32_t* sfbMagnPtr = sfbMagn;
+            const uint8_t* sfbQuantPtr = sfbQuant;
             const int swbLength = (sfbWidth * oneTwentyEightOver[grpLength]) >> 7; // sfbWidth / grpLength
             unsigned sfbMagnMin = USHRT_MAX;
             uint16_t uMin = 0;
@@ -148,9 +148,9 @@ unsigned char SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuanti
 
   for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
   {
-    const uint16_t* grpOff = &grpData.sfbOffsets[numSwbShort * gr];
-    const uint32_t* grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant./coding stats
-    unsigned char* const grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
+    const uint16_t*   grpOff = &grpData.sfbOffsets[numSwbShort * gr];
+    const uint32_t*   grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant/coder stats
+    uint8_t* const grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
 
     for (uint16_t b = m_1stGapFillSfb; b < sfbsPerGrp; b++) // calculate scale factors
     {
@@ -202,21 +202,21 @@ unsigned char SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuanti
 
   for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
   {
-    const uint32_t* grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant./coding stats
-    unsigned char* const grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
+    const uint32_t*   grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant/coder stats
+    uint8_t* const grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
 
     for (uint16_t b = m_1stGapFillSfb; b < sfbsPerGrp; b++) // account f. noise_offset
     {
       if ((grpRms[b] >> 16) == 0)  // the SFB is all-zero quantized
       {
-        grpScFacs[b] = (unsigned char) __max (s, grpScFacs[b] - diff);
+        grpScFacs[b] = (uint8_t) __max (s, grpScFacs[b] - diff);
 
         if (grpScFacs[b] > scaleFactorLimit) grpScFacs[b] = scaleFactorLimit;
       }
     } // for b
 
     // repeat first significant scale factor downwards to save bits
-    memset (grpScFacs, grpScFacs[m_1stNonZeroSfb[gr]], m_1stNonZeroSfb[gr] * sizeof (unsigned char));
+    memset (grpScFacs, grpScFacs[m_1stNonZeroSfb[gr]], m_1stNonZeroSfb[gr] * sizeof (uint8_t));
   } // for gr
 
   return CLIP_UCHAR (u | (diff + 16)); // combined level and offset

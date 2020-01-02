@@ -83,7 +83,7 @@ private:
 #endif
   uint8_t         m_numElements;
   uint8_t         m_numSwbShort;
-  uint8_t*        m_outAuData;
+  unsigned char*  m_outAuData;
   BitStreamWriter m_outStream; // for access unit creation
   int32_t*        m_pcm24Data;
   SfbGroupData*   m_scaleFacData[USAC_MAX_NUM_CHANNELS];
