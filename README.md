@@ -3,13 +3,13 @@ exhale
 
 exhale, which is an acronym for "Ecodis eXtended High-efficiency And
 Low-complexity Encoder", is a lightweight library and application to
-encode uncompressed WAVE-format audio files into MPEG-4 format files
+encode uncompressed WAVE-format audio files into MPEG-4-format files
 complying with the ISO/IEC 23003-3 (MPEG-D) Unified Speech and Audio
 Coding (USAC, also known as Extended High-Efficiency AAC) standard.
 
 exhale currently makes use of all frequency-domain (FD) coding tools
 in the scalefactor based MDCT processing path, except for predictive
-joint stereo, which is already being worked on. It objective is high
+joint stereo, which is still being integrated. Its objective is high
 quality mono, stereo, and multichannel coding at medium and high bit
 rates, so the parametric USAC coding tools (ACELP, TCX, Enhanced SBR
 and MPEG Surround with Unified Stereo coding) won't be integrated. 
@@ -28,10 +28,10 @@ License
 
 exhale is being made available under an open-source license which is
 similar to the 3-clause BSD license but modified to address specific
-lar aspects dictated by the nature and output of this application.
+aspects dictated by the nature and the output of this application.
 
 The license text and release notes for the current version 1.0.0 can
-be found in the "include" subdirectory of the exhale distribution.
+be found in the `include` subdirectory of the exhale distribution.
 
 
 Compilation
@@ -54,7 +54,7 @@ to build a release-mode executable with the default (usually 64-bit)
 configuration. A 32-bit debug-mode executable can be built by typing
 
 `
-make debug BUILD32=1
+make BUILD32=1 debug
 `
 
 ### Microsoft Windows (Visual Studio 2012 and later):
@@ -63,6 +63,11 @@ Doubleclick the exhale_vs2012.sln file to open the project in Visual
 Studio. Once it's loaded, rightclick on `exhaleApp` in the "Solution
 Explorer" window on the right-hand side, then select `Set as StartUp
 Project`. Now simply press `F7` to build the solution in debug mode.
+
+To change the debugging command, rightclick again on `exhaleApp` and
+select `Properties`. In the newly opened window click on `Debugging`
+under "Configuration Properties" on the left-hand side. Then you can
+edit the "Command Arguments" entry on the right-hand side as needed.
 
 For fastest encoding speed, please select `Release` and `x64` before
 building the solution. This will create a release-mode 64-bit binary.
@@ -90,4 +95,25 @@ the input file is two-channel stereo) and in xHE-AAC audio format.
 
 ### Third-party stdin (foobar2000):
 
-will follow soon
+After downloading from www.foobar2000.org and starting the software,
+load your desired input WAVE files into the playlist. Mark all files
+to be converted, rightclick on one of them and select `Convert` ->
+`Quick convert`. In the newly opened window click on `Add New`, then
+select `Custom` under "Encoder" and enter the following information:
+
+- *Encoder file:* exhaleApp.exe (possibly including path to it)
+- *Extension:* m4a
+- *Parameters:* # %d (where number is the bit-rate mode, 1...9)
+- *Format is:* lossy
+- *Highest BPS mode supported:* 24 (or 32, doesn't matter much)
+- *Encoder name:* exhale
+- *Bitrate (kbps):* (depends on bit-rate mode, see Usage above)
+- *Settings:* default CVBR
+
+
+Development
+-----------
+
+If you're interested in contributing to exhale, please contact one of
+the developers. Merge requests with fixes and/or speedups are highly
+appreciated.
