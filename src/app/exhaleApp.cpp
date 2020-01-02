@@ -23,6 +23,10 @@
 
 #define EXHALE_TEXT_BLUE  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN)
 #define EXHALE_TEXT_PINK  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED)
+#else
+#define EXHALE_TEXT_INIT  "\x1b[0m"
+#define EXHALE_TEXT_BLUE  "\x1b[36m"
+#define EXHALE_TEXT_PINK  "\x1b[35m"
 #endif
 #define IGNORE_WAV_LENGTH  0  // 1: ignore input size indicators (nasty)
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
@@ -46,7 +50,7 @@ int main (const int argc, char* argv[])
   CONSOLE_SCREEN_BUFFER_INFO csbi;
 #endif
 
-  for (i = 0; (argv[0][i] != 0) && (i < 65535); i++)
+  for (i = 0; (argv[0][i] != 0) && (i < USHRT_MAX); i++)
   {
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     if (argv[0][i] == '\\') exePathEnd = i + 1;
@@ -56,7 +60,7 @@ int main (const int argc, char* argv[])
   }
   const char* const exeFileName = argv[0] + exePathEnd;
 
-  if ((exeFileName[0] == 0) || (i == 65535))
+  if ((exeFileName[0] == 0) || (i == USHRT_MAX))
   {
     fprintf_s (stderr, " ERROR reading executable name or path: the string is invalid!\n\n");
 
@@ -65,8 +69,9 @@ int main (const int argc, char* argv[])
 
   // print program header with compile info
   fprintf_s (stdout, "\n  ---------------------------------------------------------------------\n");
+  fprintf_s (stdout, " | ");
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-  GetConsoleScreenBufferInfo (hConsole, &csbi); /*save the text color*/ fprintf_s (stdout, " | ");
+  GetConsoleScreenBufferInfo (hConsole, &csbi); // save the text color
   SetConsoleTextAttribute (hConsole, EXHALE_TEXT_PINK); fprintf_s (stdout, "exhale");
   SetConsoleTextAttribute (hConsole, csbi.wAttributes); fprintf_s (stdout, " - ");
   SetConsoleTextAttribute (hConsole, EXHALE_TEXT_PINK); fprintf_s (stdout, "e");
@@ -82,10 +87,23 @@ int main (const int argc, char* argv[])
   SetConsoleTextAttribute (hConsole, EXHALE_TEXT_PINK); fprintf_s (stdout, "e");
   SetConsoleTextAttribute (hConsole, csbi.wAttributes); fprintf_s (stdout, "ncoder |\n");
 #else
-  fprintf_s (stdout, " | exhale - ecodis extended high-efficiency and low-complexity encoder |\n");
+  fprintf_s (stdout, EXHALE_TEXT_PINK "exhale");
+  fprintf_s (stdout, EXHALE_TEXT_INIT " - ");
+  fprintf_s (stdout, EXHALE_TEXT_PINK "e");
+  fprintf_s (stdout, EXHALE_TEXT_INIT "codis e");
+  fprintf_s (stdout, EXHALE_TEXT_PINK "x");
+  fprintf_s (stdout, EXHALE_TEXT_INIT "tended ");
+  fprintf_s (stdout, EXHALE_TEXT_PINK "h");
+  fprintf_s (stdout, EXHALE_TEXT_INIT "igh-efficiency ");
+  fprintf_s (stdout, EXHALE_TEXT_PINK "a");
+  fprintf_s (stdout, EXHALE_TEXT_INIT "nd ");
+  fprintf_s (stdout, EXHALE_TEXT_PINK "l");
+  fprintf_s (stdout, EXHALE_TEXT_INIT "ow-complexity ");
+  fprintf_s (stdout, EXHALE_TEXT_PINK "e");
+  fprintf_s (stdout, EXHALE_TEXT_INIT "ncoder |\n");
 #endif
   fprintf_s (stdout, " |                                                                     |\n");
-#if defined (_WIN64) || defined (WIN64) || defined (__x86_64)
+#if defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
   fprintf_s (stdout, " | version %s.%s%s (x64, built on %s) - written by C.R.Helmrich |\n",
 #else // 32-bit OS
   fprintf_s (stdout, " | version %s.%s%s (x86, built on %s) - written by C.R.Helmrich |\n",
@@ -105,7 +123,7 @@ int main (const int argc, char* argv[])
     SetConsoleTextAttribute (hConsole, EXHALE_TEXT_BLUE); fprintf_s (stdout, " Usage:\t");
     SetConsoleTextAttribute (hConsole, csbi.wAttributes);
 #else
-    fprintf_s (stdout, " Usage:\t");
+    fprintf_s (stdout, EXHALE_TEXT_BLUE " Usage:\t" EXHALE_TEXT_INIT);
 #endif
     fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
     fprintf_s (stdout, " preset\t=  # (1-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
@@ -121,7 +139,7 @@ int main (const int argc, char* argv[])
     SetConsoleTextAttribute (hConsole, EXHALE_TEXT_BLUE); fprintf_s (stdout, " Notes:\t");
     SetConsoleTextAttribute (hConsole, csbi.wAttributes);
 #else
-    fprintf_s (stdout, " Notes:\t");
+    fprintf_s (stdout, EXHALE_TEXT_BLUE " Notes:\t" EXHALE_TEXT_INIT);
 #endif
     fprintf_s (stdout, "The above bit-rates are for stereo and change for mono or multichannel.\n");
     if (exePathEnd > 0)
@@ -168,23 +186,22 @@ int main (const int argc, char* argv[])
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     inFileHandle = _fileno (stdin);
     if (_setmode (inFileHandle, _O_RDONLY | _O_BINARY) == -1)
-#else // Linux, MacOS, Unix
-    inFileHandle = 0; // TODO
-    // if (::setmode (inFileHandle, O_RDONLY) == -1)
-#endif
     {
       fprintf_s (stderr, " ERROR while trying to set stdin to binary mode! Has stdin been closed?\n\n");
       inFileHandle = -1;
 
       goto mainFinish; // stdin setup error
     }
+#else // Linux, MacOS, Unix
+    inFileHandle = fileno (stdin);
+#endif
   }
   else // argc = 4, open input file
   {
     const char* inFileName = argv[2];
     uint16_t    inPathEnd  = 0;
 
-    for (i = 0; (inFileName[i] != 0) && (i < 65535); i++)
+    for (i = 0; (inFileName[i] != 0) && (i < USHRT_MAX); i++)
     {
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
       if (inFileName[i] == '\\') inPathEnd = i + 1;
@@ -192,7 +209,7 @@ int main (const int argc, char* argv[])
       if (inFileName[i] == '/' ) inPathEnd = i + 1;
 #endif
     }
-    if ((inFileName[0] == 0) || (i == 65535))
+    if ((inFileName[0] == 0) || (i == USHRT_MAX))
     {
       fprintf_s (stderr, " ERROR reading input file name or path: the string is invalid!\n\n");
 
@@ -238,7 +255,7 @@ int main (const int argc, char* argv[])
     const char* outFileName = argv[argc - 1];
     uint16_t    outPathEnd  = readStdin ? 1 : 0; // no path prepends when the input is read from stdin
 
-    for (i = 0; (outFileName[i] != 0) && (i < 65535); i++)
+    for (i = 0; (outFileName[i] != 0) && (i < USHRT_MAX); i++)
     {
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
       if (outFileName[i] == '\\') outPathEnd = i + 1;
@@ -246,7 +263,7 @@ int main (const int argc, char* argv[])
       if (outFileName[i] == '/' ) outPathEnd = i + 1;
 #endif
     }
-    if ((outFileName[0] == 0) || (i == 65535))
+    if ((outFileName[0] == 0) || (i == USHRT_MAX))
     {
       fprintf_s (stderr, " ERROR reading output file name or path: the string is invalid!\n\n");
 
@@ -368,7 +385,7 @@ int main (const int argc, char* argv[])
         SetConsoleTextAttribute (hConsole, csbi.wAttributes); // initial text color
         fprintf_s (stdout, "-");  fflush (stdout);
 #else
-        fprintf_s (stdout, " Progress: -"); fflush (stdout);
+        fprintf_s (stdout, EXHALE_TEXT_BLUE " Progress: -" EXHALE_TEXT_INIT); fflush (stdout);
 #endif
       }
 #if !IGNORE_WAV_LENGTH
