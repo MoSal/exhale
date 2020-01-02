@@ -1,0 +1,19 @@
+/* version.h - header file with major and minor library version numbers as characters
+ * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ *
+ * The copyright in this software is being made available under a Modified BSD-Style License
+ * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
+ * party rights, including patent rights. No such rights are granted under this License.
+ *
+ * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ */
+
+#ifndef EXHALELIB_VERSION_MAJOR
+# define EXHALELIB_VERSION_MAJOR "1"
+#endif
+#ifndef EXHALELIB_VERSION_MINOR
+# define EXHALELIB_VERSION_MINOR "0"
+#endif
+#ifndef EXHALELIB_VERSION_BUGFIX
+# define EXHALELIB_VERSION_BUGFIX "RC" // "RC" or ".0", ".1", ...
+#endif

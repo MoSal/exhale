@@ -1,0 +1,66 @@
+<!-- www.ecodis.de/exhale/release.htm - created by Christian R. Helmrich - Copyright (c) 2018-2019 Christian Helmrich -->
+
+<!doctype html public "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="styles.css">
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+<meta name="author" content="Dr.-Ing. Christian R. Helmrich">
+<meta name="description" content="exhale Software Release Notes">
+<meta name="keywords" content="audio, data compression, perceptual coding, subjective evaluation, video">
+<title>ecodis :: exhale :: Release Notes</title>
+</head>
+<body>
+
+<table align="center" cellpadding="0" cellspacing="0">
+<colgroup>
+<col width="2">
+<col width="60">
+<col width="595">
+<col width="60">
+<col width="2">
+</colgroup>
+<tr>
+<td colspan="2"></td>
+<td valign="top">
+
+<h1><br><span class="pink">exhale</span> - <span class="pink">e</span>codis e<span class="pink">x</span>tended <span class="pink">h</span>igh-efficiency <span class="pink">a</span>nd <span class="pink">l</span>ow-complexity <span class="pink">e</span>ncoder<br><span class="gray"><sup><br>Software Release Notes, Version History, Known Issues, Upcoming Feature Roadmap</sup></span><br><br></h1>
+<h3>&nbsp; &nbsp;The version of this distribution of the &laquo;exhale&raquo; software release is <b>1.0.0</b> (official pub&shy;lic release candidate) from January 2020. Please check <a href="http://www.ecodis.de">www.ecodis.de</a> regularly for new versions of this software. A summary of each version up to this release, a list of known issues with this release, and a roadmap of additional functionality are provided below.</h3>
+<h3><br><b>Chronological Version History</b></h3>
+<h3>&nbsp; &nbsp;Version <b>1.0.0 <span class="gray">&nbsp;Jan. 2020, this release</span></b></h3>
+<ul>
+ <li><h3>compilation fixes and executable printout changes for Linux and MacOS&trade; platform</h3></li>
+</ul>
+<h3>&nbsp; &nbsp;Version <b>1.0RC <span class="gray">Dec. 2019</span></b></h3>
+<ul>
+ <li><h3>initial release for testing with only basic channel-independent coding functionality</h3></li>
+ <li><h3>only support for Microsoft Windows&trade; (32-bit and 64-bit) platform provided so far.</h3></li>
+</ul>
+<h3><br><b>Known Issues with This Release</b></h3>
+<h3>&nbsp; &nbsp;If you notice an issue with this release <b>not</b> mentioned below, please contact ecodis or a contributor with the details (configuration, input file) needed to reproduce the issue.</h3>
+<ul>
+ <li><h3>exhaleLib: Coding of stereo or multichannel input yields suboptimal audio quality because the joint-channel coding functionality provided by the ISO/IEC <a href="https://www.iso.org/standard/76385.html">23003-3</a> standard has not been implemented so far. See the functionality roadmap below.</h3></li>
+ <li><h3>exhaleApp: Only basic WAVE input file reading functionality has been implemen&shy;ted. Specifically, 8-bit WAVE input is assumed to contain an even number of audio samples, and the Broadcast and Extensible WAVE file formats are not supported.</h3></li>
+</ul>
+<h3><br><b>Roadmap of Upcoming Features</b></h3>
+<h3>&nbsp; &nbsp;If you are in need of an additional library or application feature <b>not</b> mentioned below, please contact ecodis or a contributor with a request, and we will see what we can do.</h3>
+<ul>
+ <li><h3>support for MPEG-D DRC-style peak-level and loudness metadata, no version plan</h3></li>
+ <li><h3>support for compilation as dynamically linked library in Windows&trade;, no version plan</h3></li>
+ <li><h3>exhaleLib: quality tuning and bug fixing for low-bitrate mono coding, version 1.0.1</h3></li>
+ <li><h3>exhaleLib: finalized integration of joint-channel coding functionality, version 1.0.2</h3></li>
+ <li><h3>exhaleLib: quality tuning and bug fixing for low-rate stereo coding, version 1.0.3.</h3></li>
+</ul>
+<h3><br></h3>
+<h4><span class="gray">Written by C. R. Helmrich for exhale 1.0.0, Dec. 2019. Available at www.ecodis.de/exhale/release.htm.</span><br><br></h4>
+
+</td>
+<td valign="top" colspan="2">
+<p><br>&nbsp; &nbsp;<img src="../src/app/exhaleApp.ico" alt="exhale" title="exhale" height="48" width="48"></p>
+</td>
+</tr>
+</table>
+<p></p>
+
+</body>
+</html>

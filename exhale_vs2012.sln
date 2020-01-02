@@ -1,0 +1,38 @@
+﻿Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2012
+Project("{EC0D1500-2018-1700-4865-6C6D72696368}") = "exhaleLib", "src\lib\exhaleLib_vs2012.vcxproj", "{EC0D1501-2018-1700-4865-6C6D72696368}"
+EndProject
+Project("{EC0D1500-2018-1700-4865-6C6D72696368}") = "exhaleApp", "src\app\exhaleApp_vs2012.vcxproj", "{EC0D1502-2018-1700-4865-6C6D72696368}"
+	ProjectSection(ProjectDependencies) = postProject
+		{EC0D1501-2018-1700-4865-6C6D72696368} = {EC0D1501-2018-1700-4865-6C6D72696368}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Debug|Win32.ActiveCfg = Debug|Win32
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Debug|Win32.Build.0 = Debug|Win32
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Debug|x64.ActiveCfg = Debug|x64
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Debug|x64.Build.0 = Debug|x64
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Release|Win32.ActiveCfg = Release|Win32
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Release|Win32.Build.0 = Release|Win32
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Release|x64.ActiveCfg = Release|x64
+		{EC0D1501-2018-1700-4865-6C6D72696368}.Release|x64.Build.0 = Release|x64
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Debug|Win32.ActiveCfg = Debug|Win32
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Debug|Win32.Build.0 = Debug|Win32
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Debug|x64.ActiveCfg = Debug|x64
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Debug|x64.Build.0 = Debug|x64
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release|Win32.ActiveCfg = Release|Win32
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release|Win32.Build.0 = Release|Win32
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release|x64.ActiveCfg = Release|x64
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

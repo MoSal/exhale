@@ -1,0 +1,5 @@
+basicWavReader.cpp - known issues
+_________________________________
+
+2019:	for 8-bit PCM audio, the WAVE file must contain an even number of samples.
+	This is guaranteed for an even number of channels (e.g., 2-channel stereo)
