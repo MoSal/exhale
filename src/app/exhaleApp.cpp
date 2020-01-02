@@ -114,7 +114,7 @@ int main (const int argc, char* argv[])
   // check arg. list, print usage if needed
   if ((argc < 3) || (argc > 4) || (argc > 1 && argv[1][1] != 0))
   {
-    fprintf_s (stdout, " Copyright 2018-2019 C.R.Helmrich, project ecodis. See License.txt for details.\n\n");
+    fprintf_s (stdout, " Copyright 2018-2020 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
     fprintf_s (stdout, " This software is being made available under a Modified BSD License and comes\n");
     fprintf_s (stdout, " with ABSOLUTELY NO WARRANTY. This software may be subject to other third-party\n");
@@ -385,7 +385,7 @@ int main (const int argc, char* argv[])
         SetConsoleTextAttribute (hConsole, csbi.wAttributes); // initial text color
         fprintf_s (stdout, "-");  fflush (stdout);
 #else
-        fprintf_s (stdout, EXHALE_TEXT_BLUE " Progress: -" EXHALE_TEXT_INIT); fflush (stdout);
+        fprintf_s (stdout, EXHALE_TEXT_BLUE " Progress: " EXHALE_TEXT_INIT "-"); fflush (stdout);
 #endif
       }
 #if !IGNORE_WAV_LENGTH
