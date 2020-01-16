@@ -23,7 +23,7 @@
 
 #define EXHALE_TEXT_BLUE  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN)
 #define EXHALE_TEXT_PINK  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED)
-#else
+#else // Linux, MacOS, Unix
 #define EXHALE_TEXT_INIT  "\x1b[0m"
 #define EXHALE_TEXT_BLUE  "\x1b[36m"
 #define EXHALE_TEXT_PINK  "\x1b[35m"
@@ -86,7 +86,7 @@ int main (const int argc, char* argv[])
   SetConsoleTextAttribute (hConsole, csbi.wAttributes); fprintf_s (stdout, "ow-complexity ");
   SetConsoleTextAttribute (hConsole, EXHALE_TEXT_PINK); fprintf_s (stdout, "e");
   SetConsoleTextAttribute (hConsole, csbi.wAttributes); fprintf_s (stdout, "ncoder |\n");
-#else
+#else // Linux, MacOS, Unix
   fprintf_s (stdout, EXHALE_TEXT_PINK "exhale");
   fprintf_s (stdout, EXHALE_TEXT_INIT " - ");
   fprintf_s (stdout, EXHALE_TEXT_PINK "e");
@@ -126,12 +126,18 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, EXHALE_TEXT_BLUE " Usage:\t" EXHALE_TEXT_INIT);
 #endif
     fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
+#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     fprintf_s (stdout, " preset\t=  # (1-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
-#if XHE_AAC_LOW_DELAY
+# if XHE_AAC_LOW_DELAY
 //  fprintf_s (stdout, " \t     (a-i)  low-complexity compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
     fprintf_s (stdout, " \t     (A-I)  41ms low-delay compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
+# endif
 #else
-//  fprintf_s (stdout, " \t     (a-i)  low-complexity compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
+    fprintf_s (stdout, " preset\t=  # (1-9)  low-complexity standard compliant xHE-AAC at 16*#+48 kbit/s\n");
+# if XHE_AAC_LOW_DELAY
+//  fprintf_s (stdout, " \t     (a-i)  low-complexity compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
+    fprintf_s (stdout, " \t     (A-I)  41ms low-delay compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
+# endif
 #endif
     fprintf_s (stdout, "\n inputWaveFile.wav  lossless WAVE audio input, read from stdin if not specified\n\n");
     fprintf_s (stdout, " outputMP4File.m4a  encoded MPEG-4 bit-stream, extension should be .m4a or .mp4\n\n\n");
@@ -490,16 +496,16 @@ int main (const int argc, char* argv[])
         while ((pos -= br) > 0) // move loop
         {
           _SEEK (outFileHandle, pos, 0 /*SEEK_SET*/);
-          _READ (outFileHandle, inPcmData, br);
+          bw = _READ (outFileHandle, inPcmData, br);
           _SEEK (outFileHandle, pos + headerRes, 0 /*SEEK_SET*/);
-          _WRITE(outFileHandle, inPcmData, br);
+          bw = _WRITE(outFileHandle, inPcmData, br);
         }
         if ((br = (uint32_t) __max (0, pos + br)) > 0) // remainder of data to move
         {
           _SEEK (outFileHandle, 0, 0 /*SEEK_SET*/);
-          _READ (outFileHandle, inPcmData, br);
+          bw = _READ (outFileHandle, inPcmData, br);
           _SEEK (outFileHandle, headerRes, 0 /*SEEK_SET*/);
-          _WRITE(outFileHandle, inPcmData, br);
+          bw = _WRITE(outFileHandle, inPcmData, br);
         }
       }
 
