@@ -386,14 +386,19 @@ unsigned BasicWavReader::read (int32_t* const frameBuf, const uint16_t frameCoun
 {
   unsigned framesRead;
 
-  if ((frameBuf == nullptr) || (m_fileHandle == -1) || (__min (m_frameLimit, frameCount) == 0) || (m_byteBuffer == nullptr))
+  if ((frameBuf == nullptr) || (m_fileHandle == -1) || (__min (m_frameLimit, frameCount) == 0) || (m_byteBuffer == nullptr) ||
+      (m_bytesRemaining <= 0)) // end of chunk reached
   {
     return 0; // invalid args or class not initialized
   }
   framesRead  = m_readDataFunc (m_fileHandle, frameBuf, __min (m_frameLimit, frameCount), m_waveChannels, m_byteBuffer);
   m_bytesRead = m_waveFrameSize * framesRead;
-  m_bytesRemaining -= m_bytesRead;
-  m_chunkLength    += m_bytesRead;
+  if ((m_bytesRemaining -= m_bytesRead) < 0)
+  {
+    m_bytesRead = unsigned (m_bytesRead + m_bytesRemaining);
+    framesRead  = m_bytesRead / m_waveFrameSize;
+  }
+  m_chunkLength += m_bytesRead;
 
   return framesRead;
 }

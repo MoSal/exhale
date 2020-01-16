@@ -64,7 +64,7 @@ static inline uint32_t packAvgTempAnalysisStats (const unsigned avgAbsHpL,  cons
 static inline int16_t getMaxAbsHpValueLocation (const unsigned maxAbsValL, const unsigned maxAbsValR, const unsigned maxAbsValP,
                                                 const int16_t  maxAbsIdxL, const int16_t  maxAbsIdxR)
 {
-  if ((maxAbsValP * 8 < maxAbsValL * 3) || (maxAbsValL * 8 < maxAbsValR * 3)) // has transient
+  if ((maxAbsValP * 5 < maxAbsValL * 2) || (maxAbsValL * 5 < maxAbsValR * 2)) // has transient
   {
     return maxAbsValR > maxAbsValL ? maxAbsIdxR : maxAbsIdxL;
   }

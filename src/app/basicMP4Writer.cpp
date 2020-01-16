@@ -60,7 +60,7 @@ static const uint8_t staticHeaderTemplate[STAT_HEADER_SIZE] = {
 };
 
 // static helper functions
-static uint32_t toBigEndian (const unsigned ui) // Motorola endianness
+static uint32_t toBigEndian (const unsigned ui) // to Motorola endianness
 {
   return ((ui & UCHAR_MAX) << 24) | (((ui >> 8) & UCHAR_MAX) << 16) | (((ui >> 16) & UCHAR_MAX) << 8) | ((ui >> 24) & UCHAR_MAX);
 }
