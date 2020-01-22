@@ -1,5 +1,5 @@
 /* specGapFilling.cpp - source file for class with spectral gap filling coding methods
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -30,10 +30,14 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
   const double* const  sfNormFacs = sfbQuantizer.getSfNormTabPtr ();
   const uint16_t       sfbsPerGrp = grpData.sfbsPerGroup;
   const uint16_t       windowNfso = noiseFillingStartOffset[grpData.numWindowGroups == 1 ? 0 : 1][nSamplesInFrame >> 10];
-  uint8_t scaleFactorLimit = 0;
+  uint8_t  scaleFactorLimit = 0;
   uint16_t u = 0;
   short diff = 0, s = 0;
-  double  magnSum = 0.0;
+  double    magnSum = 0.0;
+#if SGF_OPT_SHORT_WIN_CALC
+  double minGrpMean = (double) UINT_MAX;
+  double sumGrpMean = 0.0; // for shorts
+#endif
 
   if ((coeffMagn == nullptr) || (sfNormFacs == nullptr) || (quantMagn == nullptr) ||
       (numSwbShort < MIN_NUM_SWB_SHORT) || (numSwbShort > MAX_NUM_SWB_SHORT) || (nSamplesInFrame > 1024))
@@ -53,8 +57,12 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
     const uint16_t grpLength = grpData.windowGroupLength[gr];
     const uint16_t   grpNfso = grpOff[0] + grpLength * windowNfso;
     const uint16_t  sfbLimit = (grpData.numWindowGroups == 1 ? sfbsPerGrp - (grpOff[sfbsPerGrp] >= nSamplesInFrame ? 1 : 0)
-                                                                   : __min (sfbsPerGrp, numSwbShort - 1)); // no high frequencies
-    for (uint16_t b = 0; b < sfbLimit; b++) // find first gap-fill SFB and noise_level
+                                                             : __min (sfbsPerGrp, numSwbShort - 1)); // no high frequencies
+#if SGF_OPT_SHORT_WIN_CALC
+    uint16_t tempNum = u;
+    double   tempSum = magnSum;
+#endif
+    for (uint16_t b = 0; b < sfbLimit; b++)  // determine first gap-fill SFB and noise_level
     {
       const uint16_t sfbStart = grpOff[b];
       const uint16_t sfbWidth = grpOff[b + 1] - sfbStart;
@@ -122,13 +130,21 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
               u++;
             }
           }
-          magnSum += sfbMagnSum * sfNormFacs[grpScFacs[b]];
+          magnSum += sfbMagnSum * sfNormFacs[sFac];
         }
       }
     } // for b
 
     // clip to non-negative value for get function and memset below
     if (m_1stNonZeroSfb[gr] < 0) m_1stNonZeroSfb[gr] = 0;
+#if SGF_OPT_SHORT_WIN_CALC
+    if ((grpData.numWindowGroups > 1) && (u > tempNum))
+    {
+      tempSum = (magnSum - tempSum) / double (u - tempNum);
+      if (minGrpMean > tempSum) minGrpMean = tempSum;
+      sumGrpMean += tempSum;  s++;
+    }
+#endif
   } // for gr
 
   // determine quantized noise_level from normalized mean magnitude
@@ -138,6 +154,17 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
 
     magnSum = 1.0;  u = 4; // max. level
   }
+#if SGF_OPT_SHORT_WIN_CALC
+  if ((s > 1) && (sumGrpMean > 0.0))
+  {
+    magnSum *= sqrt ((minGrpMean * s) / sumGrpMean);  // Robots fix
+    if (magnSum * 64.0 < u * 3.0) // .05
+    {
+      magnSum = 3.0;  u = 64; // ensure noise_level remains nonzero
+    }
+  }
+  s = 0;
+#endif
   u = __min (7, uint16_t (14.47118288 + 9.965784285 * log10 (magnSum / (double) u)));
 
   magnSum = pow (2.0, (14 - u) / 3.0); // noiseVal^-1, 23003-3, 7.2
@@ -152,7 +179,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
     const uint32_t*   grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant/coder stats
     uint8_t* const grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
 
-    for (uint16_t b = m_1stGapFillSfb; b < sfbsPerGrp; b++) // calculate scale factors
+    for (uint16_t b = m_1stGapFillSfb; b < sfbsPerGrp; b++)  // get noise-fill scale factors
     {
       if ((grpRms[b] >> 16) == 0)  // the SFB is all-zero quantized
       {
@@ -205,7 +232,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
     const uint32_t*   grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant/coder stats
     uint8_t* const grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
 
-    for (uint16_t b = m_1stGapFillSfb; b < sfbsPerGrp; b++) // account f. noise_offset
+    for (uint16_t b = m_1stGapFillSfb; b < sfbsPerGrp; b++)  // account for the noise_offset
     {
       if ((grpRms[b] >> 16) == 0)  // the SFB is all-zero quantized
       {
