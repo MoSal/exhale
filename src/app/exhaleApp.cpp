@@ -232,7 +232,7 @@ int main (const int argc, char* argv[])
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     if (_sopen_s (&inFileHandle, inFileName, _O_RDONLY | _O_SEQUENTIAL | _O_BINARY, _SH_DENYWR, _S_IREAD) != 0)
 #else // Linux, MacOS, Unix
-    if ((inFileHandle = ::open (inFileName, O_RDONLY | O_LARGEFILE, 0666)) == -1)
+    if ((inFileHandle = ::open (inFileName, O_RDONLY, 0666)) == -1)
 #endif
     {
       fprintf_s (stderr, " ERROR while trying to open input file %s! Does it already exist?\n\n", inFileName);
@@ -302,7 +302,7 @@ int main (const int argc, char* argv[])
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     if (_sopen_s (&outFileHandle, outFileName, i | _O_SEQUENTIAL | _O_CREAT | _O_EXCL | _O_BINARY, _SH_DENYRD, _S_IWRITE) != 0)
 #else // Linux, MacOS, Unix
-    if ((outFileHandle = ::open (outFileName, i | O_LARGEFILE | O_CREAT | O_EXCL, 0666)) == -1)
+    if ((outFileHandle = ::open (outFileName, i | O_CREAT | O_EXCL, 0666)) == -1)
 #endif
     {
       fprintf_s (stderr, " ERROR while trying to open output file %s! Does it already exist?\n\n", outFileName);
@@ -518,7 +518,7 @@ int main (const int argc, char* argv[])
       i = 0; // no errors
       if (!readStdin && (actualLength != expectLength || bw != headerRes))
       {
-        fprintf_s (stderr, " WARNING: %ld sample frames read but %ld sample frames expected!\n", actualLength, expectLength);
+        fprintf_s (stderr, " WARNING: %lld sample frames read but %lld sample frames expected!\n", (long long) actualLength, (long long) expectLength);
         if (bw != headerRes) fprintf_s (stderr, "          The encoded MPEG-4 bit-stream is likely to be unreadable!\n");
         fprintf_s (stderr, "\n");
       }

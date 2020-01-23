@@ -8,29 +8,20 @@
  # Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
  ##
 
-#########################################################
-# check CONFIG parameter
-#########################################################
-
+## verification of config parameter
 ifneq ($(CONFIG), CONSOLE)
  ifneq ($(CONFIG), LIBRARY)
   CONFIG_ERR = TRUE
  endif
 endif
 
-#########################################################
-# executables used
-#########################################################
-
+# specification of used executables
 AR    = ar
 ASM   = nasm
 CPP   = g++
 LD    = $(CPP)
 
-#########################################################
-# output file names and version information
-#########################################################
-
+# location and name of output files
 ifeq ($(CONFIG), CONSOLE)
   STAT_DEBUG_OUT    = $(DIR_BIN)/$(PRD_NAME)d
   STAT_RELEASE_OUT  = $(DIR_BIN)/$(PRD_NAME)
@@ -45,92 +36,48 @@ else
  endif
 endif
 
-#########################################################
-# c compiler flags
-#########################################################
+# type of debug and release objects
+DEBUG_OBJS    = $(OBJS:.o=.d.o)
+RELEASE_OBJS  = $(OBJS:.o=.r.o)
 
-# default cpp flags for all configurations
-#CPPFLAGS          = -Wall -fPIC $(DEFS) -I$(CURDIR)/$(DIR_INC)
-CPPFLAGS          = -fPIC $(DEFS) -I$(CURDIR)/$(DIR_INC) -Wall -Wshadow -Wno-sign-compare -Werror -D_FILE_OFFSET_BITS=64
 
-##########
-# enforce 32-bit build : 1=yes, 0=no
-##########
-M32?= 0
-ifeq ($(M32),1)
-CPPFLAGS+=-m32
+## specification of compiler flags
+CPPFLAGS          = -fPIC $(DEFS) -I$(CURDIR)/$(DIR_INC) -Wall -Werror -Wno-sign-compare -Wshadow -D_FILE_OFFSET_BITS=64
+
+# setting of 32-bit compiler flags
+MM32?=0
+ifeq ($(MM32), 1)
+  CPPFLAGS+=-m32
 endif
-##########
 
-#
-# debug cpp flags
+# debug and release compiler flags
 DEBUG_CPPFLAGS    = -g  -D_DEBUG
-#
-# release cpp
-RELEASE_CPPFLAGS  =  -O3 -Wuninitialized
+RELEASE_CPPFLAGS  = -O3 -Wuninitialized
 
 
-#########################################################
-# linker flags
-#########################################################
-
-# linker flags for all
+## specification of linker flags
 ALL_LDFLAGS       = -Wall
 
-##########
-# enforce 32-bit build : 1=yes, 0=no
-##########
-ifeq ($(M32),1)
-ALL_LDFLAGS+=-m32
+# setting of 32-bit linker flags
+ifeq ($(MM32), 1)
+  ALL_LDFLAGS+=-m32
 endif
-##########
 
-
-ifeq ($(CONFIG), LIBRARY)
-# linker flags for library
-# LDFLAGS           = $(ALL_LDFLAGS) -shared -Wl,-Bsymbolic
-LDFLAGS           = $(ALL_LDFLAGS) -shared
-#
-# debug linker flags for library
-DEBUG_LDFLAGS     = -Wl,-soname,lib$(PRD_NAME)d.so
-#
-# release linker flags for library
-RELEASE_LDFLAGS   = -Wl,-soname,lib$(PRD_NAME).so
-#
-else
+# debug and release linker flags
 ifeq ($(CONFIG), CONSOLE)
-# linker flags for console
-LDFLAGS           = $(ALL_LDFLAGS)
-#
-# debug linker flags for console
-DEBUG_LDFLAGS     =
-#
-# release linker flags for console
-RELEASE_LDFLAGS   =
-#
+  LDFLAGS           = $(ALL_LDFLAGS)
+  DEBUG_LDFLAGS     =
+  RELEASE_LDFLAGS   =
+else
+ ifeq ($(CONFIG), LIBRARY)
+  LDFLAGS           = $(ALL_LDFLAGS) -shared
+  DEBUG_LDFLAGS     = -Wl, -soname, lib$(PRD_NAME)Dynd.so
+  RELEASE_LDFLAGS   = -Wl, -soname, lib$(PRD_NAME)Dyn.so
+ endif
 endif
-endif
 
 
-
-#########################################################
-# objects that have to be created
-#########################################################
-
-# the object types that have to be created
-RELEASE_OBJS  = $(OBJS:.o=.r.o)
-DEBUG_OBJS    = $(OBJS:.o=.d.o)
-
-
-#########################################################
-# rules
-#########################################################
-
-# suffixes
-.SUFFIXES: .asm .cpp .d.o .r.o
-
-
-## specification of assembler rules
+## specification of assembler flags
 ASMFLAGS          = -f elf $(DEFS)
 DEBUG_ASMFLAGS    = -g
 RELEASE_ASMFLAGS  =
@@ -144,7 +91,7 @@ $(DIR_OBJ)/%.r.o: $(DIR_SRC)/%.asm
 	$(ASM) $(ASMFLAGS) $(RELEASE_ASMFLAGS) -o $@ $<
 
 
-## specification of C and C++ rules
+## specification of C and C++ flags
 define COMPILE_AND_DEPEND_DEBUG
 	$(CPP) -c -MMD -MF $(DIR_OBJ)/$*.d.d -MT $(DIR_OBJ)/$*.d.o $(CPPFLAGS) $(DEBUG_CPPFLAGS) -o $@ $(CURDIR)/$<
 	@cp $(DIR_OBJ)/$*.d.d $(DIR_OBJ)/$*.d.p; \
@@ -229,65 +176,34 @@ $(DIR_LIB):
 
 
 ## creation of binary output files
-ifeq ($(CONFIG), LIBRARY)
-#
-# create static debug out
-$(STAT_DEBUG_OUT): $(DEBUG_OBJS)
-	$(AR) -crs $@ $(DEBUG_OBJS)
-#
-#
-# create release debug out
-$(STAT_RELEASE_OUT): $(RELEASE_OBJS)
-	$(AR) -crs $@ $(RELEASE_OBJS)
-#
-#
-# create dynamic debug out
-$(DYN_DEBUG_OUT): $(DYN_DEBUG_OUT)
-	ln -fs lib$(PRD_NAME)d.so $@
-#
-# create dynamic debug out
-$(DYN_DEBUG_OUT): $(DEBUG_OBJS)
-	$(LD) $(LDFLAGS) $(DEBUG_LDFLAGS) -o $@ $(DEBUG_OBJS) -L$(DIR_LIB) $(LIBS) $(DYN_LIBS) $(DYN_DEBUG_LIBS)
-#
-#
-# create dynamic release out
-$(DYN_RELEASE_OUT): $(DYN_RELEASE_OUT)
-	ln -fs lib$(PRD_NAME).so $@
-#
-# create dynamic release out
-$(DYN_RELEASE_OUT): $(RELEASE_OBJS)
-	$(LD) $(LDFLAGS) $(RELEASE_LDFLAGS) -o $@ $(RELEASE_OBJS) -L$(DIR_LIB) $(LIBS) $(DYN_LIBS) $(DYN_RELEASE_LIBS)
-#
-#
-#
-#
-#
-else
 ifeq ($(CONFIG), CONSOLE)
-#
-# added linked libraries to target prerequisites - $(*_PREREQS) variables - to force relinking when libraries have been rebuilt
-#
-# create static debug out
+# creation of static debug output
 $(STAT_DEBUG_OUT): $(DEBUG_OBJS) $(STAT_DEBUG_PREREQS)
 	$(LD) -o $@ $(LDFLAGS) $(DEBUG_LDFLAGS) $(DEBUG_OBJS) -L$(DIR_LIB) $(LIBS) $(STAT_LIBS) $(STAT_DEBUG_LIBS)
-#
-#
-# create static release out
+# creation of static release output
 $(STAT_RELEASE_OUT): $(RELEASE_OBJS) $(STAT_RELEASE_PREREQS)
 	$(LD) -o $@ $(LDFLAGS) $(RELEASE_LDFLAGS) $(RELEASE_OBJS) -L$(DIR_LIB) $(LIBS) $(STAT_LIBS) $(STAT_RELEASE_LIBS)
-#
-#
-# create dynamic debug out
+# creation of dynamic debug output
 $(DYN_DEBUG_OUT): $(DEBUG_OBJS) $(DYN_DEBUG_PREREQS)
 	$(LD) -o $@ $(LDFLAGS) $(DEBUG_LDFLAGS) $(DEBUG_OBJS) -L$(DIR_LIB) $(LIBS) $(DYN_LIBS) $(DYN_DEBUG_LIBS)
-#
-#
-# create dynamic release out
+# creation of dynamic release output
 $(DYN_RELEASE_OUT): $(RELEASE_OBJS) $(DYN_RELEASE_PREREQS)
 	$(LD) -o $@ $(LDFLAGS) $(RELEASE_LDFLAGS) $(RELEASE_OBJS) -L$(DIR_LIB) $(LIBS) $(DYN_LIBS) $(DYN_RELEASE_LIBS)
-#
-#
-endif
+else
+ ifeq ($(CONFIG), LIBRARY)
+# creation of static debug output
+$(STAT_DEBUG_OUT): $(DEBUG_OBJS)
+	$(AR) -crs $@ $(DEBUG_OBJS)
+# creation of static release output
+$(STAT_RELEASE_OUT): $(RELEASE_OBJS)
+	$(AR) -crs $@ $(RELEASE_OBJS)
+# creation of dynamic debug output
+$(DYN_DEBUG_OUT): $(DYN_DEBUG_OUT)
+	ln -fs lib$(PRD_NAME)Dynd.so $@
+# creation of dynamic release output
+$(DYN_RELEASE_OUT): $(DYN_RELEASE_OUT)
+	ln -fs lib$(PRD_NAME)Dyn.so $@
+ endif
 endif
 
 

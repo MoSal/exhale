@@ -68,7 +68,7 @@ public:
 #if !RESTRICT_TO_AAC
                               const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
 #endif
-                              unsigned char* const audioFrame,    const unsigned nSamplesInFrame = 1024);
+                              unsigned char* const accessUnit,    const unsigned nSamplesInFrame = 1024);
 }; // BitStreamWriter
 
 #endif // _BIT_STREAM_WRITER_H_
