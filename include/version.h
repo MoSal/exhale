@@ -1,5 +1,5 @@
 /* version.h - header file with major and minor library version numbers as characters
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -15,5 +15,5 @@
 # define EXHALELIB_VERSION_MINOR "0"
 #endif
 #ifndef EXHALELIB_VERSION_BUGFIX
-# define EXHALELIB_VERSION_BUGFIX "RC" // "RC" or ".0", ".1", ...
+# define EXHALELIB_VERSION_BUGFIX ".0" // "RC" or ".0", ".1", ...
 #endif

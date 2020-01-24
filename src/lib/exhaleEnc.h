@@ -1,5 +1,5 @@
 /* exhaleEnc.h - header file for class providing Extended HE-AAC encoding capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -21,6 +21,16 @@
 #include "specAnalysis.h"
 #include "specGapFilling.h"
 #include "tempAnalysis.h"
+
+#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+# ifdef EXHALE_DYN_LINK
+#  define EXHALE_DECL __declspec (dllexport)
+# else
+#  define EXHALE_DECL
+# endif
+#else
+# define EXHALE_DECL
+#endif
 
 // constant and experimental macro
 #define WIN_SCALE double (1 << 23)
@@ -56,7 +66,7 @@ typedef enum USAC_CCFL : short
 } USAC_CCFL;
 
 // overall xHE-AAC encoding class
-class ExhaleEncoder
+class EXHALE_DECL ExhaleEncoder
 {
 private:
 
@@ -139,5 +149,54 @@ public:
   unsigned initEncoder (unsigned char* const audioConfigBuffer, uint32_t* const audioConfigBytes = nullptr);
 
 }; // ExhaleEncoder
+
+#ifdef EXHALE_DYN_LINK
+// DLL constructor
+extern "C" EXHALE_DECL ExhaleEncoder* exhaleCreate (int32_t* const inputPcmData,       unsigned char* const outputAuData,
+                                                    const unsigned sampleRate = 44100, const unsigned numChannels = 2,
+                                                    const unsigned frameLength = 1024, const unsigned indepPeriod = 45,
+                                                    const unsigned varBitRateMode = 3, const bool useNoiseFilling = true,
+                                                    const bool useEcodisExt = false)
+{
+  return new ExhaleEncoder (inputPcmData, outputAuData, sampleRate, numChannels, frameLength, indepPeriod, varBitRateMode
+#if !RESTRICT_TO_AAC
+                          , useNoiseFilling, useEcodisExt
+#endif
+                            );
+}
+
+// DLL destructor
+extern "C" EXHALE_DECL unsigned exhaleDelete (ExhaleEncoder* exhaleEnc)
+{
+  if (exhaleEnc != nullptr) { exhaleEnc->~ExhaleEncoder (); return 0; }
+
+  return USHRT_MAX; // error
+}
+
+// DLL initializer
+extern "C" EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncoder* exhaleEnc, unsigned char* const audioConfigBuffer,
+                                                   uint32_t* const audioConfigBytes = nullptr)
+{
+  if (exhaleEnc != nullptr) return exhaleEnc->initEncoder (audioConfigBuffer, audioConfigBytes);
+
+  return USHRT_MAX; // error
+}
+
+// DLL lookahead encoder
+extern "C" EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncoder* exhaleEnc)
+{
+  if (exhaleEnc != nullptr) return exhaleEnc->encodeLookahead ();
+
+  return USHRT_MAX; // error
+}
+
+// DLL frame encoder
+extern "C" EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncoder* exhaleEnc)
+{
+  if (exhaleEnc != nullptr) return exhaleEnc->encodeFrame ();
+
+  return USHRT_MAX; // error
+}
+#endif
 
 #endif // _EXHALE_ENC_H_
