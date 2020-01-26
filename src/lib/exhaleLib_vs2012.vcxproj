@@ -192,7 +192,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>exhaleLibPch.h</PrecompiledHeaderFile>
       <PreprocessorDefinitions>WIN32;NDEBUG;EXHALE_DYN_LINK;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <Link>
@@ -211,7 +211,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>exhaleLibPch.h</PrecompiledHeaderFile>
       <PreprocessorDefinitions>WIN32;NDEBUG;EXHALE_DYN_LINK;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <Link>

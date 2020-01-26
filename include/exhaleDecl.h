@@ -11,22 +11,41 @@
 #ifndef _EXHALE_DECL_H_
 #define _EXHALE_DECL_H_
 
-#include "../src/lib/exhaleEnc.h"
+#include <stdint.h> // for (u)int8_t, (u)int16_t, (u)int32_t, (u)int64_t
 
-// DLL constructor
-extern "C" EXHALE_DECL ExhaleEncoder* exhaleCreate (int32_t* const, unsigned char* const, const unsigned, const unsigned,
-                                                    const unsigned, const unsigned, const unsigned, const bool, const bool);
+#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+# ifdef EXHALE_DYN_LINK
+#  define EXHALE_DECL __declspec (dllexport)
+# else
+#  define EXHALE_DECL __declspec (dllimport)
+# endif
+#else
+# define EXHALE_DECL
+#endif
 
-// DLL destructor
-extern "C" EXHALE_DECL unsigned exhaleDelete (ExhaleEncoder*);
+struct ExhaleEncAPI
+{
+  // initializer
+  virtual unsigned initEncoder (unsigned char* const audioConfigBuffer, uint32_t* const audioConfigBytes = nullptr) = 0;
+  // lookahead encoder
+  virtual unsigned encodeLookahead () = 0;
+  // frame encoder
+  virtual unsigned encodeFrame () = 0;
+};
 
-// DLL initializer
-extern "C" EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncoder*, unsigned char* const, uint32_t* const);
+// C constructor
+extern "C" EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const, unsigned char* const, const unsigned, const unsigned,
+                                                   const unsigned, const unsigned, const unsigned, const bool, const bool);
+// C destructor
+extern "C" EXHALE_DECL unsigned exhaleDelete (ExhaleEncAPI*);
 
-// DLL lookahead encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncoder*);
+// C initializer
+extern "C" EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncAPI*, unsigned char* const, uint32_t* const);
 
-// DLL frame encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncoder*);
+// C lookahead encoder
+extern "C" EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncAPI*);
+
+// C frame encoder
+extern "C" EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI*);
 
 #endif // _EXHALE_DECL_H_

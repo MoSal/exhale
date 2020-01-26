@@ -11,6 +11,7 @@
 #ifndef _EXHALE_ENC_H_
 #define _EXHALE_ENC_H_
 
+#include "exhaleDecl.h"
 #include "exhaleLibPch.h"
 #include "bitAllocation.h"
 #include "bitStreamWriter.h"
@@ -21,16 +22,6 @@
 #include "specAnalysis.h"
 #include "specGapFilling.h"
 #include "tempAnalysis.h"
-
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-# ifdef EXHALE_DYN_LINK
-#  define EXHALE_DECL __declspec (dllexport)
-# else
-#  define EXHALE_DECL
-# endif
-#else
-# define EXHALE_DECL
-#endif
 
 // constant and experimental macro
 #define WIN_SCALE double (1 << 23)
@@ -66,7 +57,7 @@ typedef enum USAC_CCFL : short
 } USAC_CCFL;
 
 // overall xHE-AAC encoding class
-class EXHALE_DECL ExhaleEncoder
+class ExhaleEncoder : public ExhaleEncAPI
 {
 private:
 
@@ -151,12 +142,12 @@ public:
 }; // ExhaleEncoder
 
 #ifdef EXHALE_DYN_LINK
-// DLL constructor
-extern "C" EXHALE_DECL ExhaleEncoder* exhaleCreate (int32_t* const inputPcmData,       unsigned char* const outputAuData,
-                                                    const unsigned sampleRate = 44100, const unsigned numChannels = 2,
-                                                    const unsigned frameLength = 1024, const unsigned indepPeriod = 45,
-                                                    const unsigned varBitRateMode = 3, const bool useNoiseFilling = true,
-                                                    const bool useEcodisExt = false)
+// C constructor
+extern "C" EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const inputPcmData,       unsigned char* const outputAuData,
+                                                   const unsigned sampleRate = 44100, const unsigned numChannels = 2,
+                                                   const unsigned frameLength = 1024, const unsigned indepPeriod = 45,
+                                                   const unsigned varBitRateMode = 3, const bool useNoiseFilling = true,
+                                                   const bool useEcodisExt = false)
 {
   return new ExhaleEncoder (inputPcmData, outputAuData, sampleRate, numChannels, frameLength, indepPeriod, varBitRateMode
 #if !RESTRICT_TO_AAC
@@ -165,38 +156,38 @@ extern "C" EXHALE_DECL ExhaleEncoder* exhaleCreate (int32_t* const inputPcmData,
                             );
 }
 
-// DLL destructor
-extern "C" EXHALE_DECL unsigned exhaleDelete (ExhaleEncoder* exhaleEnc)
+// C destructor
+extern "C" EXHALE_DECL unsigned exhaleDelete (ExhaleEncAPI* exhaleEnc)
 {
-  if (exhaleEnc != nullptr) { exhaleEnc->~ExhaleEncoder (); return 0; }
+  if (exhaleEnc != NULL) { delete exhaleEnc;  return 0; }
 
   return USHRT_MAX; // error
 }
 
-// DLL initializer
-extern "C" EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncoder* exhaleEnc, unsigned char* const audioConfigBuffer,
+// C initializer
+extern "C" EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncAPI* exhaleEnc, unsigned char* const audioConfigBuffer,
                                                    uint32_t* const audioConfigBytes = nullptr)
 {
-  if (exhaleEnc != nullptr) return exhaleEnc->initEncoder (audioConfigBuffer, audioConfigBytes);
+  if (exhaleEnc != NULL) return exhaleEnc->initEncoder (audioConfigBuffer, audioConfigBytes);
 
   return USHRT_MAX; // error
 }
 
-// DLL lookahead encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncoder* exhaleEnc)
+// C lookahead encoder
+extern "C" EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncAPI* exhaleEnc)
 {
-  if (exhaleEnc != nullptr) return exhaleEnc->encodeLookahead ();
+  if (exhaleEnc != NULL) return exhaleEnc->encodeLookahead ();
 
   return USHRT_MAX; // error
 }
 
-// DLL frame encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncoder* exhaleEnc)
+// C frame encoder
+extern "C" EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI* exhaleEnc)
 {
-  if (exhaleEnc != nullptr) return exhaleEnc->encodeFrame ();
+  if (exhaleEnc != NULL) return exhaleEnc->encodeFrame ();
 
   return USHRT_MAX; // error
 }
-#endif
+#endif // EXHALE_DYN_LINK
 
 #endif // _EXHALE_ENC_H_

@@ -71,6 +71,9 @@ edit the "Command Arguments" entry on the right-hand side as needed.
 
 For fastest encoding speed, please select `Release` and `x64` before
 building the solution. This will create a release-mode 64-bit binary.
+If you would like to build a dynamically linked library (DLL) of the
+exhale source instead of an application binary, select `Release DLL`
+instead of `Release`, rightclick on `exhaleLib`, and select `Build`.
 
 
 Usage

@@ -11,7 +11,12 @@
 #include "exhaleAppPch.h"
 #include "basicMP4Writer.h"
 #include "basicWavReader.h"
+// #define USE_EXHALELIB_DLL (defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64))
+#ifdef USE_EXHALELIB_DLL
+#include "exhaleDecl.h"
+#else
 #include "../lib/exhaleEnc.h"
+#endif
 #include "version.h"
 
 #include <iostream>
@@ -178,9 +183,9 @@ int main (const int argc, char* argv[])
   else
   {
 #if XHE_AAC_LOW_DELAY
-    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 1-9, a-i, or A-I.\n\n", argv[1]);
+    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 1-9 or A-I.\n\n", argv[1]);
 #else
-    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 1-9 or a-i.\n\n", argv[1]);
+    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Please use 1-9.\n\n", argv[1]);
 #endif
     return 16384; // preset isn't supported
   }
@@ -354,10 +359,14 @@ int main (const int argc, char* argv[])
       const unsigned sampleRate  = wavReader.getSampleRate ();
       const unsigned indepPeriod = (sampleRate < 48000 ? sampleRate / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
       const unsigned mod3Percent = unsigned ((expectLength * (3 + coreSbrFrameLengthIndex)) >> 17);
-      // open & prepare ExhaleEncoder object
       uint32_t byteCount = 0, bw = 0, bwMax = 0, br; // for bytes read and bit-rate
       uint32_t headerRes = 0;
+      // open & prepare ExhaleEncoder object
+#ifdef USE_EXHALELIB_DLL
+      ExhaleEncAPI&  exhaleEnc = *exhaleCreate (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
+#else
       ExhaleEncoder  exhaleEnc (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
+#endif
                                 (sampleRate > 24000 ? 0 : 1 - (variableCoreBitRateMode >> 2)) // compensate for low sampling rates
 #if !RESTRICT_TO_AAC
                               , true /*noise filling*/, compatibleExtensionFlag > 0
