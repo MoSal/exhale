@@ -94,24 +94,36 @@ to print out usage information. As an example, the following command
 `exhaleApp.exe 5 C:\Music\Input.wav C:\Music\Output.m4a`
 
 converts file Input.wav to file Output.m4a at roughly 128 kbit/s (if
-the input file is two-channel stereo) and in xHE-AAC audio format.
+the input signal is two-channel stereo) and in xHE-AAC audio format.
+Note that, when calling the exhale application with a path (such as,
+e.g., `bin/exhale` or `bin\exhaleApp.exe`), but specifying the input
+or output file without any path (e.g., `Input.wav`), those files are
+assumed to be located in the application path (here, `bin`). Use the
+"dot prefix" to indicate files in the *current* directory instead of
+the application directory (here, `./Input.wav` or `.\Input.wav`).
+
 
 ### Third-party stdin (foobar2000):
 
 After downloading from www.foobar2000.org and starting the software,
-load your desired input WAVE files into the playlist. Mark all files
-to be converted, rightclick on one of them and select `Convert` ->
-`Quick convert`. In the newly opened window click on `Add New`, then
-select `Custom` under "Encoder" and enter the following information:
+load the desired input audio files into the playlist. Mark all files
+to be converted, rightclick on one of them, and select `Convert` ->
+`...`. In the newly opened window click on `Output format` and, once
+the window content changed, on `Add New`. Then select `Custom` under
+"Encoder" and enter the following information:
 
 - *Encoder file:* exhaleApp.exe (possibly including path to it)
 - *Extension:* m4a
 - *Parameters:* # %d (where number is the bit-rate mode, 1...9)
 - *Format is:* lossy
 - *Highest BPS mode supported:* 24 (or 32, doesn't matter much)
-- *Encoder name:* exhale
+- *Encoder name:* xHE-AAC (exhale)
 - *Bitrate (kbps):* (depends on bit-rate mode, see Usage above)
-- *Settings:* default CVBR
+- *Settings:* CVBR mode # (where # equals that in *Parameters*)
+
+Then click on `OK` and on `Back` and, in the first "Converter Setup"
+window, on `Other` and ensure all "Transfer..." boxes are unchecked.
+Now set the destination settings as desired and click on `Convert`.
 
 
 Development
