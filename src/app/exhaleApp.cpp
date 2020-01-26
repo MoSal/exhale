@@ -12,7 +12,7 @@
 #include "basicMP4Writer.h"
 #include "basicWavReader.h"
 // #define USE_EXHALELIB_DLL (defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64))
-#ifdef USE_EXHALELIB_DLL
+#if USE_EXHALELIB_DLL
 #include "exhaleDecl.h"
 #else
 #include "../lib/exhaleEnc.h"
@@ -362,7 +362,7 @@ int main (const int argc, char* argv[])
       uint32_t byteCount = 0, bw = 0, bwMax = 0, br; // for bytes read and bit-rate
       uint32_t headerRes = 0;
       // open & prepare ExhaleEncoder object
-#ifdef USE_EXHALELIB_DLL
+#if USE_EXHALELIB_DLL
       ExhaleEncAPI&  exhaleEnc = *exhaleCreate (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
 #else
       ExhaleEncoder  exhaleEnc (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
@@ -383,7 +383,9 @@ int main (const int argc, char* argv[])
       {
         fprintf_s (stderr, " ERROR while trying to initialize xHE-AAC encoder: error value %d was returned!\n\n", i);
         i <<= 2; // return value
-
+#if USE_EXHALELIB_DLL
+        exhaleDelete (&exhaleEnc);
+#endif
         goto mainFinish; // coder init error
       }
 
@@ -410,7 +412,9 @@ int main (const int argc, char* argv[])
         {
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
           i = 3; // return value
-
+# if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+# endif
           goto mainFinish; // writeout error
         }
       }
@@ -422,12 +426,20 @@ int main (const int argc, char* argv[])
       {
         fprintf_s (stderr, "\n ERROR while trying to create first xHE-AAC frame: error value %d was returned!\n\n", bw);
         i = 2; // return value
-
+#if USE_EXHALELIB_DLL
+        exhaleDelete (&exhaleEnc);
+#endif
         goto mainFinish; // coder-time error
       }
       if (bwMax < bw) bwMax = bw;
       // write first AU, add frame to header
-      if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw) goto mainFinish;
+      if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+      {
+#if USE_EXHALELIB_DLL
+        exhaleDelete (&exhaleEnc);
+#endif
+        goto mainFinish;   // writeout error
+      }
       byteCount += bw;
 
       while (wavReader.read (inPcmData, frameLength) > 0) // read a new audio frame
@@ -437,12 +449,20 @@ int main (const int argc, char* argv[])
         {
           fprintf_s (stderr, "\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
           i = 2; // return value
-
-          goto mainFinish;
+#if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+#endif
+          goto mainFinish; // encoding error
         }
         if (bwMax < bw) bwMax = bw;
         // write new AU, add frame to header
-        if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw) goto mainFinish;
+        if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+        {
+#if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+#endif
+          goto mainFinish; // writeout error
+        }
         byteCount += bw;
 
         if (!readStdin && (mod3Percent > 0) && !(mp4Writer.getFrameCount () % mod3Percent))
@@ -459,12 +479,20 @@ int main (const int argc, char* argv[])
       {
         fprintf_s (stderr, "\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
         i = 2; // return value
-
+#if USE_EXHALELIB_DLL
+        exhaleDelete (&exhaleEnc);
+#endif
         goto mainFinish; // coder-time error
       }
       if (bwMax < bw) bwMax = bw;
       // write final AU, add frame to header
-      if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw) goto mainFinish;
+      if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+      {
+#if USE_EXHALELIB_DLL
+        exhaleDelete (&exhaleEnc);
+#endif
+        goto mainFinish;   // writeout error
+      }
       byteCount += bw;
 
       const int64_t actualLength = wavReader.getDataBytesRead () / int64_t (numChannels * inSampDepth >> 3);
@@ -478,12 +506,20 @@ int main (const int argc, char* argv[])
         {
           fprintf_s (stderr, "\n ERROR while trying to create last xHE-AAC frame: error value %d was returned!\n\n", bw);
           i = 2; // return value
-
-          goto mainFinish;
+#if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+#endif
+          goto mainFinish; // encoding error
         }
         if (bwMax < bw) bwMax = bw;
         // the flush AU, add frame to header
-        if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw) goto mainFinish;
+        if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+        {
+#if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+#endif
+          goto mainFinish; // writeout error
+        }
         byteCount += bw;
       } // trailing frame
 
@@ -497,7 +533,9 @@ int main (const int argc, char* argv[])
         {
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
           i = 3; // return value
-
+#if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+#endif
           goto mainFinish; // writeout error
         }
         // move AU data forward to make room for actual MP4 header at start of file
@@ -531,6 +569,9 @@ int main (const int argc, char* argv[])
         if (bw != headerRes) fprintf_s (stderr, "          The encoded MPEG-4 bit-stream is likely to be unreadable!\n");
         fprintf_s (stderr, "\n");
       }
+#if USE_EXHALELIB_DLL
+      exhaleDelete (&exhaleEnc);
+#endif
     } // end coding loop and stats print-out
   }
 

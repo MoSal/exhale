@@ -31,6 +31,8 @@ struct ExhaleEncAPI
   virtual unsigned encodeLookahead () = 0;
   // frame encoder
   virtual unsigned encodeFrame () = 0;
+  // destructor
+  virtual ~ExhaleEncAPI () { }
 };
 
 // C constructor

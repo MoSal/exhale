@@ -755,7 +755,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
             const uint16_t sfbM1Width = grpOff[b] - sfbM1Start;
             const uint16_t swbM1Size  = (sfbM1Width * oneTwentyEightOver[grpLength]) >> 7; // sfbM1Width / grpLength
 
-            grpScaleFacs[b - 1] = grpScaleFacs[b] - INDEX_OFFSET; // reset prev. SFB to zero
+            grpScaleFacs[b - 1] = grpScaleFacs[b] - (b > 1 ? INDEX_OFFSET : 0);  // zero-out
             memset (&m_mdctQuantMag[ci][sfbM1Start], 0, sfbM1Width * sizeof (uint8_t));
 
             // correct SFB statistics with some bit count estimate
@@ -800,6 +800,23 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #if EC_TRELLIS_OPT_CODING
             estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, m_bitRateMode, // __min (estimBitCount, targetBitCountX2),
                                                              grpOff, grpRms, grpData.sfbsPerGroup, m_mdctQuantMag[ci]);
+            for (b = 1; b < grpData.sfbsPerGroup; b++)
+            {
+              // correct previous scale factor if delta exceeds 60
+              if (grpScaleFacs[b] > grpScaleFacs[b - 1] + INDEX_OFFSET)
+              {
+                const uint16_t sfbM1Start = grpOff[b - 1];
+                const uint16_t sfbM1Width = grpOff[b] - sfbM1Start;
+
+                grpScaleFacs[b - 1] = grpScaleFacs[b] - (b > 1 ? INDEX_OFFSET : 0); // 0-out
+                memset (&m_mdctQuantMag[ci][sfbM1Start], 0, sfbM1Width * sizeof (uint8_t));
+
+                // correct statistics with some bit count estimate
+                grpRms[b - 1] = 1 + (sfbM1Width >> 3) + entrCoder.indexGetBitCount (b > 1 ? (int) grpScaleFacs[b - 1] - grpScaleFacs[b - 2] : 0);
+                // correct entropy coding 2-tuples for next window
+                memset (&arithTuples[(sfbM1Start - grpOff[0]) >> 1], 1, (sfbM1Width >> 1) * sizeof (char));
+              }
+            }
 #endif
           }
           b = lastSfb;

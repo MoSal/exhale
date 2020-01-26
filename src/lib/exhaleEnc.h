@@ -133,7 +133,7 @@ public:
 #endif
                 );
   // destructor
-  ~ExhaleEncoder ();
+  virtual ~ExhaleEncoder ();
   // public functions
   unsigned encodeLookahead ();
   unsigned encodeFrame ();
