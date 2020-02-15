@@ -1,5 +1,5 @@
 /* exhaleApp.cpp - source file with main() routine for exhale application executable
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -11,6 +11,7 @@
 #include "exhaleAppPch.h"
 #include "basicMP4Writer.h"
 #include "basicWavReader.h"
+#include "loudnessEstim.h"
 // #define USE_EXHALELIB_DLL (defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64))
 #if USE_EXHALELIB_DLL
 #include "exhaleDecl.h"
@@ -25,6 +26,12 @@
 #include <time.h>
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
 #include <windows.h>
+
+// constants, experimental macros
+#define EA_LOUD_INIT  16399u  // bsSamplePeakLevel = 0 & methodValue = 0
+#define EA_LOUD_NORM -42.25f  // -100 + 57.75 of ISO 23003-4, Table A.48
+#define EA_PEAK_NORM -96.33f  // 20 * log10(2^-16), 16-bit normalization
+#define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
 
 #define EXHALE_TEXT_BLUE  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN)
 #define EXHALE_TEXT_PINK  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED)
@@ -46,6 +53,7 @@ int main (const int argc, char* argv[])
   int32_t* inPcmData = nullptr;  // 24-bit WAVE audio input buffer
   uint8_t* outAuData = nullptr;  // access unit (AU) output buffer
   int   inFileHandle = -1, outFileHandle = -1;
+  uint32_t loudStats = EA_LOUD_INIT;  // valid empty loudness data
   uint16_t i, exePathEnd = 0;
   uint16_t compatibleExtensionFlag = 0; // 0: disabled, 1: enabled
   uint16_t coreSbrFrameLengthIndex = 1; // 0: 768, 1: 1024 samples
@@ -359,8 +367,11 @@ int main (const int argc, char* argv[])
       const unsigned sampleRate  = wavReader.getSampleRate ();
       const unsigned indepPeriod = (sampleRate < 48000 ? sampleRate / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
       const unsigned mod3Percent = unsigned ((expectLength * (3 + coreSbrFrameLengthIndex)) >> 17);
-      uint32_t byteCount = 0, bw = 0, bwMax = 0, br; // for bytes read and bit-rate
+      uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
+      uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
       uint32_t headerRes = 0;
+      // initialize LoudnessEstimator object
+      LoudnessEstimator loudnessEst (inPcmData, 24 /*bit*/, sampleRate, numChannels);
       // open & prepare ExhaleEncoder object
 #if USE_EXHALELIB_DLL
       ExhaleEncAPI&  exhaleEnc = *exhaleCreate (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
@@ -376,7 +387,7 @@ int main (const int argc, char* argv[])
 
       // init encoder, generate UsacConfig()
       memset (outAuData, 0, 108 * sizeof (uint8_t));  // max. allowed ASC + UC size
-      i = exhaleEnc.initEncoder (outAuData, &bw);  // bw holds actual ASC + UC size
+      i = exhaleEnc.initEncoder (outAuData, &bw); // bw stores actual ASC + UC size
 
       if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength,
                                 indepPeriod, outAuData, bw, time (nullptr) & UINT_MAX, (char) variableCoreBitRateMode)) != 0)
@@ -433,7 +444,7 @@ int main (const int argc, char* argv[])
       }
       if (bwMax < bw) bwMax = bw;
       // write first AU, add frame to header
-      if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+      if ((mp4Writer.addFrameAU (outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
       {
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -456,7 +467,7 @@ int main (const int argc, char* argv[])
         }
         if (bwMax < bw) bwMax = bw;
         // write new AU, add frame to header
-        if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+        if ((mp4Writer.addFrameAU (outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
         {
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -486,7 +497,7 @@ int main (const int argc, char* argv[])
       }
       if (bwMax < bw) bwMax = bw;
       // write final AU, add frame to header
-      if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+      if ((mp4Writer.addFrameAU (outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
       {
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -513,7 +524,7 @@ int main (const int argc, char* argv[])
         }
         if (bwMax < bw) bwMax = bw;
         // the flush AU, add frame to header
-        if (mp4Writer.addFrameAU (outAuData, byteCount, bw) != bw)
+        if (mp4Writer.addFrameAU (outAuData, bw) != bw) // zero, no loudness update
         {
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -555,14 +566,34 @@ int main (const int argc, char* argv[])
           bw = _WRITE(outFileHandle, inPcmData, br);
         }
       }
+      i = 0; // no errors
 
+      // loudness and sample peak of program
+      loudStats = loudnessEst.getStatistics ();
+      if (numChannels < 7)
+      {
+        // quantize for loudnessInfo() reset
+        const uint32_t qLoud = uint32_t (4.0f * __max (0.0f, (loudStats >> 16) / 512.f + EA_LOUD_NORM) + 0.5f);
+        const uint32_t qPeak = uint32_t (32.0f * (20.0f - 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) - EA_PEAK_NORM) + 0.5f);
+
+        // recreate ASC + UC + loudness data
+        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6); // measurementSystem is 3
+        memset (outAuData, 0, 108 * sizeof (uint8_t)); // max allowed ASC + UC size
+        i = exhaleEnc.initEncoder (outAuData, &bw); // with finished loudnessInfo()
+      }
       // mean & max. bit-rate of encoded AUs
       br = uint32_t (((actualLength >> 1) + 8 * (byteCount + 4 * (int64_t) mp4Writer.getFrameCount ()) * sampleRate) / actualLength);
       bw = uint32_t (((frameLength  >> 1) + 8 * (bwMax + 4u /* maximum AU size + stsz as a bit-rate */) * sampleRate) / frameLength);
-      bw = mp4Writer.finishFile (br, bw, uint32_t (__min (UINT_MAX - startLength, actualLength)), time (nullptr) & UINT_MAX);
-
+      bw = mp4Writer.finishFile (br, bw, uint32_t (__min (UINT_MAX - startLength, actualLength)), time (nullptr) & UINT_MAX,
+                                 (i == 0) && (numChannels < 7) ? outAuData : nullptr);
+      // print out collected file statistics
       fprintf_s (stdout, " Done, actual average %.1f kbit/s\n\n", (float) br * 0.001f);
-      i = 0; // no errors
+      if (numChannels < 7)
+      {
+        fprintf_s (stdout, " Input statistics: Mobile loudness %.2f LUFS,\tsample peak level %.2f dBFS\n\n",
+                   (loudStats >> 16) / 512.f - 100.0f, 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) + EA_PEAK_NORM);
+      }
+
       if (!readStdin && (actualLength != expectLength || bw != headerRes))
       {
         fprintf_s (stderr, " WARNING: %lld sample frames read but %lld sample frames expected!\n", (long long) actualLength, (long long) expectLength);

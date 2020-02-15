@@ -1,5 +1,5 @@
 /* bitStreamWriter.cpp - source file for class with basic bit-stream writing capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -375,7 +375,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
 // public functions
 unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex,  const bool shortFrameLength,
                                              const uint8_t chConfigurationIndex, const uint8_t numElements,
-                                             const ELEM_TYPE* const elementType, const bool configExtensionPresent,
+                                             const ELEM_TYPE* const elementType, const uint32_t loudnessInfo,
 #if !RESTRICT_TO_AAC
                                              const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
 #endif
@@ -429,25 +429,28 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
     }
   } // for el
 
-  m_auBitStream.write (configExtensionPresent ? 1 : 0, 1); // usacConfigExten...
-  if (configExtensionPresent) // 23003-4: loudnessInfo
+  m_auBitStream.write (loudnessInfo > 0 ? 1 : 0, 1); // ..ConfigExtensionPresent
+  if (loudnessInfo > 0) // ISO 23003-4: loudnessInfo()
   {
+    const unsigned methodDefinition = (loudnessInfo >> 14) & 0xF;
+    const unsigned methodValueBits  = (methodDefinition == 7 ? 5 : (methodDefinition == 8 ? 2 : 8)); 
+
     m_auBitStream.write (0, 2); // numConfigExtensions
     m_auBitStream.write (ID_EXT_LOUDNESS_INFO, 4);
-    m_auBitStream.write (8, 4); // usacConfigExtLength
+    m_auBitStream.write (methodValueBits < 3 ? 7 : 8, 4); // usacConfigExtLength
 
     m_auBitStream.write (1, 12);// loudnessInfoCount=1
-    m_auBitStream.write (1, 14); // peakLevelPresent=1
-    m_auBitStream.write (0, 12);  // bsSamplePeakLevel
+    m_auBitStream.write (1, 14);// samplePeakLevel..=1
+    m_auBitStream.write ((loudnessInfo >> 18) & 0xFFF, 12); // bsSamplePeakLevel
     m_auBitStream.write (1, 5);  // measurementCount=1
+    m_auBitStream.write (methodDefinition, 4);
+    m_auBitStream.write ((loudnessInfo >> 6) & ((1 << methodValueBits) - 1), methodValueBits);
+    m_auBitStream.write ((loudnessInfo >> 2) & 0xF, 4);     // measurementSystem
+    m_auBitStream.write ((loudnessInfo & 0x3), 2);  // reliability, 3 = accurate
 
-    m_auBitStream.write (1, 4);  // methodDefinition=1
-    m_auBitStream.write (0, 8); // methodValue storage
-    m_auBitStream.write (0, 4); // measurementSystem=0
-    m_auBitStream.write (3, 2); // reliability=3, good
-
-    m_auBitStream.write (0, 1);  // ...SetExtPresent=0
-    bitCount += 72;
+    m_auBitStream.write (0, 1);  // loudnessInfoSetExtPresent=0, payload padding
+    bitCount += (methodValueBits < 3 ? 66 : 74);
+    if (methodValueBits >= 3) m_auBitStream.write (0, 10 - methodValueBits);
   }
 
   bitCount += (8 - m_auBitStream.heldBitCount) & 7;

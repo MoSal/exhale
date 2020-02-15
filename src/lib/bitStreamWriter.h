@@ -1,5 +1,5 @@
 /* bitStreamWriter.h - header file for class with basic bit-stream writing capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -56,7 +56,7 @@ public:
   // public functions
   unsigned createAudioConfig (const char samplingFrequencyIndex,  const bool shortFrameLength,
                               const uint8_t chConfigurationIndex, const uint8_t numElements,
-                              const ELEM_TYPE* const elementType, const bool configExtensionPresent,
+                              const ELEM_TYPE* const elementType, const uint32_t loudnessInfo,
 #if !RESTRICT_TO_AAC
                               const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
 #endif

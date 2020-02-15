@@ -1,5 +1,5 @@
 /* basicMP4Writer.cpp - source file for class with basic MPEG-4 file writing capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -71,7 +71,7 @@ static uint16_t toUShortValue (const uint8_t hiByte, const uint8_t loByte)
 }
 
 // public functions
-int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteOffset, const uint32_t byteCount)
+int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteCount)
 {
   if ((m_fileHandle == -1) || (m_m4aMdatSize > 0xFFFFFFF0u - byteCount))
   {
@@ -94,7 +94,7 @@ int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteOffse
 }
 
 int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBitrate, const uint32_t audioLength,
-                                const uint32_t modifTime /*= 0*/)
+                                const uint32_t modifTime /*= 0*/, const uint8_t* ascBuf /*= nullptr*/)
 {
   const unsigned numFramesFirstPeriod = __min (m_frameCount, m_rndAccPeriod);
   const unsigned numFramesFinalPeriod = (m_frameCount <= m_rndAccPeriod ? 0 : m_frameCount % m_rndAccPeriod);
@@ -102,7 +102,14 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const uint32_t stszAtomSize = STSX_BSIZE + 4 /*bytes for sampleSize*/ + m_frameCount * 4;
   const uint32_t stscAtomSize = STSX_BSIZE + (numFramesFinalPeriod == 0 ? 12 : 24);
   const uint32_t stcoAtomSize = STSX_BSIZE + (uint32_t) m_rndAccOffsets.size () * 4;
+#ifndef NO_FIX_FOR_ISSUE_1
+  const uint32_t stssAtomSize = STSX_BSIZE;
+  const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize + stssAtomSize;
+  const uint32_t  headerBytes = STAT_HEADER_SIZE + m_dynamicHeader.size () + stscAtomSize + stcoAtomSize + stssAtomSize;
+#else
   const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize;
+  const uint32_t  headerBytes = STAT_HEADER_SIZE + m_dynamicHeader.size () + stscAtomSize + stcoAtomSize;
+#endif
   const uint32_t moovAtomSize = toBigEndian (toUShortValue (MOOV_BSIZE) + stblIncrSize);
   const uint32_t trakAtomSize = toBigEndian (toUShortValue (TRAK_BSIZE) + stblIncrSize);
   const uint32_t mdiaAtomSize = toBigEndian (toUShortValue (MDIA_BSIZE) + stblIncrSize);
@@ -110,13 +117,19 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const uint32_t stblAtomSize = toBigEndian (toUShortValue (STBL_BSIZE) + stblIncrSize);
   const uint32_t numSamplesBE = toBigEndian (audioLength);
   const uint32_t  timeStampBE = toBigEndian (modifTime);
-  const uint32_t  headerBytes = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + stscAtomSize + stcoAtomSize;
   uint32_t* const header4Byte = (uint32_t* const) m_staticHeader;
   int bytesWritten = 0;
 
   if ((m_fileHandle == -1) || (m_m4aMdatSize > 0xFFFFFFF0u - headerBytes))
   {
     return 1; // invalid file handle or file getting too big
+  }
+
+  if (ascBuf != nullptr) // update ASC + UC data if required
+  {
+    memcpy (&m_staticHeader[571], ascBuf, 5 * sizeof (uint8_t));
+
+    for (unsigned i = 0; i < m_ascSizeM5; i++) m_dynamicHeader.at (i) = ascBuf[5 + i];
   }
 
   // finish setup of fixed-length part of MPEG-4 file header
@@ -211,6 +224,19 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
     m_dynamicHeader.push_back ((rndAccOffset >>  8) & UCHAR_MAX);
     m_dynamicHeader.push_back ( rndAccOffset        & UCHAR_MAX);
   }
+#ifndef NO_FIX_FOR_ISSUE_1
+  m_dynamicHeader.push_back ((stssAtomSize >> 24) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((stssAtomSize >> 16) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((stssAtomSize >>  8) & UCHAR_MAX);
+  m_dynamicHeader.push_back ( stssAtomSize        & UCHAR_MAX);
+  m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74);
+  m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x73); // stss
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+#endif
+
   m_dynamicHeader.push_back ((m_m4aMdatSize >> 24) & UCHAR_MAX);
   m_dynamicHeader.push_back ((m_m4aMdatSize >> 16) & UCHAR_MAX);
   m_dynamicHeader.push_back ((m_m4aMdatSize >>  8) & UCHAR_MAX);
@@ -248,7 +274,11 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
   const unsigned frameCount = ((audioLength + m_frameLength - 1) / m_frameLength) + (flushFrameUsed ? 2 : 1);
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
   const unsigned finalChunk = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
+#ifndef NO_FIX_FOR_ISSUE_1
+  const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6+4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 4 +
+#else
   const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6+4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 3 +
+#endif
                               (finalChunk == 0 ? 12 : 24) /*stsc*/ + chunkCount * 4 /*stco*/ + 8 /*mdat*/;
   int bytesWritten = 0;
 

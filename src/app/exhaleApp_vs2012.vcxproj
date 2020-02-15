@@ -157,6 +157,7 @@
     <ClInclude Include="basicMP4Writer.h" />
     <ClInclude Include="basicWavReader.h" />
     <ClInclude Include="exhaleAppPch.h" />
+    <ClInclude Include="loudnessEstim.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="basicMP4Writer.cpp" />
@@ -168,6 +169,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="loudnessEstim.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="exhaleApp.rc" />

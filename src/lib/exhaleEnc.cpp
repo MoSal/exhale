@@ -1158,7 +1158,11 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
   m_tempAnalyzer.getTempAnalysisStats (m_tempAnaNext, nChannels);
   m_tempAnalyzer.getTransientLocation (m_tranLocNext, nChannels);
 
+#ifndef NO_FIX_FOR_ISSUE_1
+  m_indepFlag = (((m_frameCount++) % m_indepPeriod) <= 1); // configure usacIndependencyFlag
+#else
   m_indepFlag = (((m_frameCount++) % m_indepPeriod) == 0); // configure usacIndependencyFlag
+#endif
 
   for (unsigned el = 0; el < m_numElements; el++)  // element loop
   {
@@ -1534,6 +1538,32 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   }
   if (errorValue > 0) return errorValue;
 
+  // get window band table index
+  errorValue = (unsigned) m_frequencyIdx; // for temporary storage
+#if RESTRICT_TO_AAC
+  m_swbTableIdx = freqIdxToSwbTableIdxAAC[errorValue];
+#else
+  m_swbTableIdx = (m_frameLength == CCFL_768 ? freqIdxToSwbTableIdx768[errorValue] : freqIdxToSwbTableIdxAAC[errorValue]);
+#endif
+  errorValue = 0;
+
+  if (m_elementData[0] != nullptr) // initEncoder was called before, don't reallocate memory
+  {
+    if (audioConfigBuffer != nullptr) // recreate the UsacConfig()
+    {
+      errorValue = m_outStream.createAudioConfig (m_frequencyIdx, m_frameLength != CCFL_1024, chConf, m_numElements,
+                                                  elementTypeConfig[chConf], audioConfigBytes ? *audioConfigBytes : 0,
+#if !RESTRICT_TO_AAC
+                                                  m_timeWarping, m_noiseFilling,
+#endif
+                                                  audioConfigBuffer);
+      if (audioConfigBytes) *audioConfigBytes = errorValue; // size of UsacConfig() in bytes
+      errorValue = (errorValue == 0 ? 1 : 0);
+    }
+
+    return errorValue;
+  }
+
   // allocate all helper structs
   for (unsigned el = 0; el < m_numElements; el++)  // element loop
   {
@@ -1571,14 +1601,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   if (errorValue > 0) return errorValue;
 
   // initialize coder class memory
-  errorValue = (unsigned) m_frequencyIdx; // for temporary storage
-#if RESTRICT_TO_AAC
-  m_swbTableIdx = freqIdxToSwbTableIdxAAC[errorValue];
-#else
-  m_swbTableIdx = (m_frameLength == CCFL_768 ? freqIdxToSwbTableIdx768[errorValue] : freqIdxToSwbTableIdxAAC[errorValue]);
-#endif
-  m_tempIntBuf  = m_timeSignals[0];
-  errorValue = 0;
+  m_tempIntBuf = m_timeSignals[0];
 #if EC_TRELLIS_OPT_CODING
   if (m_sfbQuantizer.initQuantMemory (nSamplesInFrame, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode) > 0 ||
 #else
@@ -1593,7 +1616,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   if ((errorValue == 0) && (audioConfigBuffer != nullptr)) // save UsacConfig() for writeout
   {
     errorValue = m_outStream.createAudioConfig (m_frequencyIdx, m_frameLength != CCFL_1024, chConf, m_numElements,
-                                                elementTypeConfig[chConf], false /*usacConfigExtensionPresent=0*/,
+                                                elementTypeConfig[chConf], audioConfigBytes ? *audioConfigBytes : 0,
 #if !RESTRICT_TO_AAC
                                                 m_timeWarping, m_noiseFilling,
 #endif

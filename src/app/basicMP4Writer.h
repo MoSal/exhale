@@ -1,5 +1,5 @@
 /* basicMP4Writer.h - header file for class with basic MPEG-4 file writing capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -50,9 +50,9 @@ public:
   // destructor
   ~BasicMP4Writer() { m_dynamicHeader.clear (); m_rndAccOffsets.clear (); }
   // public functions
-  int addFrameAU (const uint8_t* byteBuf, const uint32_t byteOffset, const uint32_t byteCount);
+  int addFrameAU (const uint8_t* byteBuf, const uint32_t byteCount);
   int finishFile (const unsigned avgBitrate, const unsigned maxBitrate, const uint32_t audioLength,
-                  const uint32_t modifTime = 0);
+                  const uint32_t modifTime = 0, const uint8_t* ascBuf = nullptr);
   unsigned getFrameCount () const { return m_frameCount; }
   int initHeader (const uint32_t audioLength);
   unsigned open  (const int mp4FileHandle, const unsigned sampleRate,  const unsigned numChannels,
