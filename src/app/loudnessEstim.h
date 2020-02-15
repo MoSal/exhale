@@ -14,9 +14,9 @@
 #include "exhaleAppPch.h"
 
 // constants, experimental macros
-#define LE_THRESH_ABS   (15.0f / 134217728.0f) // absolute threshold for -70 LUFS
-#define LE_THRESH_REL         0.1f // 2nd stage, relative threshold 10 dB below L
-#define LE_LUFS_OFFSET  -0.484375f // to return -3.01 LUFS for 997-Hz 0-dBFS sine
+#define LE_THRESH_ABS   (15.0f / 268435456.0f) // absolute threshold for -70 LUFS
+#define LE_THRESH_REL       0.1f // second stage, relative threshold 10dB below L
+#define LE_LUFS_OFFSET  2.53125f // to get -3.01 LUFS for mono 997-Hz 0-dBFS sine
 
 // ITU-R loudness estimator class
 class LoudnessEstimator

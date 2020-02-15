@@ -30,6 +30,7 @@ OBJS      = \
 	$(DIR_OBJ)/basicWavReader.o \
 	$(DIR_OBJ)/exhaleApp.o \
 	$(DIR_OBJ)/exhaleAppPch.o \
+	$(DIR_OBJ)/loudnessEstim.o \
 
 # define libraries to link with
 LIBS      = -ldl
