@@ -92,8 +92,9 @@ uint32_t LoudnessEstimator::addNewPcmData (const unsigned samplesPerChannel)
 
 uint32_t LoudnessEstimator::getStatistics (const bool includeWarmUp /*= false*/)
 {
-  const uint32_t numWarmUpBlocks = (includeWarmUp ? 0 : 3);
-  const uint32_t numGatingBlocks = __max (numWarmUpBlocks, m_gbRmsValues.size ()) - numWarmUpBlocks;
+  const uint32_t numVectorValues = (uint32_t) m_gbRmsValues.size ();
+  const uint32_t numWarmUpBlocks = includeWarmUp ? 0 : 3;
+  const uint32_t numGatingBlocks = __max (numWarmUpBlocks, numVectorValues) - numWarmUpBlocks;
   const uint16_t maxValueDivisor = __max (1u, m_inputMaxValue >> 16);
   const uint16_t peakValue16Bits = __min (USHRT_MAX, (m_inputPeakValue + (maxValueDivisor >> 1)) / maxValueDivisor);
   uint32_t i, numBlocks = 0;
@@ -104,20 +105,20 @@ uint32_t LoudnessEstimator::getStatistics (const bool includeWarmUp /*= false*/)
   const float normFac = 1.0f / numGatingBlocks; // prevents loop overflow
 
   // calculate arithmetic average of blocks satisfying absolute threshold
-  for (zg = 0.0f, i = numWarmUpBlocks; i < m_gbRmsValues.size (); i++)
+  for (zg = 0.0f, i = numWarmUpBlocks; i < numVectorValues; i++)
   {
     zg += normFac * (float) m_gbRmsValues.at (i) * (float) m_gbRmsValues.at (i);
   }
-  if (zg < LE_THRESH_ABS) return peakValue16Bits; // quiet loudness stats
+  if (zg < LE_THRESH_ABS) return peakValue16Bits;
 
   thrR = LE_THRESH_REL * zg; // find blocks satisfying relative threshold
-  for (zg = 0.0f, i = numWarmUpBlocks; i < m_gbRmsValues.size (); i++)
+  for (zg = 0.0f, i = numWarmUpBlocks; i < numVectorValues; i++)
   {
     const float p = (float) m_gbRmsValues.at (i) * (float) m_gbRmsValues.at (i);
 
     if (p > thrR) { zg += normFac * p;  numBlocks++; }
   }
-  if (zg < LE_THRESH_ABS) return peakValue16Bits; // quiet loudness stats
+  if (zg < LE_THRESH_ABS) return peakValue16Bits;
 
   zg = LE_LUFS_OFFSET + 10.0f * log10 (zg / (normFac * numBlocks * (float) m_inputMaxValue * (float) m_inputMaxValue));
   i  = __max (0, int32_t ((zg + 100.0f) * 512.0f + 0.5f)); // map to uint

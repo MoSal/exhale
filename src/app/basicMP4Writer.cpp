@@ -105,10 +105,10 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
 #ifndef NO_FIX_FOR_ISSUE_1
   const uint32_t stssAtomSize = STSX_BSIZE;
   const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize + stssAtomSize;
-  const uint32_t  headerBytes = STAT_HEADER_SIZE + m_dynamicHeader.size () + stscAtomSize + stcoAtomSize + stssAtomSize;
+  const uint32_t  headerBytes = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + stscAtomSize + stcoAtomSize + stssAtomSize;
 #else
   const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize;
-  const uint32_t  headerBytes = STAT_HEADER_SIZE + m_dynamicHeader.size () + stscAtomSize + stcoAtomSize;
+  const uint32_t  headerBytes = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + stscAtomSize + stcoAtomSize;
 #endif
   const uint32_t moovAtomSize = toBigEndian (toUShortValue (MOOV_BSIZE) + stblIncrSize);
   const uint32_t trakAtomSize = toBigEndian (toUShortValue (TRAK_BSIZE) + stblIncrSize);
@@ -215,7 +215,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back ( m_rndAccOffsets.size ()        & UCHAR_MAX);
 
   // add header size corrected random-access offsets to file
-  for (unsigned i = 0; i < m_rndAccOffsets.size (); i++)
+  for (uint32_t i = 0; i < (uint32_t) m_rndAccOffsets.size (); i++)
   {
     const uint32_t rndAccOffset = m_rndAccOffsets.at (i) + headerBytes;
 
@@ -247,7 +247,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   _SEEK (m_fileHandle, 0, 0 /*SEEK_SET*/);  // back to start
 
   bytesWritten += _WRITE (m_fileHandle, m_staticHeader, STAT_HEADER_SIZE);
-  bytesWritten += _WRITE (m_fileHandle, &m_dynamicHeader.front (), (unsigned) m_dynamicHeader.size ());
+  bytesWritten += _WRITE (m_fileHandle, &m_dynamicHeader.front (), (uint32_t) m_dynamicHeader.size ());
 
   return bytesWritten;
 }
