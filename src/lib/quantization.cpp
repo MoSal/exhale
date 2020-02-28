@@ -694,8 +694,12 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
           numQCurr += getBitCount (entropyCoder, sfCurr, sfIndexPred, grpLength, &quantCoeffs[grpStart], sfbStart - grpStart, sfbWidth);
         }
 
-        // rate-distortion decision with empirical rate threshold
+        // rate-distortion decision with empirical Lagrange value
+#if EC_TRELLIS_OPT_CODING
+        if (distCurr + getLagrangeValue (m_rateIndex) * numQCurr < distBest + getLagrangeValue (m_rateIndex) * numQBest)
+#else
         if ((numQCurr <= numQBest + (distCurr >= distBest ? -1 : short (0.5 + distBest / __max (1.0, distCurr)))))
+#endif
         {
           uint8_t* ptrTemp = ptrBest;
 
@@ -967,10 +971,11 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
       const uint16_t sfbStart = grpOffsets[sfb];
       const uint16_t sfbWidth = grpOffsets[sfb + 1] - sfbStart;
 
-      if (inScaleFac[sfb] == UCHAR_MAX)  // forced zero-quantized
+      if ((inScaleFac[sfb] == UCHAR_MAX) || (sfIndexPred <= m_maxSfIndex && inScaleFac[sfb] + INDEX_OFFSET < sfIndexPred))
       {
-        optimalSf[sfb] = sfIndexPred;
-        memset (&quantCoeffs[sfbStart], 0, sfbWidth * sizeof (uint8_t));
+        memset (&quantCoeffs[sfbStart], 0, sfbWidth * sizeof (uint8_t));  // zero SFB output
+
+        optimalSf[sfb] = sfIndexPred - (inScaleFac[sfb] == UCHAR_MAX ? 0 : INDEX_OFFSET);
       }
       else if (inScaleFac[sfb] != m_quantInSf[sfb][1]) // speedup
       {
