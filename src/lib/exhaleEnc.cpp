@@ -535,11 +535,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-#if EC_TRELLIS_OPT_CODING
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 39 - (m_bitRateMode > 2 ? 1 : 0));
-#else
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 36 - m_bitRateMode : 37);
-#endif
+  const uint64_t scaleSr         = (samplingRate < 27713 ? 36 - m_bitRateMode : 38 - (m_bitRateMode > 2 ? 1 : 0));
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - ((m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
@@ -796,9 +792,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
           if (grpLength == 1) // finalize bit count estimate, RDOC
           {
-            estimBitCount += ((entrCoder.arithGetCtxState () >> 17) & 31) + 2; // m_acBits+2
 #if EC_TRELLIS_OPT_CODING
-            estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, m_bitRateMode, // __min (estimBitCount, targetBitCountX2),
+            estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, __min (estimBitCount + 2, targetBitCountX2),
                                                              grpOff, grpRms, grpData.sfbsPerGroup, m_mdctQuantMag[ci]);
             for (b = 1; b < grpData.sfbsPerGroup; b++)
             {

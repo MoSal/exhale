@@ -1,5 +1,5 @@
 /* quantization.h - header file for class with nonuniform quantization functionality
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -18,7 +18,6 @@
 #define FOUR_LOG102   13.28771238 // 4 / log10 (2)
 #define SF_QUANT_OFFSET 0.4783662 // for scale fac
 #define SFB_QUANT_FAST_POW      1 // faster pow ()
-#define SFB_QUANT_MORE_TESTS    1 // longer search
 #define SFB_QUANT_PERCEPT_OPT   1 // psych. quant.
 #if SFB_QUANT_FAST_POW
 #define SFB_QUANT_OFFSET 0.496094 // 13 - 29^(3/4)
@@ -44,6 +43,7 @@ private:
   uint8_t   m_maxSfIndex; // 1,..., 127
 #if EC_TRELLIS_OPT_CODING
   uint8_t   m_numCStates; // states/SFB
+  uint16_t  m_rateIndex; // lambda mode
   // trellis memory, max. 8 KB @ num_swb=51
   double*   m_quantDist[52]; // quantizing distortion
   uint8_t*  m_quantInSf[52]; // initial scale factors
@@ -53,9 +53,17 @@ private:
   // helper functions
   double    getQuantDist (const unsigned* const coeffMagn, const uint8_t scaleFactor,
                           const uint8_t* const coeffQuant, const uint16_t numCoeffs);
-  uint8_t   quantizeMagn (const unsigned* const coeffMagn, const uint8_t scaleFactor,
-                         /*mod*/uint8_t* const coeffQuant, const uint16_t numCoeffs,
-                          short* const sigMaxQ = nullptr,  short* const sigNumQ = nullptr);
+  uint8_t   quantizeMagnSfb (const unsigned* const coeffMagn, const uint8_t scaleFactor,
+                            /*mod*/uint8_t* const coeffQuant, const uint16_t numCoeffs,
+#if EC_TRELLIS_OPT_CODING
+                             EntropyCoder* const arithmCoder, const uint16_t coeffOffset,
+#endif
+                             short* const sigMaxQ = nullptr,  short* const sigNumQ = nullptr);
+#if EC_TRELLIS_OPT_CODING
+  uint32_t quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8_t optimalSf, const unsigned targetBitCount,
+                             const uint16_t coeffOffset, const unsigned* const coeffMagn,  // initial MDCT magnitudes
+                             const uint16_t numCoeffs, uint8_t* const quantCoeffs); // returns updated SFB statistics
+#endif
 public:
 
   // constructor
