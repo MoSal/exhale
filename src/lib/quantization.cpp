@@ -676,48 +676,44 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
 
     if ((sfBest < sfCurr) && (sfBest != sfIndexPred) && rdOptimQuant) // R/D re-optimization
     {
+#if EC_TRELLIS_OPT_CODING
+      const double refSfbNmrDiv = m_lutSfNorm[sfCurr];
+      const double lambda       = getLagrangeValue (m_rateIndex);
+#endif
       sfCurr = quantizeMagnSfb (coeffMagn, sfCurr - 1, ptrCurr, sfbWidth,
 #if EC_TRELLIS_OPT_CODING
                                 entrCoder, sfbStart - grpStart,
 #endif
                                 &maxQCurr, &numQCurr);
 
-      if (maxQCurr <= maxQBest)
+      distCurr = getQuantDist (coeffMagn, sfCurr, ptrCurr, sfbWidth);
+      if (quantCoeffs)
       {
-        distCurr = getQuantDist (coeffMagn, sfCurr, ptrCurr, sfbWidth);
-        if (quantCoeffs)
-        {
-          memcpy (&quantCoeffs[sfbStart], ptrCurr, cpyWidth);
+        memcpy (&quantCoeffs[sfbStart], ptrCurr, cpyWidth);
 
-          entropyCoder.arithSetCodState (codStart);// reset state
-          entropyCoder.arithSetCtxState (ctxStart);
-          numQCurr += getBitCount (entropyCoder, sfCurr, sfIndexPred, grpLength, &quantCoeffs[grpStart], sfbStart - grpStart, sfbWidth);
-        }
+        entropyCoder.arithSetCodState (codStart);  // reset state
+        entropyCoder.arithSetCtxState (ctxStart);
+        numQCurr += getBitCount (entropyCoder, sfCurr, sfIndexPred, grpLength, &quantCoeffs[grpStart], sfbStart - grpStart, sfbWidth);
+      }
 
-        // rate-distortion decision with empirical Lagrange value
+      // rate-distortion decision, using empirical Lagrange value
 #if EC_TRELLIS_OPT_CODING
-        if (distCurr + getLagrangeValue (m_rateIndex) * numQCurr < distBest + getLagrangeValue (m_rateIndex) * numQBest)
+      if (distCurr * refSfbNmrDiv * refSfbNmrDiv + lambda * numQCurr < distBest * refSfbNmrDiv * refSfbNmrDiv + lambda * numQBest)
 #else
-        if ((numQCurr <= numQBest + (distCurr >= distBest ? -1 : short (0.5 + distBest / __max (1.0, distCurr)))))
+      if ((maxQCurr <= maxQBest) && (numQCurr <= numQBest + (distCurr >= distBest ? -1 : short (0.5 + distBest / __max (1.0, distCurr)))))
 #endif
-        {
-          uint8_t* ptrTemp = ptrBest;
+      {
+        maxQBest = maxQCurr;
+        numQBest = numQCurr;
+        sfBest   = sfCurr;
+      }
+      else if (quantCoeffs) // discard result, recover best trial
+      {
+        memcpy (&quantCoeffs[sfbStart], ptrBest, cpyWidth);
 
-          ptrBest  = ptrCurr;
-          ptrCurr  = ptrTemp;
-          distBest = distCurr;
-          maxQBest = maxQCurr;
-          numQBest = numQCurr;
-          sfBest   = sfCurr;
-        }
-        else if (quantCoeffs) // discard result, recover best try
-        {
-          memcpy (&quantCoeffs[sfbStart], ptrBest, cpyWidth);
-
-          entropyCoder.arithSetCodState (codFinal);  // set state
-          entropyCoder.arithSetCtxState (ctxFinal);
-        }
-      } // if (maxQCurr <= maxQBest)
+        entropyCoder.arithSetCodState (codFinal);  // reset state
+        entropyCoder.arithSetCtxState (ctxFinal);
+      }
     }
 
     if (grpStats)
