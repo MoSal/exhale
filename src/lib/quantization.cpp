@@ -160,6 +160,34 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
 #endif
     if ((bitCount = quantizeMagnRDOC (entrCoder, (uint8_t) sf, bitCount, coeffOffset, coeffMagn, numCoeffs, coeffQuant)) > 0)
     {
+      if ((bitCount & USHRT_MAX) && (sf < m_maxSfIndex)) // !zero
+      {
+        const double magnNormDiv = m_lutSfNorm[sf];
+
+        dNum = dDen = 0.0;
+        for (int i = numCoeffs - 1; i >= 0; i--)
+        {
+          const double normalizedMagn = (double) coeffMagn[i] * magnNormDiv;
+          const uint8_t q = coeffQuant[i];
+
+          if (q > 0)
+          {
+            dNum += m_lutXExp43[q] * normalizedMagn;
+            dDen += m_lutXExp43[q] * m_lutXExp43[q];
+          }
+#if SFB_QUANT_PERCEPT_OPT
+          else   // assume perceptual transparency for code below
+          {
+            dNum += normalizedMagn * normalizedMagn;
+            dDen += normalizedMagn * normalizedMagn;
+          }
+#endif
+        }
+
+        // re-compute least-squares optimal scale factor modifier
+        if (dNum > 1.0946035575 * dDen) sf++; // speedup for: if (dNum > dDen) sf += short (SF_QUANT_OFFSET + FOUR_LOG102 * log10 (dNum / dDen));
+      } // if !zero
+
       if (sigMaxQ) *sigMaxQ = short (bitCount >> 16); // new max.
       if (sigNumQ) *sigNumQ = short (bitCount & USHRT_MAX); // L0
     }
