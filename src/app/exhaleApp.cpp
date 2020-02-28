@@ -27,12 +27,6 @@
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
 #include <windows.h>
 
-// constants, experimental macros
-#define EA_LOUD_INIT  16399u  // bsSamplePeakLevel = 0 & methodValue = 0
-#define EA_LOUD_NORM -42.25f  // -100 + 57.75 of ISO 23003-4, Table A.48
-#define EA_PEAK_NORM -96.33f  // 20 * log10(2^-16), 16-bit normalization
-#define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
-
 #define EXHALE_TEXT_BLUE  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN)
 #define EXHALE_TEXT_PINK  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED)
 #else // Linux, MacOS, Unix
@@ -40,6 +34,12 @@
 #define EXHALE_TEXT_BLUE  "\x1b[36m"
 #define EXHALE_TEXT_PINK  "\x1b[35m"
 #endif
+
+// constants, experimental macros
+#define EA_LOUD_INIT  16399u  // bsSamplePeakLevel = 0 & methodValue = 0
+#define EA_LOUD_NORM -42.25f  // -100 + 57.75 of ISO 23003-4, Table A.48
+#define EA_PEAK_NORM -96.33f  // 20 * log10(2^-16), 16-bit normalization
+#define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
 #define IGNORE_WAV_LENGTH  0  // 1: ignore input size indicators (nasty)
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 
@@ -591,7 +591,7 @@ int main (const int argc, char* argv[])
       if (numChannels < 7)
       {
         fprintf_s (stdout, " Input statistics: Mobile loudness %.2f LUFS,\tsample peak level %.2f dBFS\n\n",
-                   (loudStats >> 16) / 512.f - 100.0f, 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) + EA_PEAK_NORM);
+                   __max (3u, loudStats >> 16) / 512.f - 100.0f, 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) + EA_PEAK_NORM);
       }
 
       if (!readStdin && (actualLength != expectLength || bw != headerRes))

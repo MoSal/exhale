@@ -12,6 +12,7 @@
 #define _EXHALE_APP_PCH_H_
 
 #include <limits.h> // for .._MAX, .._MIN
+#include <math.h>   // for log, pow, sqrt
 #include <stdint.h> // for (u)int8_t, (u)int16_t, (u)int32_t, (u)int64_t
 #include <stdlib.h> // for abs, div, calloc, malloc, free, (__)max, (__)min, (s)rand
 #include <string.h> // for memcpy, memset
