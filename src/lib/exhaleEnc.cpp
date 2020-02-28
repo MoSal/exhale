@@ -252,11 +252,11 @@ static const uint8_t freqIdxToSwbTableIdx768[USAC_NUM_SAMPLE_RATES + 2] = {
   /*96000*/ 0, 0, 0, 1, 1, 2,/*24000*/ 2, 2, 3, 4, 4, 4, 4, // AAC
   255, 255, 0, 1, 2, 2, 2, 2,/*25600*/ 2, 3, 3, 3, 3, 4, 4 // USAC
 };
-#endif // !RESTRICT_TO_AAC
+#endif
 
 // ISO/IEC 23003-3, Table 131
 static const uint8_t tnsScaleFactorBandLimit[2 /*long/short*/][USAC_NUM_FREQ_TABLES] = { // TNS_MAX_BANDS
-#if RESTRICT_TO_AAC
+#if 0 // RESTRICT_TO_AAC
   {31, 34, 51 /*to be corrected to 42 (44.1) and 40 (48 kHz)!*/, 46, 42, 39}, {9, 10, 14, 14, 14, 14}
 #else
   {31, 34, 51 /*to be corrected to 42 (44.1) and 40 (48 kHz)!*/, 47, 43, 40}, {9, 10, 14, 15, 15, 15}

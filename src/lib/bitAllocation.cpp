@@ -1,5 +1,5 @@
 /* bitAllocation.cpp - source file for class needed for psychoacoustic bit-allocation
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -27,7 +27,7 @@ static void jndPowerLawAndPeakSmoothing (uint32_t* const  stepSizes, const unsig
 {
   const unsigned  expTimes512 = 512u - sfm; // 1.0 - sfm / 2.0
   const unsigned  mulTimes512 = __min (expTimes512, 512u - tfm);
-  uint32_t         stepSizeM3 = 0, stepSizeM2 = 0, stepSizeM1 = 99 + BA_EPS; // hearing threshold around DC
+  uint32_t         stepSizeM3 = 0, stepSizeM2 = 0, stepSizeM1 = BA_EPS; // hearing threshold around zero Hz
   unsigned b;
 
   for (b = 0; b < __min (2, nStepSizes); b++)
@@ -165,7 +165,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
     const uint32_t*   rms = grpData.sfbRmsValues;
     uint32_t*   stepSizes = &sfbStepSizes[ch * numSwbShort * NUM_WINDOW_GROUPS];
 // --- apply INTRA-channel simultaneous masking, equal-loudness weighting, and thresholding to SFB RMS data
-    uint32_t maskingSlope = LF, b, elw = 58254; // 8/9
+    uint32_t maskingSlope = 0, b, elw = 58254; // 8/9
     uint32_t rmsEqualLoud = 0;
     uint32_t sumStepSizes = 0;
 
@@ -199,7 +199,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
           gStepSizes[b] = __max (gRms[b], BA_EPS);
           sumStepSizes += unsigned (0.5 + sqrt ((double) gStepSizes[b]));
         }
-        gStepSizes[0]   = __max (gRms[0], maskingSlope + BA_EPS);
+        gStepSizes[0]   = __max (gRms[0], BA_EPS);
         sumStepSizes   += unsigned (0.5 + sqrt ((double) gStepSizes[0]));
       } // for gr
 
@@ -219,7 +219,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
       continue;
     }
 
-    stepSizes[0]   = __max (rms[0], maskingSlope + BA_EPS);
+    stepSizes[0]   = __max (rms[0], BA_EPS);
     for (b = 1; b < __min (LF, maxSfbInCh); b++) // apply steeper low-frequency simultaneous masking slopes
     {
       maskingSlope = (stepSizes[b - 1] + (msOffset << (9u - b))) >> (msShift + 9u - b);
