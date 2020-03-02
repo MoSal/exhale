@@ -13,7 +13,7 @@
 
 #define EC_TRAIN (0 && EC_TRELLIS_OPT_CODING) // for RDOC testing
 
-// static helper function
+// static helper functions
 static inline short getBitCount (EntropyCoder& entrCoder, const int sfIndex, const int sfIndexPred,
                                  const uint8_t groupLength, const uint8_t* coeffQuant,
                                  const uint16_t coeffOffset, const uint16_t numCoeffs)
@@ -38,7 +38,7 @@ static inline short getBitCount (EntropyCoder& entrCoder, const int sfIndex, con
 #if EC_TRELLIS_OPT_CODING && !EC_TRAIN
 static inline double getLagrangeValue (const uint16_t rateIndex) // RD optimization constant
 {
-  return (108.0 + rateIndex * rateIndex) / 1024.0;
+  return (108.0 + rateIndex * rateIndex) * 0.0009765625; // /1024
 }
 #endif
 
@@ -137,8 +137,11 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
   if (sigMaxQ) *sigMaxQ = maxQ; // max. quantized value magnitude
   if (sigNumQ) *sigNumQ = numQ; // nonzero coeff. count (L0 norm)
 
-  // compute least-squares optimal gain multiplied onto step-size
-  sf = scaleFactor + short (SF_QUANT_OFFSET + FOUR_LOG102 * log10 (dNum <= 0.0 ? 1.0 : dNum / dDen) - (dNum < dDen ? 1.0 : 0.0));
+  sf = scaleFactor;
+  // compute least-squares optimal modifier added to scale factor
+  if (dNum > SF_THRESH_POS * dDen) sf++;
+  else
+  if (dNum < SF_THRESH_NEG * dDen) sf--;
 
 #if EC_TRELLIS_OPT_CODING
   if (arithmCoder && (sf > 0) && (maxQ <= SCHAR_MAX)) // use RDOC
@@ -185,7 +188,9 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
         }
 
         // re-compute least-squares optimal scale factor modifier
-        if (dNum > 1.0946035575 * dDen) sf++; // speedup for: if (dNum > dDen) sf += short (SF_QUANT_OFFSET + FOUR_LOG102 * log10 (dNum / dDen));
+        if (dNum > SF_THRESH_POS * dDen) sf++;
+        else
+        if (dNum < SF_THRESH_NEG * dDen) sf--;
       } // if !zero
 
       if (sigMaxQ) *sigMaxQ = short (bitCount >> 16); // new max.
@@ -257,6 +262,18 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
         const uint8_t redA = is >> 1;
         const uint8_t redB = is &  1;
 
+        if ((redA > 0 && coeffQuantA != 1) || (redB > 0 && coeffQuantB != 1))  // avoid path
+        {
+       // quantDist[tuple][is] = (double) UINT_MAX;
+          tempCodState[is] = tempCodState[0];
+          tempCtxState[is] = tempCtxState[0];
+          for (ds = numStates - 1; ds >= 0; ds--)
+          {
+            currRate[ds] = UCHAR_MAX;
+          }
+          continue;
+        }
+
         zeroA = (coeffQuantA <= redA);
         zeroB = (coeffQuantB <= redB);
         diffA = (zeroA ? normalMagnA : m_lutXExp43[coeffQuantA - redA] - normalMagnA);
@@ -296,6 +313,13 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
       {
         for (ds = numStates - 1; ds >= 0; ds--)
         {
+          if (quantRate[(ds + (tuple-1) * numStates) * numStates] >= UCHAR_MAX)// avoid path
+          {
+            currRate[ds] = UCHAR_MAX;
+
+            continue;
+          }
+
           entropyCoder.arithSetCodState (prevCodState[ds]);
           entropyCoder.arithSetCtxState (prevCtxState[ds], tupleOffset);
           tempBitCount = entropyCoder.arithCodeSigMagn (mag, tupleOffset, 2);
@@ -639,7 +663,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
     {
       for (uint8_t c = 0; (c < 2) && (maxQBest > SCHAR_MAX); c++)  // very rarely done twice
       {
-        sfCurr += getScaleFacOffset (pow ((double) maxQBest, 4.0 / 3.0) / m_lutXExp43[SCHAR_MAX]) + c;
+        sfCurr += getScaleFacOffset (pow ((double) maxQBest, 4.0 / 3.0) * 0.001566492688) + c; // / m_lutXExp43[SCHAR_MAX]
         sfBest = quantizeMagnSfb (coeffMagn, sfCurr, ptrBest, sfbWidth,
 #if EC_TRELLIS_OPT_CODING
                                   entrCoder, sfbStart - grpStart,
@@ -876,7 +900,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
 
           entropyCoder.arithSetCodState (prevCodState[ds]);
           entropyCoder.arithSetCtxState (prevCtxState[ds], sfbStart - grpStart);
-          tempBitCount = (maxSnrReached || (prevRate == USHRT_MAX) ? USHRT_MAX : numQCurr + getBitCount (entropyCoder,
+          tempBitCount = (maxSnrReached || (prevRate >= USHRT_MAX) ? USHRT_MAX : numQCurr + getBitCount (entropyCoder,
                            (numQCurr == 0 ? prevScaleFac[ds] : sfBest), prevScaleFac[ds], 1, mag, sfbStart - grpStart, sfbWidth));
           currRate[ds] = (uint16_t) tempBitCount;
 

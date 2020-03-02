@@ -17,6 +17,8 @@
 // constants, experimental macros
 #define FOUR_LOG102   13.28771238 // 4 / log10 (2)
 #define SF_QUANT_OFFSET 0.4783662 // for scale fac
+#define SF_THRESH_NEG  0.92044821 // round -1.5 dB
+#define SF_THRESH_POS  1.09460356 // round +1.5 dB
 #define SFB_QUANT_FAST_POW      1 // faster pow ()
 #define SFB_QUANT_PERCEPT_OPT   1 // psych. quant.
 #if SFB_QUANT_FAST_POW
