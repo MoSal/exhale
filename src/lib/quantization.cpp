@@ -163,7 +163,9 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
 #endif
     if ((bitCount = quantizeMagnRDOC (entrCoder, (uint8_t) sf, bitCount, coeffOffset, coeffMagn, numCoeffs, coeffQuant)) > 0)
     {
-      if ((bitCount & USHRT_MAX) && (sf < m_maxSfIndex)) // !zero
+      numQ = bitCount & SHRT_MAX;
+
+      if ((numQ > 0) && (sf < m_maxSfIndex)) // nonzero-quantized
       {
         const double magnNormDiv = m_lutSfNorm[sf];
 
@@ -191,10 +193,10 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
         if (dNum > SF_THRESH_POS * dDen) sf++;
         else
         if (dNum < SF_THRESH_NEG * dDen) sf--;
-      } // if !zero
+      } // if nonzero
 
-      if (sigMaxQ) *sigMaxQ = short (bitCount >> 16); // new max.
-      if (sigNumQ) *sigNumQ = short (bitCount & USHRT_MAX); // L0
+      if (sigMaxQ) *sigMaxQ = (numQ > 0 ? maxQ : 0); // a new max
+      if (sigNumQ) *sigNumQ = numQ; // a new nonzero coeff. count
     }
   }
 #endif
@@ -247,15 +249,14 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
     const uint16_t tupleOffset = coeffOffset + tupleStart;
     const double   normalMagnA = (double) coeffMagn[tupleStart    ] * stepSizeDiv;
     const double   normalMagnB = (double) coeffMagn[tupleStart + 1] * stepSizeDiv;
-    const uint8_t  coeffQuantA = quantCoeffs[tupleStart];
-    const uint8_t  coeffQuantB = quantCoeffs[tupleStart + 1];
+    uint8_t  coeffQuantA = quantCoeffs[tupleStart];
+    uint8_t  coeffQuantB = quantCoeffs[tupleStart + 1];
 
     for (is = 0; is < numStates; is++)  // populate tuple trellis
     {
       uint8_t* const mag = (is != 0 ? tempQuant : quantCoeffs) - (int) tupleOffset; // see arithCodeSigMagn()
       uint8_t*  currRate = &quantRate[(is + tuple * numStates) * numStates];
       double diffA, diffB;
-      bool   zeroA, zeroB;
 
       if (is != 0) // test reduction of quantized MDCT magnitudes
       {
@@ -264,7 +265,6 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
 
         if ((redA > 0 && coeffQuantA != 1) || (redB > 0 && coeffQuantB != 1))  // avoid path
         {
-       // quantDist[tuple][is] = (double) UINT_MAX;
           tempCodState[is] = tempCodState[0];
           tempCtxState[is] = tempCtxState[0];
           for (ds = numStates - 1; ds >= 0; ds--)
@@ -273,26 +273,14 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
           }
           continue;
         }
-
-        zeroA = (coeffQuantA <= redA);
-        zeroB = (coeffQuantB <= redB);
-        diffA = (zeroA ? normalMagnA : m_lutXExp43[coeffQuantA - redA] - normalMagnA);
-        diffB = (zeroB ? normalMagnB : m_lutXExp43[coeffQuantB - redB] - normalMagnB);
-
-        mag[tupleOffset    ] = (zeroA ? 0 : coeffQuantA - redA);
-        mag[tupleOffset + 1] = (zeroB ? 0 : coeffQuantB - redB);
+        tempQuant[0] = (coeffQuantA -= redA);
+        tempQuant[1] = (coeffQuantB -= redB);
       }
-      else // is == 0, don't reduce the quantized MDCT magnitudes
-      {
-        zeroA = (coeffQuantA == 0);
-        zeroB = (coeffQuantB == 0);
-        diffA = m_lutXExp43[coeffQuantA] - normalMagnA;
-        diffB = m_lutXExp43[coeffQuantB] - normalMagnB;
-      }
+      diffA = m_lutXExp43[coeffQuantA] - normalMagnA;
+      diffB = m_lutXExp43[coeffQuantB] - normalMagnB;
       quantDist[tuple][is] = diffA * diffA + diffB * diffB;
-      numQ = 0; // sign bits
-      if (!zeroA) numQ++;
-      if (!zeroB) numQ++;
+
+      numQ  = (coeffQuantA > 0 ? 1 : 0) + (coeffQuantB > 0 ? 1 : 0);
 
       if (tuple == 0) // first tuple, with tupleStart == sfbStart
       {
@@ -434,45 +422,29 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
 #endif
   {
 #if !EC_TRAIN
-    tempBitCount = 0;  // find maximum quantized magnitude (maxQ)
+    numQ = 0;
 #endif
-    numQ = 0; // sign bits
-
     for (tuple = 0; tuple < numTuples; tuple++) // re-quantize SFB with R/D optimal rounding
     {
       const uint16_t tupleStart = tuple << 1;
+      const uint8_t  tupIs = optimalIs[tuple];
       uint8_t& coeffQuantA = quantCoeffs[tupleStart];
       uint8_t& coeffQuantB = quantCoeffs[tupleStart + 1];
-      bool zeroA, zeroB;
 
-      if (optimalIs[tuple] != 0) // reduce quantized magnitude(s)
+      if (tupIs != 0) // optimal red of quantized MDCT magnitudes
       {
-        const uint8_t redA = optimalIs[tuple] >> 1;
-        const uint8_t redB = optimalIs[tuple] &  1;
-
-        zeroA = (coeffQuantA <= redA);
-        zeroB = (coeffQuantB <= redB);
-
-        coeffQuantA = (zeroA ? 0 : coeffQuantA - redA); // reduce
-        coeffQuantB = (zeroB ? 0 : coeffQuantB - redB);
-      }
-      else  // optimalIs[tuple] == 0, don't reduce the magnitudes
-      {
-        zeroA = (coeffQuantA == 0);
-        zeroB = (coeffQuantB == 0);
+        coeffQuantA -= (tupIs >> 1);
+        coeffQuantB -= (tupIs &  1);
       }
 #if !EC_TRAIN
-      if (tempBitCount < coeffQuantA) tempBitCount = coeffQuantA; // maxQ might have changed
-      if (tempBitCount < coeffQuantB) tempBitCount = coeffQuantB;
+      numQ += (coeffQuantA > 0 ? 1 : 0) + (coeffQuantB > 0 ? 1 : 0);
 #endif
-      if (!zeroA) numQ++;
-      if (!zeroB) numQ++;
     } // for tuple
 
 #if EC_TRAIN
     return tempBitCount;
 #else
-    return ((uint32_t) tempBitCount << 16) | numQ; // final stats
+    return (1u << 15) | numQ; // final stats: OK flag | sign bits
 #endif
   }
 
