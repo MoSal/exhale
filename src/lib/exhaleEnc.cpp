@@ -535,7 +535,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 36 - m_bitRateMode : 38 - (m_bitRateMode > 2 ? 1 : 0));
+  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 38 - (m_bitRateMode > 2 ? 1 : 0));
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - ((m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
@@ -566,7 +566,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
       for (uint16_t b = 0; b < grpData.sfbsPerGroup; b++)
       {
-        const unsigned lfAtten = 4 + b * 2; // LF SNR boost, cf my M.Sc. thesis, p. 54
+        const unsigned lfConst = (samplingRate < 27713 ? 1 : 2);
+        const unsigned lfAtten = 4 + b * lfConst; // LF SNR boost, cf my M.Sc. thesis, p. 54
         const uint8_t sfbWidth = off[b + 1] - off[b];
         const uint64_t   scale = scaleBr * __min (32, lfAtten); // rate control part 1
 
@@ -631,7 +632,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
           for (b = 0; b < grpData.sfbsPerGroup; b++)
           {
-            const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * 2 : 9 + b + ((b + 5) >> 4));  // LF SNR boost
+            const unsigned lfConst = (samplingRate < 27713 && !eightShorts ? 1 : 2); // LF SNR boost, cf my M.Sc. thesis
+            const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
             const uint64_t rateFac = mSfmFac * s * __min (32, lfAtten * grpData.numWindowGroups); // rate control part 1
             const uint64_t sScaled = ((1u << 23) + __max (grpRmsMin, grpStepSizes[b]) * scaleBr * rateFac) >> 24;
