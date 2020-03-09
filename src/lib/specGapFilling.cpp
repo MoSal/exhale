@@ -24,7 +24,7 @@ SpecGapFiller::SpecGapFiller ()
 // public functions
 uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, const uint8_t* const quantMagn,
                                              const uint8_t numSwbShort, SfbGroupData& grpData /*modified*/,
-                                             const unsigned nSamplesInFrame /*= 1024*/)
+                                             const unsigned nSamplesInFrame /*= 1024*/, const uint8_t specFlat /*= 0*/)
 {
   const unsigned* const coeffMagn = sfbQuantizer.getCoeffMagnPtr ();
   const double* const  sfNormFacs = sfbQuantizer.getSfNormTabPtr ();
@@ -166,6 +166,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
   s = 0;
 #endif
   u = __min (7, uint16_t (14.47118288 + 9.965784285 * log10 (magnSum / (double) u)));
+  u = __max (1, u - int (specFlat >> 5)); // SFM-adaptive reduction
 
   magnSum = pow (2.0, (14 - u) / 3.0); // noiseVal^-1, 23003-3, 7.2
 

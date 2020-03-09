@@ -688,11 +688,18 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
 unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and entropy coding
 {
+  const unsigned nChannels        = toNumChannels (m_channelConf);
   const unsigned nSamplesInFrame  = toFrameLength (m_frameLength);
   const unsigned samplingRate     = toSamplingRate (m_frequencyIdx);
   const unsigned* const coeffMagn = m_sfbQuantizer.getCoeffMagnPtr ();
+  uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
+//uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS];
   unsigned ci = 0, s; // running index
   unsigned errorValue = (coeffMagn == nullptr ? 1 : 0);
+
+  // get means of spectral and temporal flatness for every channel
+  m_bitAllocator.getChAverageSpecFlat (meanSpecFlat, nChannels);
+//m_bitAllocator.getChAverageTempFlat (meanTempFlat, nChannels);
 
   for (unsigned el = 0; el < m_numElements; el++)  // element loop
   {
@@ -907,7 +914,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #if !RESTRICT_TO_AAC
       // obtain channel-wise noise_level and noise_offset for USAC
       coreConfig.specFillData[ch] = (!m_noiseFilling[el] ? 0 : m_specGapFiller.getSpecGapFillParams (m_sfbQuantizer, m_mdctQuantMag[ci],
-                                                                                                     m_numSwbShort, grpData, nSamplesInFrame));
+                                                                                                     m_numSwbShort, grpData, nSamplesInFrame,
+                                                                                                     shortWinCurr ? 0 : meanSpecFlat[ci]));
       // NOTE: gap-filling SFB bit count might be inaccurate now since scale factors changed
       if (coreConfig.specFillData[ch] == 1) errorValue |= 1;
 #endif
@@ -1600,7 +1608,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   // initialize coder class memory
   m_tempIntBuf = m_timeSignals[0];
 #if EC_TRELLIS_OPT_CODING
-  if (m_sfbQuantizer.initQuantMemory (nSamplesInFrame, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode) > 0 ||
+  if (m_sfbQuantizer.initQuantMemory (nSamplesInFrame, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode, toSamplingRate (m_frequencyIdx)) > 0 ||
 #else
   if (m_sfbQuantizer.initQuantMemory (nSamplesInFrame) > 0 ||
 #endif

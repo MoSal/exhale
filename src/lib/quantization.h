@@ -35,7 +35,7 @@ private:
   // member variables
   unsigned* m_coeffMagn; // temp memory
 #if EC_TRELLIS_OPT_CODING
-  uint8_t   m_coeffTemp[1024]; // TODO?
+  uint8_t*  m_coeffTemp; // temp result
 #else
   uint8_t   m_coeffTemp[200]; // 40 * 5 - NOTE: increase this when maximum grpLength > 5
 #endif
@@ -44,8 +44,9 @@ private:
   double*   m_lutXExp43; // for X^(4/3)
   uint8_t   m_maxSfIndex; // 1,..., 127
 #if EC_TRELLIS_OPT_CODING
+  uint8_t   m_maxSize8M1; // (size/8)-1
   uint8_t   m_numCStates; // states/SFB
-  uint16_t  m_rateIndex; // lambda mode
+  uint8_t   m_rateIndex; // lambda mode
   // trellis memory, max. 8 KB @ num_swb=51
   double*   m_quantDist[52]; // quantizing distortion
   uint8_t*  m_quantInSf[52]; // initial scale factors
@@ -78,7 +79,7 @@ public:
   uint8_t getScaleFacOffset (const double absValue) const { return uint8_t (SF_QUANT_OFFSET + FOUR_LOG102 * log10 (__max (1.0, absValue))); }
   unsigned  initQuantMemory (const unsigned maxTransfLength,
 #if EC_TRELLIS_OPT_CODING
-                             const uint8_t numSwb, const uint8_t bitRateMode,
+                             const uint8_t numSwb, const uint8_t bitRateMode, const unsigned samplingRate,
 #endif
                              const uint8_t maxScaleFacIndex = SCHAR_MAX);
   uint8_t   quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t* const inputCoeffs, const uint8_t grpLength,

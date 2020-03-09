@@ -216,15 +216,15 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
   const double stepSizeDiv = m_lutSfNorm[optimalSf];
   const uint16_t numStates = 4; // 4 reduction types: [0, 0], [0, -1], [-1, 0], and [-1, -1]
   const uint16_t numTuples = numCoeffs >> 1;
-  uint8_t* const quantRate = &m_coeffTemp[768];
+  uint8_t* const quantRate = &m_coeffTemp[((unsigned) m_maxSize8M1 + 1) << 3];
   uint32_t prevCodState[4] = {0, 0, 0, 0};
   uint32_t prevCtxState[4] = {0, 0, 0, 0};
   double   prevVtrbCost[4] = {0, 0, 0, 0};
   uint32_t tempCodState[4] = {0, 0, 0, 0};
   uint32_t tempCtxState[4] = {0, 0, 0, 0};
   double   tempVtrbCost[4] = {0, 0, 0, 0};
-  double   quantDist[16][4];   // TODO: dynamic memory allocation
-  uint8_t* const optimalIs = (uint8_t* const) (quantDist[16-1]);
+  double   quantDist[32][4];   // TODO: dynamic memory allocation
+  uint8_t* const optimalIs = (uint8_t* const) (quantDist[32-1]);
   uint8_t  tempQuant[4], numQ; // for tuple/SFB sign bit counting
   unsigned tempBitCount, tuple, is;
   int ds;
@@ -234,7 +234,7 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
   const double lambda = getLagrangeValue (m_rateIndex);
 #endif
 
-  if ((coeffMagn == nullptr) || (quantCoeffs == nullptr) || (optimalSf > m_maxSfIndex) || (numTuples == 0) || (numTuples > 16) ||
+  if ((coeffMagn == nullptr) || (quantCoeffs == nullptr) || (optimalSf > m_maxSfIndex) || (numTuples == 0) || (numTuples > 32) ||
       (targetBitCount == 0)  || (targetBitCount > SHRT_MAX))
   {
     return 0; // invalid input error
@@ -457,6 +457,9 @@ SfbQuantizer::SfbQuantizer ()
 {
   // initialize all helper buffers
   m_coeffMagn = nullptr;
+#if EC_TRELLIS_OPT_CODING
+  m_coeffTemp = nullptr;
+#endif
   m_lut2ExpX4 = nullptr;
   m_lutSfNorm = nullptr;
   m_lutXExp43 = nullptr;
@@ -479,6 +482,9 @@ SfbQuantizer::~SfbQuantizer ()
 {
   // free allocated helper buffers
   MFREE (m_coeffMagn);
+#if EC_TRELLIS_OPT_CODING
+  MFREE (m_coeffTemp);
+#endif
   MFREE (m_lut2ExpX4);
   MFREE (m_lutSfNorm);
   MFREE (m_lutXExp43);
@@ -496,18 +502,19 @@ SfbQuantizer::~SfbQuantizer ()
 // public functions
 unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 #if EC_TRELLIS_OPT_CODING
-                                        const uint8_t numSwb, const uint8_t bitRateMode,
+                                        const uint8_t numSwb, const uint8_t bitRateMode, const unsigned samplingRate,
 #endif
                                         const uint8_t maxScaleFacIndex /*= SCHAR_MAX*/)
 {
   const unsigned numScaleFactors = (unsigned) maxScaleFacIndex + 1;
 #if EC_TRELLIS_OPT_CODING
-  const uint8_t numTrellisStates = 5 - __min (2, (bitRateMode + 2) >> 2);  // states per SFB
+  const uint8_t numTrellisStates = (samplingRate < 44100 ? 8 - samplingRate / 32000 : 5) - __min (2, (bitRateMode + 2) >> 2); // states per SFB
   const uint8_t numSquaredStates = numTrellisStates * numTrellisStates;
+  const uint16_t quantRateLength = (samplingRate < 28800 ? 512 : 256); // quantizeMagnRDOC()
 #endif
   unsigned x;
 
-  if ((maxTransfLength < 128) || (maxTransfLength > 8192) || (maxTransfLength & 7) || (maxScaleFacIndex == 0) || (maxScaleFacIndex > SCHAR_MAX))
+  if ((maxTransfLength < 128) || (maxTransfLength > 2048) || (maxTransfLength & 7) || (maxScaleFacIndex == 0) || (maxScaleFacIndex > SCHAR_MAX))
   {
     return 1; // invalid arguments error
   }
@@ -515,6 +522,9 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
   m_maxSfIndex = maxScaleFacIndex;
 
   if ((m_coeffMagn = (unsigned*) malloc (maxTransfLength * sizeof (unsigned))) == nullptr ||
+#if EC_TRELLIS_OPT_CODING
+      (m_coeffTemp = (uint8_t* ) malloc (maxTransfLength + quantRateLength  )) == nullptr ||
+#endif
       (m_lut2ExpX4 = (double*  ) malloc (numScaleFactors * sizeof (double  ))) == nullptr ||
       (m_lutSfNorm = (double*  ) malloc (numScaleFactors * sizeof (double  ))) == nullptr ||
       (m_lutXExp43 = (double*  ) malloc ((SCHAR_MAX + 1) * sizeof (double  ))) == nullptr)
@@ -522,6 +532,7 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
     return 2; // memory allocation error
   }
 #if EC_TRELLIS_OPT_CODING
+  m_maxSize8M1 = (maxTransfLength >> 3) - 1;
   m_numCStates = numTrellisStates;
   m_rateIndex  = bitRateMode;
 
@@ -534,9 +545,9 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
       return 2;
     }
   }
-#endif
+#else
   memset (m_coeffTemp, 0, sizeof (m_coeffTemp));
-
+#endif
   // calculate scale factor gain 2^(x/4)
   for (x = 0; x < numScaleFactors; x++)
   {
@@ -762,7 +773,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
   const uint32_t codFinal = entropyCoder.arithGetCodState ();
   const uint32_t ctxFinal = entropyCoder.arithGetCtxState (); // after call to quantizeSfb()
   const uint16_t grpStart = grpOffsets[0];
-  uint8_t* const inScaleFac = &m_coeffTemp[716];
+  uint8_t* const inScaleFac = &m_coeffTemp[((unsigned) m_maxSize8M1 - 6) << 3];
   uint32_t  prevCodState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   uint32_t  prevCtxState[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   uint8_t   prevScaleFac[8] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -797,7 +808,6 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
     uint8_t* const  tempQuant = &m_coeffTemp[sfbStart - grpStart];
     bool maxSnrReached = false;
 
-    if (refQuantDist < 0.0) memset (tempQuant, 0, sfbWidth * sizeof (uint8_t));
 #if EC_TRAIN
     else refGrpDist += refQuantDist;
 #endif
@@ -808,22 +818,22 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
 
     for (is = 0; is < m_numCStates; is++) // populate SFB trellis
     {
-      uint8_t* const mag = (is != 1 ? m_coeffTemp /*= tempQuant[grpStart - sfbStart]*/ : &quantCoeffs[grpStart]);
-      double*   currDist = &m_quantDist[sfb][is];
+      const uint8_t* mag = (is != 1 ? m_coeffTemp /*= tempQuant[grpStart - sfbStart]*/ : &quantCoeffs[grpStart]);
+      double&   currDist = m_quantDist[sfb][is];
       uint16_t* currRate = &m_quantRate[sfb][is * m_numCStates];
       uint8_t     sfBest = optimalSf[sfb]; // optimal scalefactor
       short maxQCurr = 0, numQCurr = 0; // for sign bits counting
 
       if (refQuantDist < 0.0) // -1.0 means SFB is zero-quantized
       {
-        *currDist = -1.0;
+        currDist = -1.0;
         m_quantInSf[sfb][is] = refSf;
       }
       else if (is != 1) // quantization & distortion not computed
       {
         const uint8_t sfCurr = __max (0, __min (m_maxSfIndex, refSf + 1 - (int) is));
 
-        *currDist = -1.0;
+        currDist = -1.0;
         if ((sfCurr == 0) || maxSnrReached)
         {
           maxSnrReached = true;
@@ -840,16 +850,18 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
           }
           else
           {
-            *currDist = getQuantDist (coeffMagn, sfBest, tempQuant, sfbWidth) * refQuantNorm;
+            currDist = getQuantDist (coeffMagn, sfBest, tempQuant, sfbWidth) * refQuantNorm;
           }
         }
-        if (*currDist < 0.0) memset (tempQuant, 0, sfbWidth * sizeof (uint8_t));
+     // if (currDist < 0.0) memset (tempQuant, 0, sfbWidth * sizeof (uint8_t));
         m_quantInSf[sfb][is] = sfCurr; // store initial scale fac
       }
       else // is == 1, quant. & dist. computed with quantizeSfb()
       {
         numQCurr = refNumQ;
       }
+
+      if ((currDist < 0.0) || (numQCurr == 0)) mag = nullptr; // to accelerate getBitCount()
 
       if (sfb == 0) // first SFB, having sfbStart - grpStart == 0
       {

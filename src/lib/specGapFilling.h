@@ -1,5 +1,5 @@
 /* specGapFilling.h - header file for class with spectral gap filling coding methods
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -38,7 +38,7 @@ public:
   uint16_t  getFirstGapFillSfb () const { return m_1stGapFillSfb; }
   uint8_t   getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, const uint8_t* const quantMagn,
                                   const uint8_t numSwbShort, SfbGroupData& grpData /*modified*/,
-                                  const unsigned nSamplesInFrame = 1024);
+                                  const unsigned nSamplesInFrame = 1024, const uint8_t specFlat = 0);
 }; // SpecGapFiller
 
 #endif // _SPEC_GAP_FILLING_H_
