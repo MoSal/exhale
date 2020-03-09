@@ -808,6 +808,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
     uint8_t* const  tempQuant = &m_coeffTemp[sfbStart - grpStart];
     bool maxSnrReached = false;
 
+    if (refQuantDist < 0.0) memset (tempQuant, 0, sfbWidth * sizeof (uint8_t));
 #if EC_TRAIN
     else refGrpDist += refQuantDist;
 #endif
@@ -853,15 +854,13 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
             currDist = getQuantDist (coeffMagn, sfBest, tempQuant, sfbWidth) * refQuantNorm;
           }
         }
-     // if (currDist < 0.0) memset (tempQuant, 0, sfbWidth * sizeof (uint8_t));
+        if (currDist < 0.0) memset (tempQuant, 0, sfbWidth * sizeof (uint8_t));
         m_quantInSf[sfb][is] = sfCurr; // store initial scale fac
       }
       else // is == 1, quant. & dist. computed with quantizeSfb()
       {
         numQCurr = refNumQ;
       }
-
-      if ((currDist < 0.0) || (numQCurr == 0)) mag = nullptr; // to accelerate getBitCount()
 
       if (sfb == 0) // first SFB, having sfbStart - grpStart == 0
       {
