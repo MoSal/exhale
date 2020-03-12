@@ -535,7 +535,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 38 - m_bitRateMode : 38 - (m_bitRateMode > 2 ? 1 : 0));
+  const uint32_t reductionFactor = (samplingRate < 37566 ? 2 : 3);  // undercoding reduction
+  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - ((m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
@@ -614,7 +615,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             if (rmsComp < grpRmsMin) grpRmsMin = rmsComp;
             if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
             {
-              s -= ((grpOff[b + 1] - grpOff[b]) * 3 * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
+              s -= ((grpOff[b + 1] - grpOff[b]) * reductionFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
             }
           }
           if ((samplingRate >= 27713) && (b < maxSfbLong) && !eightShorts)  // uncoded coefs
@@ -625,7 +626,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
             if (rmsComp >= rmsRef9) // check only first SFB above max_sfb for simplification
             {
-              s -= ((grpOff[maxSfbLong] - grpOff[b]) * 3 * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
+              s -= ((grpOff[maxSfbLong] - grpOff[b]) * reductionFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
             }
           }
           s = (eightShorts ? s / ((nSamplesInFrame * grpData.windowGroupLength[gr]) >> 8) : s / (nSamplesInFrame >> 5));
@@ -799,9 +800,9 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           if ((grpRms[b] >> 16) > 0) lastSfb = b;
           estimBitCount += grpRms[b] & USHRT_MAX;
 
+#if EC_TRELLIS_OPT_CODING
           if (grpLength == 1) // finalize bit count estimate, RDOC
           {
-#if EC_TRELLIS_OPT_CODING
             estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, __min (estimBitCount + 2, targetBitCountX2),
                                                              grpOff, grpRms, grpData.sfbsPerGroup, m_mdctQuantMag[ci]);
             for (b = 1; b < grpData.sfbsPerGroup; b++)
@@ -821,8 +822,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
                 memset (&arithTuples[(sfbM1Start - grpOff[0]) >> 1], 1, (sfbM1Width >> 1) * sizeof (char));
               }
             }
-#endif
           }
+#endif
           b = lastSfb;
           while ((b >= sfmBasedSfbStart) && (grpOff[b] > peakIndex) && ((grpRms[b] >> 16) <= 1) /*coarse quantization*/ &&
                  ((estimBitCount * 2 > targetBitCountX2) || (grpLength > 1 /*no accurate bit count estimate available*/)))
