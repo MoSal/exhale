@@ -169,6 +169,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
   u = __max (1, u - int (specFlat >> 5)); // SFM-adaptive reduction
 
   magnSum = pow (2.0, (14 - u) / 3.0); // noiseVal^-1, 23003-3, 7.2
+  magnSum *= 1.25 - specFlat * 0.0009765625; // zero-quant increase
 
 // --- calculate gap-fill scale factors for zero quantized SFBs, then determine noise_offset
   u <<= 5;  // left-shift for bit-stream
