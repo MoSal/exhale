@@ -38,7 +38,7 @@ static inline short getBitCount (EntropyCoder& entrCoder, const int sfIndex, con
 #if EC_TRELLIS_OPT_CODING && !EC_TRAIN
 static inline double getLagrangeValue (const uint16_t rateIndex) // RD optimization constant
 {
-  return (108.0 + rateIndex * rateIndex) * 0.0009765625; // /1024
+  return (95.0 + rateIndex * rateIndex) * 0.0009765625; // / 1024
 }
 #endif
 
@@ -191,13 +191,32 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
 
         // re-compute least-squares optimal scale factor modifier
         if (dNum > SF_THRESH_POS * dDen) sf++;
+#if !SFB_QUANT_PERCEPT_OPT
         else
-        if (dNum < SF_THRESH_NEG * dDen) sf--;
+        if (dNum < SF_THRESH_NEG * dDen) sf--; // reduces SFB RMS
+#endif
       } // if nonzero
 
       if (sigMaxQ) *sigMaxQ = (numQ > 0 ? maxQ : 0); // a new max
       if (sigNumQ) *sigNumQ = numQ; // a new nonzero coeff. count
     }
+  }
+#endif // EC_TRELLIS_OPT_CODING
+
+#if SFB_QUANT_PERCEPT_OPT
+  if ((numQ > 0) && (sf > 0 && sf <= scaleFactor)) // recover RMS
+  {
+    const double magnNormDiv = m_lutSfNorm[sf];
+
+    dNum = 0.0;  // dDen has normalized energy after quantization
+    for (int i = numCoeffs - 1; i >= 0; i--)
+    {
+      const double normalizedMagn = (double) coeffMagn[i] * magnNormDiv;
+
+      dNum += normalizedMagn * normalizedMagn; // TODO: use SIMD?
+    }
+
+    if (dNum > SF_THRESH_POS * SF_THRESH_POS * dDen) sf++;
   }
 #endif
   return (uint8_t) __max (0, sf); // optimized scale factor index

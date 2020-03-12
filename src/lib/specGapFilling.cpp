@@ -165,7 +165,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
   }
   s = 0;
 #endif
-  u = __min (7, uint16_t (14.47118288 + 9.965784285 * log10 (magnSum / (double) u)));
+  u = __min (7 + (specFlat >> 5), uint16_t (14.47118288 + 9.965784285 * log10 (magnSum / (double) u)));
   u = __max (1, u - int (specFlat >> 5)); // SFM-adaptive reduction
 
   magnSum = pow (2.0, (14 - u) / 3.0); // noiseVal^-1, 23003-3, 7.2

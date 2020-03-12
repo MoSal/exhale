@@ -535,7 +535,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 38 - (m_bitRateMode > 2 ? 1 : 0));
+  const uint64_t scaleSr         = (samplingRate < 27713 ? 38 - m_bitRateMode : 38 - (m_bitRateMode > 2 ? 1 : 0));
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - ((m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
