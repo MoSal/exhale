@@ -1,5 +1,5 @@
 /* specAnalysis.h - header file for class providing spectral analysis of MCLT signals
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -19,6 +19,7 @@
 #define SA_BW  (1 << SA_BW_SHIFT)
 #define SA_EPS               1024
 #define SA_EXACT_COMPLEX_ABS    0
+#define SA_IMPROVED_REAL_ABS    1
 #define SA_OPT_WINDOW_GROUPING  1
 
 // spectral signal analysis class

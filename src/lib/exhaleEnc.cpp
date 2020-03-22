@@ -129,6 +129,7 @@ static inline uint8_t brModeAndFsToMaxSfbShort(const unsigned bitRateMode, const
   return (samplingRate > 51200 ? 11 : 13) - 2 + (bitRateMode >> 2);
 }
 
+#if !SA_IMPROVED_REAL_ABS
 static inline uint32_t getComplexRmsValue (const uint32_t rmsValue, const unsigned sfbGroup, const unsigned sfbIndex,
                                            const uint8_t numSwb, const TnsData& tnsData)
 {
@@ -136,6 +137,7 @@ static inline uint32_t getComplexRmsValue (const uint32_t rmsValue, const unsign
   return ((tnsData.numFilters > 0) && (sfbGroup == tnsData.filteredWindow) && (rmsValue <= UINT_MAX / 3) &&
           (tnsData.filterLength[0] + sfbIndex >= numSwb) ? (rmsValue * 3u) >> 1 : rmsValue);
 }
+#endif
 
 // ISO/IEC 23003-3, Table 75
 static inline unsigned toFrameLength (const USAC_CCFL coreCoderFrameLength)
@@ -374,7 +376,8 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
       memcpy (&mdctSignal[offs - MAX_PREDICTION_ORDER], m_tempIntBuf, MAX_PREDICTION_ORDER * sizeof (int32_t));
 
       // recalculate SFB RMS in TNS range
-      errorValue |= m_specAnalyzer.getMeanAbsValues (mdctSignal, nullptr, nSamplesInFrame, 0, &grpSO[tnsStartSfb], __max (0, tnsMaxBands - (int) tnsStartSfb),
+      errorValue |= m_specAnalyzer.getMeanAbsValues (mdctSignal, nullptr /*MDST wasn't filtered*/, grpSO[grpData.sfbsPerGroup],
+                                                     0 /*ci*/, &grpSO[tnsStartSfb], __max (0, tnsMaxBands - (int) tnsStartSfb),
                                                      &grpData.sfbRmsValues[tnsStartSfb + m_numSwbShort * tnsData.filteredWindow]);
     }
     else tnsData.filterOrder[0] = tnsData.numFilters = 0; // disable zero-length TNS filters
@@ -383,10 +386,17 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
   return errorValue;
 }
 
-unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets, int32_t* const mdctSignal)
+unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets, int32_t* const mdctSignal
+#if SA_IMPROVED_REAL_ABS
+                                          , int32_t* const mdstSignal /*= nullptr*/
+#endif
+                                            )
 {
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   const unsigned nSamplesInShort = nSamplesInFrame >> 3;
+#if SA_IMPROVED_REAL_ABS
+  int32_t* const tempIntBuf/*2*/ = m_timeSignals[1]; // NOTE: requires at least stereo input
+#endif
   unsigned grpStartLine = nSamplesInFrame;
 
   if ((grpOffsets == nullptr) || (mdctSignal == nullptr))
@@ -399,7 +409,9 @@ unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* con
     const unsigned   grpLength = grpData.windowGroupLength[gr];
     uint16_t* const  grpOffset = &grpOffsets[m_numSwbShort * gr];
     int32_t* const  grpMdctSig = &mdctSignal[grpStartLine -= nSamplesInShort * grpLength];
-
+#if SA_IMPROVED_REAL_ABS
+    int32_t* const  grpMdstSig = (mdstSignal != nullptr ? &mdstSignal[grpStartLine] : nullptr);
+#endif
     for (uint16_t b = 0; b < m_numSwbShort; b++)
     {
       const unsigned swbOffset = grpOffsets[b];
@@ -411,13 +423,24 @@ unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* con
       for (uint16_t w = 0; w < grpLength; w++)
       {
         memcpy (&m_tempIntBuf[grpOffset[b] + w * numCoeffs], &grpMdctSig[swbOffset + w * nSamplesInShort], numCoeffs * sizeof (int32_t));
+#if SA_IMPROVED_REAL_ABS
+        if (grpMdstSig != nullptr)
+        {
+          memcpy (&tempIntBuf[grpOffset[b] + w * numCoeffs], &grpMdstSig[swbOffset + w * nSamplesInShort], numCoeffs * sizeof (int32_t));
+        }
+#endif
       }
     }
     grpOffset[m_numSwbShort] = uint16_t (grpStartLine + nSamplesInShort * grpLength);
   } // for gr
 
   memcpy (mdctSignal, m_tempIntBuf, nSamplesInFrame * sizeof (int32_t));
-
+#if SA_IMPROVED_REAL_ABS
+  if (mdstSignal != nullptr)
+  {
+    memcpy (mdstSignal, tempIntBuf, nSamplesInFrame * sizeof (int32_t));
+  }
+#endif
   return 0; // no error
 }
 
@@ -608,10 +631,14 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           s = (eightShorts ? (nSamplesInFrame * grpData.windowGroupLength[gr]) >> 1 : nSamplesInFrame << 2);
           for (b = 0; b < grpData.sfbsPerGroup; b++)
           {
+#if SA_IMPROVED_REAL_ABS
+            const uint32_t rmsComp = grpRms[b];
+            const uint32_t rmsRef9 = (coreConfig.commonWindow ? refRms[b] >> 9 : rmsComp);
+#else
             const uint32_t rmsComp = getComplexRmsValue (grpRms[b], gr, b, numSwbFrame, coreConfig.tnsData[ch]);
             const uint32_t rmsRef9 = (!coreConfig.commonWindow ? rmsComp :
                                      getComplexRmsValue (refRms[b], gr, b, numSwbFrame, coreConfig.tnsData[1 - ch]) >> 9);
-
+#endif
             if (rmsComp < grpRmsMin) grpRmsMin = rmsComp;
             if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
             {
@@ -620,10 +647,14 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           }
           if ((samplingRate >= 27713) && (b < maxSfbLong) && !eightShorts)  // uncoded coefs
           {
+#if SA_IMPROVED_REAL_ABS
+            const uint32_t rmsComp = grpRms[b];
+            const uint32_t rmsRef9 = (coreConfig.commonWindow ? refRms[b] >> 9 : rmsComp);
+#else
             const uint32_t rmsComp = getComplexRmsValue (grpRms[b], gr, b, numSwbFrame, coreConfig.tnsData[ch]);
             const uint32_t rmsRef9 = (!coreConfig.commonWindow ? rmsComp :
                                      getComplexRmsValue (refRms[b], gr, b, numSwbFrame, coreConfig.tnsData[1 - ch]) >> 9);
-
+#endif
             if (rmsComp >= rmsRef9) // check only first SFB above max_sfb for simplification
             {
               s -= ((grpOff[maxSfbLong] - grpOff[b]) * reductionFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
@@ -978,6 +1009,8 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
     }
     else // SCE or CPE: bandwidth-to-max_sfb mapping, short-window grouping for each channel
     {
+      coreConfig.stereoConfig = coreConfig.stereoMode = 0;
+
       for (unsigned ch = 0; ch < nrChannels; ch++) // channel loop
       {
         SfbGroupData& grpData = coreConfig.groupingData[ch];
@@ -999,6 +1032,8 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           if (samplingRate > 32000) // set max_sfb based on VBR mode and bandwidth detection
           {
             icsCurr.maxSfb = __min (icsCurr.maxSfb, brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+
+            if (grpData.sfbsPerGroup > 49) grpData.sfbsPerGroup = 49; // for 44.1 and 48 kHz
           }
           while (grpSO[icsCurr.maxSfb] > __max (m_bandwidCurr[ci], m_bandwidPrev[ci])) icsCurr.maxSfb--; // BW detector
         }
@@ -1033,8 +1068,11 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           memcpy (grpData.windowGroupLength, windowGroupingTable[icsCurr.windowGrouping], NUM_WINDOW_GROUPS * sizeof (uint8_t));
 #endif
           while (grpSO[icsCurr.maxSfb] > __max (m_bandwidCurr[ci], m_bandwidPrev[ci])) icsCurr.maxSfb--; // not a bug!!
-
+#if SA_IMPROVED_REAL_ABS
+          errorValue |= eightShortGrouping (grpData, grpSO, m_mdctSignals[ci], nChannels < 2 ? nullptr : m_mdstSignals[ci]);
+#else
           errorValue |= eightShortGrouping (grpData, grpSO, m_mdctSignals[ci]);
+#endif
         } // if EIGHT_SHORT
 
         // compute and quantize optimal TNS coefficients, then find optimal TNS filter order
@@ -1098,7 +1136,6 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           maxSfb0 = maxSfb1 = maxSfbSte;
         }
         coreConfig.commonMaxSfb = (maxSfb0 == maxSfb1); // synch
-        coreConfig.stereoConfig = coreConfig.stereoMode = 0;
       } // if coreConfig.commonWindow
     }
 
@@ -1129,9 +1166,19 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
       if (icsCurr.maxSfb > 0)
       {
-        // use MCLTs for LONG but only MDCTs for SHORT windows (since MDSTs are not grouped)
+        // use MCLTs for LONG but only MDCTs for SHORT windows when the MDSTs aren't grouped
+#if SA_IMPROVED_REAL_ABS
+        for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
+        {
+          s = m_numSwbShort * gr;
+          errorValue |= m_specAnalyzer.getMeanAbsValues (m_mdctSignals[ci], eightShorts && nChannels < 2 ? nullptr : m_mdstSignals[ci],
+                                                         grpSO[grpData.sfbsPerGroup + s], (eightShorts ? USAC_MAX_NUM_CHANNELS : ci),
+                                                         &grpSO[s], grpData.sfbsPerGroup, &grpData.sfbRmsValues[s]);
+        }
+#else
         errorValue |= m_specAnalyzer.getMeanAbsValues (m_mdctSignals[ci], eightShorts ? nullptr : m_mdstSignals[ci], nSamplesInFrame,
                                                        ci, grpSO, grpData.sfbsPerGroup * grpData.numWindowGroups, grpData.sfbRmsValues);
+#endif
         errorValue |= applyTnsToWinGroup (coreConfig.tnsData[ch], grpData, eightShorts, icsCurr.maxSfb, ci);
         coreConfig.tnsActive |= (coreConfig.tnsData[ch].numFilters > 0); // tns_data_present
       }
