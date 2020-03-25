@@ -83,15 +83,17 @@ private:
   bool            m_nonMpegExt;
 #endif
   uint8_t         m_numElements;
+  uint8_t         m_numSwbLong;
   uint8_t         m_numSwbShort;
   unsigned char*  m_outAuData;
   BitStreamWriter m_outStream; // for access unit creation
   int32_t*        m_pcm24Data;
+  uint8_t         m_perCorrCurr[USAC_MAX_NUM_ELEMENTS];
   SfbGroupData*   m_scaleFacData[USAC_MAX_NUM_CHANNELS];
   SfbQuantizer    m_sfbQuantizer; // powerlaw quantization
   SpecAnalyzer    m_specAnalyzer; // for spectral analysis
   uint32_t        m_specAnaCurr[USAC_MAX_NUM_CHANNELS];
-  uint32_t        m_specAnaPrev[USAC_MAX_NUM_CHANNELS];
+//uint32_t        m_specAnaPrev[USAC_MAX_NUM_CHANNELS];
 #if !RESTRICT_TO_AAC
   SpecGapFiller   m_specGapFiller;// for noise/gap filling
 #endif

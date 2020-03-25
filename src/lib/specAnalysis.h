@@ -57,6 +57,10 @@ public:
                              const int32_t* const mdstSignals[USAC_MAX_NUM_CHANNELS],
                              const unsigned nChannels, const unsigned nSamplesInFrame, const unsigned samplingRate,
                              const unsigned lfeChannelIndex = USAC_MAX_NUM_CHANNELS); // to skip an LFE channel
+  int16_t stereoSigAnalysis (const int32_t* const mdctSignal1, const int32_t* const mdctSignal2,
+                             const int32_t* const mdstSignal1, const int32_t* const mdstSignal2,
+                             const unsigned nSamplesMax, const unsigned nSamplesInFrame, const bool shortTransforms,
+                             uint8_t* const stereoCorrValue = nullptr); // per-band perceptual correlation data
 }; // SpecAnalyzer
 
 #endif // _SPEC_ANALYSIS_H_

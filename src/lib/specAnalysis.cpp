@@ -240,7 +240,7 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
   const unsigned thresholdSlope = (48000 + SA_EPS * samplingRate) / 96000;
   const unsigned thresholdStart = samplingRate >> 15;
 
-  if ((mdctSignals == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS) || (lfeChannelIndex > USAC_MAX_NUM_CHANNELS) ||
+  if ((mdctSignals == nullptr) || (mdstSignals == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS) || (lfeChannelIndex > USAC_MAX_NUM_CHANNELS) ||
       (nSamplesInFrame > 2048) || (nSamplesInFrame < 2) || (samplingRate < 7350) || (samplingRate > 96000))
   {
     return 1; // invalid arguments error
@@ -249,7 +249,7 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
   for (unsigned ch = 0; ch < nChannels; ch++)
   {
     const int32_t* const chMdct = mdctSignals[ch];
-    const int32_t* const chMdst = (mdstSignals == nullptr ? nullptr : mdstSignals[ch]);
+    const int32_t* const chMdst = mdstSignals[ch];
 // --- get L1 norm and max value in each band
     uint16_t idxMaxSpec = 0;
     uint64_t sumAvgBand = 0;
@@ -272,61 +272,37 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
     {
       const uint16_t         offs = b << SA_BW_SHIFT; // start offset of current analysis band
       const int32_t* const  bMdct = &chMdct[offs];
-      const int32_t* const  bMdst = (chMdst == nullptr ? nullptr : &chMdst[offs]);
-      uint16_t  maxAbsIdx = 0;
-      uint32_t  maxAbsVal = 0, tmp = UINT_MAX;
-      uint64_t  sumAbsVal = 0;
+      const int32_t* const  bMdst = &chMdst[offs];
+      uint16_t maxAbsIdx = 0;
+      uint32_t maxAbsVal = 0, tmp = UINT_MAX;
+      uint64_t sumAbsVal = 0;
 
-      if (bMdst != nullptr) // complex-valued spectrum
+      for (int s = SA_BW - 1; s >= 0; s--)
       {
-        for (int s = SA_BW - 1; s >= 0; s--)
-        {
-          // sum absolute values of complex signal, derive L1 norm, peak value, and peak index
+        // sum absolute values of complex spectrum, derive L1 norm, peak value, and peak index
 #if SA_EXACT_COMPLEX_ABS
-          const double  complexSqr = (double) bMdct[s] * (double) bMdct[s] + (double) bMdst[s] * (double) bMdst[s];
-          const uint32_t absSample = uint32_t (sqrt (complexSqr) + 0.5);
+        const double  complexSqr = (double) bMdct[s] * (double) bMdct[s] + (double) bMdst[s] * (double) bMdst[s];
+        const uint32_t absSample = uint32_t (sqrt (complexSqr) + 0.5);
 #else
-          const uint32_t absReal   = abs (bMdct[s]); // Richard Lyons, 1997; en.wikipedia.org/
-          const uint32_t absImag   = abs (bMdst[s]); // wiki/Alpha_max_plus_beta_min_algorithm
-          const uint32_t absSample = (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
+        const uint32_t absReal   = abs (bMdct[s]);   // Richard Lyons, 1997; en.wikipedia.org/
+        const uint32_t absImag   = abs (bMdst[s]);   // wiki/Alpha_max_plus_beta_min_algorithm
+        const uint32_t absSample = (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
 #endif
-          sumAbsVal += absSample;
-          if (offs + s > 0) // exclude DC from max/min
-          {
-            if (maxAbsVal < absSample) // maximum data
-            {
-              maxAbsVal = absSample;
-              maxAbsIdx = (uint16_t) s;
-            }
-            if (tmp/*min*/> absSample) // minimum data
-            {
-              tmp/*min*/= absSample;
-            }
-          } // b > 0
-        }
-      }
-      else  // real-valued spectrum, no imaginary part
-      {
-        for (int s = SA_BW - 1; s >= 0; s--)
+        sumAbsVal += absSample;
+        if (offs + s > 0) // exclude DC from max & min
         {
-          // obtain absolute values of real signal, derive L1 norm, peak value, and peak index
-          const uint32_t absSample = abs (bMdct[s]);
-
-          sumAbsVal += absSample;
-          if (offs + s > 0) // exclude DC from max/min
+          if (maxAbsVal < absSample) // update maximum
           {
-            if (maxAbsVal < absSample) // maximum data
-            {
-              maxAbsVal = absSample;
-              maxAbsIdx = (uint16_t) s;
-            }
-            if (tmp/*min*/> absSample) // minimum data
-            {
-              tmp/*min*/= absSample;
-            }
+            maxAbsVal = absSample;
+            maxAbsIdx = (uint16_t) s;
+          }
+          if (tmp/*min*/> absSample) // update minimum
+          {
+            tmp/*min*/= absSample;
           }
         }
-      }
+      } // for s
+
       // bandwidth detection
       if ((m_bandwidthOff[ch] == 0) && (maxAbsVal > __max (thresholdSlope * (thresholdStart + b), SA_EPS)))
       {
@@ -361,4 +337,102 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
   } // for ch
 
   return 0; // no error
+}
+
+int16_t SpecAnalyzer::stereoSigAnalysis (const int32_t* const mdctSignal1, const int32_t* const mdctSignal2,
+                                         const int32_t* const mdstSignal1, const int32_t* const mdstSignal2,
+                                         const unsigned nSamplesMax, const unsigned nSamplesInFrame, const bool shortTransforms,
+                                         uint8_t* const stereoCorrValue /*= nullptr*/) // per-band perceptual correlation data
+{
+  const uint64_t anaBwOffset = SA_BW >> 1;
+  const uint16_t numAnaBands = (shortTransforms ? nSamplesInFrame : nSamplesMax) >> SA_BW_SHIFT;
+  const uint16_t numAnaModul = (shortTransforms ? numAnaBands >> 3 : numAnaBands + 1);
+  int16_t b;
+
+  if ((mdctSignal1 == nullptr) || (mdctSignal2 == nullptr) || (mdstSignal1 == nullptr) || (mdstSignal2 == nullptr) ||
+      (nSamplesInFrame > 2048) || (nSamplesMax > 2048) || (numAnaBands == 0) || (numAnaModul == 0))
+  {
+    b = SHRT_MIN; // invalid arguments error
+  }
+  else
+  {
+    uint16_t currPC = 0, numPC = 0; // frame-average correlation
+    uint64_t sumReM = 0, sumReS = 0;// mid-side RMS distribution
+
+    for (b = numAnaBands - 1; b >= 0; b--)
+    {
+      const uint16_t anaBandModul = b % numAnaModul;  // to exclude first and last window band
+      const uint16_t         offs = b << SA_BW_SHIFT; // start offset of current analysis band
+      const int32_t* const lbMdct = &mdctSignal1[offs];
+      const int32_t* const lbMdst = &mdstSignal1[offs];
+      const int32_t* const rbMdct = &mdctSignal2[offs];
+      const int32_t* const rbMdst = &mdstSignal2[offs];
+      uint64_t sumMagnL = 0, sumMagnR = 0; // temporary RMS sums
+      uint64_t sumPrdLR = 0, sumPrdLL = 0, sumPrdRR = 0;
+      uint64_t sumRealL = 0, sumRealR = 0;
+      uint64_t sumRealM = 0, sumRealS = 0, sumPrdMS; // mid-side
+      double nlr, dll, drr;
+
+      for (int s = SA_BW - 1; s >= 0; s--)
+      {
+        const uint32_t absRealL  = abs (lbMdct[s]);
+        const uint32_t absRealR  = abs (rbMdct[s]);
+#if SA_EXACT_COMPLEX_ABS
+        const double complexSqrL = (double) lbMdct[s] * (double) lbMdct[s] + (double) lbMdst[s] * (double) lbMdst[s];
+        const uint32_t absMagnL  = uint32_t (sqrt (complexSqrL) + 0.5);
+        const double complexSqrR = (double) rbMdct[s] * (double) rbMdct[s] + (double) rbMdst[s] * (double) rbMdst[s];
+        const uint32_t absMagnR  = uint32_t (sqrt (complexSqrR) + 0.5);
+#else
+        const uint32_t absImagL  = abs (lbMdst[s]);  // Richard Lyons, 1997; en.wikipedia.org/
+        const uint32_t absImagR  = abs (rbMdst[s]);  // wiki/Alpha_max_plus_beta_min_algorithm
+        const uint32_t absMagnL  = (absRealL > absImagL ? absRealL + ((absImagL * 3) >> 3) : absImagL + ((absRealL * 3) >> 3));
+        const uint32_t absMagnR  = (absRealR > absImagR ? absRealR + ((absImagR * 3) >> 3) : absImagR + ((absRealR * 3) >> 3));
+#endif
+        sumRealL += absRealL;
+        sumRealR += absRealR;
+        sumRealM += abs (lbMdct[s] + rbMdct[s]); // i.e., 2*mid,
+        sumRealS += abs (lbMdct[s] - rbMdct[s]); // i.e., 2*side
+
+        sumMagnL += absMagnL;
+        sumMagnR += absMagnR;
+        sumPrdLR += ((uint64_t) absMagnL * (uint64_t) absMagnR + anaBwOffset) >> SA_BW_SHIFT;
+        sumPrdLL += ((uint64_t) absMagnL * (uint64_t) absMagnL + anaBwOffset) >> SA_BW_SHIFT;
+        sumPrdRR += ((uint64_t) absMagnR * (uint64_t) absMagnR + anaBwOffset) >> SA_BW_SHIFT;
+      } // for s
+
+      sumRealL = (sumRealL + anaBwOffset) >> SA_BW_SHIFT; // avg
+      sumRealR = (sumRealR + anaBwOffset) >> SA_BW_SHIFT;
+      sumRealM = (sumRealM + anaBwOffset) >> SA_BW_SHIFT;
+      sumRealS = (sumRealS + anaBwOffset) >> SA_BW_SHIFT;
+      nlr = double (sumRealL * sumRealR) * 0.46875; // tuned for uncorrelated full-scale noise
+      sumPrdMS = uint64_t (nlr > double (sumRealM * sumRealS) ? 256.0 : 0.5 + (512.0 * nlr) / __max (1.0, double (sumRealM * sumRealS)));
+
+      dll = double ((sumMagnL + anaBwOffset) >> SA_BW_SHIFT);
+      drr = double ((sumMagnR + anaBwOffset) >> SA_BW_SHIFT);
+      nlr = (sumPrdLR + dll * drr) * SA_BW - sumMagnL * drr - sumMagnR * dll;
+      dll = (sumPrdLL + dll * dll) * SA_BW - sumMagnL * dll - sumMagnL * dll;
+      drr = (sumPrdRR + drr * drr) * SA_BW - sumMagnR * drr - sumMagnR * drr;
+      sumPrdLR = uint64_t ((nlr <= 0.0) || (dll * drr <= 0.0) ? 0 : 0.5 + (256.0 * nlr * nlr) / (dll * drr));
+
+      stereoCorrValue[b] = (uint8_t) __min (UCHAR_MAX, __max (sumPrdMS, sumPrdLR)); // in band
+
+      if ((anaBandModul > 0) && (anaBandModul + 1 < numAnaModul)) // in frame (averaged below)
+      {
+        currPC += stereoCorrValue[b]; numPC++;
+        sumReM += sumRealM;
+        sumReS += sumRealS;
+      }
+    } // for b
+
+    for (b = numAnaBands; b < int16_t (nSamplesInFrame >> SA_BW_SHIFT); b++)
+    {
+      stereoCorrValue[b] = UCHAR_MAX; // to allow joint-stereo coding at very high frequencies
+    }
+
+    if (numPC > 1) currPC = (currPC + (numPC >> 1)) / numPC; // frame's perceptual correlation
+
+    b = (int16_t) currPC * (sumReS * 2 > sumReM * 3 ? -1 : 1);  // negation implies side > mid
+  }
+
+  return b;
 }

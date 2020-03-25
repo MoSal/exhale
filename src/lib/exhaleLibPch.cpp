@@ -62,7 +62,7 @@ char toSamplingFrequencyIndex (const unsigned samplingRate)
       return i;
     }
 #if !RESTRICT_TO_AAC
-    if (samplingRate == allowedSamplingRates[i + AAC_NUM_SAMPLE_RATES])
+    if (samplingRate == allowedSamplingRates[i + AAC_NUM_SAMPLE_RATES] && (samplingRate % 19200) == 0) // Baseline USAC
     {
       return i + AAC_NUM_SAMPLE_RATES + 2;  // skip reserved entry
     }
