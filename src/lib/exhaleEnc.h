@@ -21,6 +21,7 @@
 #include "quantization.h"
 #include "specAnalysis.h"
 #include "specGapFilling.h"
+#include "stereoProcessing.h"
 #include "tempAnalysis.h"
 
 // constant and experimental macro
@@ -97,6 +98,7 @@ private:
 #if !RESTRICT_TO_AAC
   SpecGapFiller   m_specGapFiller;// for noise/gap filling
 #endif
+  StereoProcessor m_stereoCoder;  // for M/S stereo coding
   uint8_t         m_swbTableIdx;
   TempAnalyzer    m_tempAnalyzer; // for temporal analysis
   uint32_t        m_tempAnaCurr[USAC_MAX_NUM_CHANNELS];

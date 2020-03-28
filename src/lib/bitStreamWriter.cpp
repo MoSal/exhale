@@ -303,7 +303,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
     {
       for (g = 0; g < elData.groupingData[0].numWindowGroups; g++)
       {
-        const char* const gMsUsed = &elData.stereoData[m_numSwbShort * g];
+        const uint8_t* const gMsUsed = &elData.stereoData[m_numSwbShort * g];
 
         for (b = 0; b < maxSfbSte; b++)
         {
@@ -320,7 +320,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
       {
         for (g = 0; g < elData.groupingData[0].numWindowGroups; g++)
         {
-          const char* const gCplxPredUsed = &elData.stereoData[m_numSwbShort * g];
+          const uint8_t* const gCplxPredUsed = &elData.stereoData[m_numSwbShort * g];
 
           for (b = 0; b < maxSfbSte; b += SFB_PER_PRED_BAND)
           {

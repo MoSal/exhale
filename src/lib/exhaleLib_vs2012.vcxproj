@@ -234,6 +234,7 @@
     <ClInclude Include="quantization.h" />
     <ClInclude Include="specAnalysis.h" />
     <ClInclude Include="specGapFilling.h" />
+    <ClInclude Include="stereoProcessing.h" />
     <ClInclude Include="tempAnalysis.h" />
   </ItemGroup>
   <ItemGroup>
@@ -254,6 +255,7 @@
     <ClCompile Include="quantization.cpp" />
     <ClCompile Include="specAnalysis.cpp" />
     <ClCompile Include="specGapFilling.cpp" />
+    <ClCompile Include="stereoProcessing.cpp" />
     <ClCompile Include="tempAnalysis.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

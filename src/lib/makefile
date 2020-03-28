@@ -36,6 +36,7 @@ OBJS      = \
 	$(DIR_OBJ)/quantization.o \
 	$(DIR_OBJ)/specAnalysis.o \
 	$(DIR_OBJ)/specGapFilling.o \
+	$(DIR_OBJ)/stereoProcessing.o \
 	$(DIR_OBJ)/tempAnalysis.o \
 
 # define libraries to link with

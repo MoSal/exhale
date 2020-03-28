@@ -404,7 +404,7 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
   const uint16_t*    grpSO = &grpData.sfbOffsets[m_numSwbShort * tnsData.filteredWindow];
   unsigned errorValue = 0; // no error
 
-  if ((maxSfb > (eightShorts ? 15 : 51)) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
+  if ((maxSfb > (eightShorts ? MAX_NUM_SWB_SHORT : MAX_NUM_SWB_LONG)) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
   {
     return 1; // invalid arguments error
   }
@@ -712,6 +712,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         const uint8_t steppFadeOff = ((m_bitRateMode + 1) & 6) << (eightShorts ? 2 : 5);
         const int64_t steppWeightI = __min (64, m_perCorrCurr[el] - 128) >> (eightShorts || coreConfig.tnsActive ? 1 : 0);
         const int64_t steppWeightD = 128 - steppWeightI; // decrement, (1 - crosstalk) * 128
+        const TnsData&    tnsData0 = coreConfig.tnsData[0];
+        const TnsData&    tnsData1 = coreConfig.tnsData[1];
 
         for (uint16_t gr = 0; gr < coreConfig.groupingData[0].numWindowGroups; gr++)
         {
@@ -722,7 +724,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           int32_t* sigR1 = &m_mdctSignals[ci + 1][grpStart];
           int64_t xTalkI = 0, xTalkD = 0; // weights for crosstalk
 
-          if (coreConfig.tnsActive && (gr == coreConfig.tnsData[0].filteredWindow || gr == coreConfig.tnsData[1].filteredWindow))
+          if ((tnsData0.numFilters > 0 && gr == tnsData0.filteredWindow) || (tnsData1.numFilters > 0 && gr == tnsData1.filteredWindow))
           {
             const uint16_t maxLen = (eightShorts ? grpOff[m_numSwbShort] - 1 : __min (nSamplesInFrame - 1u, nSamplesMax)) - grpStart;
             int32_t prevR0 = 0; // NOTE: functions also on grouped
@@ -773,12 +775,18 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         }
       } // if coreConfig.commonWindow
 
-      if (coreConfig.stereoMode > 0)  // synch spectral statistics
+      if (coreConfig.stereoMode > 0)  // use M/S, synch statistics
       {
+        const bool      eightShorts = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
         const uint32_t peakIndexSte = __max ((m_specAnaCurr[ci] >> 5) & 2047, (m_specAnaCurr[ci + 1] >> 5) & 2047) << 5;
 
-        // TODO: M/S matrixing, update of grpData{0,1}.sfbRmsValues and &sfbStepSizes[(ci + {0,1}) * m_numSwbShort * NUM_WINDOW_GROUPS]
-
+        errorValue |= m_stereoCoder.applyFullFrameMatrix (m_mdctSignals[ci], m_mdctSignals[ci + 1],
+                                                          m_mdstSignals[ci], m_mdstSignals[ci + 1],
+                                                          coreConfig.groupingData[0], coreConfig.groupingData[1],
+                                                          coreConfig.tnsData[0], coreConfig.tnsData[1],
+                                                          (eightShorts ? m_numSwbShort : m_numSwbLong), coreConfig.stereoData,
+                                                          &sfbStepSizes[ ci      * m_numSwbShort * NUM_WINDOW_GROUPS],
+                                                          &sfbStepSizes[(ci + 1) * m_numSwbShort * NUM_WINDOW_GROUPS]);
         m_specAnaCurr[ci    ] = (m_specAnaCurr[ci    ] & (UINT_MAX - 65504)) | peakIndexSte;
         m_specAnaCurr[ci + 1] = (m_specAnaCurr[ci + 1] & (UINT_MAX - 65504)) | peakIndexSte;
         meanSpecFlat[ci] = meanSpecFlat[ci + 1] = ((uint16_t) meanSpecFlat[ci] + (uint16_t) meanSpecFlat[ci + 1]) >> 1;
@@ -845,7 +853,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
             const uint64_t rateFac = mSfmFac * s * __min (32, lfAtten * grpData.numWindowGroups); // rate control part 1
-            const uint64_t sScaled = ((1u << 23) + __max (grpRmsMin, grpStepSizes[b]) * scaleBr * rateFac) >> 24;
+            const uint64_t sScaled = ((1u << 23) + __max (grpRmsMin, grpStepSizes[b]) * (scaleBr - (coreConfig.stereoMode > 0 ? 1 : 0)) * rateFac) >> 24;
 
             // scale step-sizes according to VBR mode & derive scale factors from step-sizes
             grpStepSizes[b] = uint32_t (__max (BA_EPS, __min (UINT_MAX, sScaled)));
@@ -1196,7 +1204,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         const uint16_t nSamplesMax = (samplingRate < 37566 ? nSamplesInFrame : swbo[brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate)]);
         const int16_t  steAnaStats = m_specAnalyzer.stereoSigAnalysis (m_mdctSignals[ci], m_mdctSignals[ci + 1],
                                                                        m_mdstSignals[ci], m_mdstSignals[ci + 1], nSamplesMax,
-                                                                       nSamplesInFrame, eightShorts, (uint8_t* const) coreConfig.stereoData);
+                                                                       nSamplesInFrame, eightShorts, coreConfig.stereoData);
         if (steAnaStats == SHRT_MIN) errorValue = 1;
 
         if ((s = abs (steAnaStats)) * m_perCorrCurr[el] == 0) // transitions to/from silence
@@ -1212,9 +1220,9 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         }
 
         if (s == steAnaStats * -1) coreConfig.stereoConfig = 2; // 2: side > mid, pred_dir=1
-     // if (s > (UCHAR_MAX * 3) / 4) coreConfig.stereoMode = 2; // 2: all, ms_mask_present=2
+        if (s > (UCHAR_MAX * 3) / 4) coreConfig.stereoMode = 2; // 2: all, ms_mask_present=2
       }
-      else if (coreConfig.commonWindow) m_perCorrCurr[el] = 128; // update with midway value
+      else if (nrChannels > 1) m_perCorrCurr[el] = 128; // update history with halfway value
 
       for (unsigned ch = 0; ch < nrChannels; ch++) // channel loop
       {
@@ -1342,6 +1350,8 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           }
           maxSfb0 = maxSfb1 = maxSfbSte;
         }
+        else coreConfig.stereoMode = 0;  // since a max_sfb is 0
+
         coreConfig.commonMaxSfb = (maxSfb0 == maxSfb1); // synch
       } // if coreConfig.commonWindow
     }
@@ -1601,7 +1611,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
 #if !RESTRICT_TO_AAC
   m_nonMpegExt   = useEcodisExt;
 #endif
-  m_numSwbLong   = 51;  // maximum
+  m_numSwbLong   = MAX_NUM_SWB_LONG;
   m_numSwbShort  = MAX_NUM_SWB_SHORT;
   m_outAuData    = outputAuData;
   m_pcm24Data    = inputPcmData;

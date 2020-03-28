@@ -1,5 +1,5 @@
 /* exhaleLibPch.h - pre-compiled header file for classes of exhaleLib coding library
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -22,6 +22,7 @@
 #define AAC_NUM_SAMPLE_RATES   13
 #define MAX_PREDICTION_ORDER    4
 #define MAX_NUM_SWB_LFE         6
+#define MAX_NUM_SWB_LONG       51
 #define MAX_NUM_SWB_SHORT      15
 #define MIN_NUM_SWB_SHORT      12
 #define NUM_WINDOW_GROUPS       4 // must be between 4 and 8
@@ -130,7 +131,7 @@ struct CoreCoderData
   uint8_t       specFillData[2];  // noise filling data for each channel
 #endif
   uint8_t       stereoConfig;  // cplx_pred_data() config: pred_dir etc.
-  char          stereoData[MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS];
+  uint8_t       stereoData[MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS];
   uint8_t       stereoMode;   // ms_mask_present in StereoCoreToolInfo()
   bool          tnsActive;    // tns_active flag in StereoCoreToolInfo()
   TnsData       tnsData[2];       // current tns_data() for each channel
