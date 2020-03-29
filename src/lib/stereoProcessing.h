@@ -22,12 +22,6 @@ class StereoProcessor
 private:
 
   // member variables
-  unsigned m_avgAbsHpPrev[USAC_MAX_NUM_CHANNELS];
-  unsigned m_maxAbsHpPrev[USAC_MAX_NUM_CHANNELS];
-  unsigned m_maxIdxHpPrev[USAC_MAX_NUM_CHANNELS];
-  unsigned m_pitchLagPrev[USAC_MAX_NUM_CHANNELS];
-  uint32_t m_tempAnaStats[USAC_MAX_NUM_CHANNELS];
-  int16_t  m_transientLoc[USAC_MAX_NUM_CHANNELS];
 
 public:
 

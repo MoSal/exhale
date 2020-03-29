@@ -41,7 +41,7 @@ private:
                                     const bool timeWarping, const bool noiseFilling,
 #endif
                                     const bool indepFlag = false);
-  unsigned writeStereoCoreToolInfo (const CoreCoderData& elData,
+  unsigned writeStereoCoreToolInfo (const CoreCoderData& elData, EntropyCoder& entrCoder,
 #if !RESTRICT_TO_AAC
                                     const bool timeWarping,
 #endif

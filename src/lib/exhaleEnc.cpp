@@ -235,7 +235,14 @@ static inline uint8_t brModeAndFsToMaxSfbShort(const unsigned bitRateMode, const
   return (samplingRate > 51200 ? 11 : 13) - 2 + (bitRateMode >> 2);
 }
 
-#if !SA_IMPROVED_REAL_ABS
+#if SA_IMPROVED_REAL_ABS
+static inline uint32_t squareMeanRoot (const uint32_t value1, const uint32_t value2)
+{
+  const double meanRoot = (sqrt ((double) value1) + sqrt ((double) value2)) * 0.5;
+
+  return uint32_t (meanRoot * meanRoot + 0.5);
+}
+#else
 static inline uint32_t getComplexRmsValue (const uint32_t rmsValue, const unsigned sfbGroup, const unsigned sfbIndex,
                                            const uint8_t numSwb, const TnsData& tnsData)
 {
@@ -657,8 +664,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
   const uint32_t reductionFactor = (samplingRate < 37566 ? 2 : 3);  // undercoding reduction
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37);
-  const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - ((m_bitRateMode - 1) >> 1));
+  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37) - ((m_bitRateMode & 7) > 2/*TODO*/ ? nChannels >> 1 : 0);
+  const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - (m_bitRateMode >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
 //uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS];
@@ -817,14 +824,14 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           for (b = 0; b < grpData.sfbsPerGroup; b++)
           {
 #if SA_IMPROVED_REAL_ABS
-            const uint32_t rmsComp = grpRms[b];
+            const uint32_t rmsComp = (coreConfig.stereoMode > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
             const uint32_t rmsRef9 = (coreConfig.commonWindow ? refRms[b] >> 9 : rmsComp);
 #else
             const uint32_t rmsComp = getComplexRmsValue (grpRms[b], gr, b, numSwbCh, coreConfig.tnsData[ch]);
             const uint32_t rmsRef9 = (!coreConfig.commonWindow ? rmsComp :
                                      getComplexRmsValue (refRms[b], gr, b, numSwbCh, coreConfig.tnsData[1 - ch]) >> 9);
 #endif
-            if (rmsComp < grpRmsMin) grpRmsMin = rmsComp;
+            if (grpRms[b] < grpRmsMin) grpRmsMin = grpRms[b];
             if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
             {
               s -= ((grpOff[b + 1] - grpOff[b]) * reductionFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
@@ -833,7 +840,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           if ((samplingRate >= 27713) && (b < maxSfbLong) && !eightShorts)  // uncoded coefs
           {
 #if SA_IMPROVED_REAL_ABS
-            const uint32_t rmsComp = grpRms[b];
+            const uint32_t rmsComp = (coreConfig.stereoMode > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
             const uint32_t rmsRef9 = (coreConfig.commonWindow ? refRms[b] >> 9 : rmsComp);
 #else
             const uint32_t rmsComp = getComplexRmsValue (grpRms[b], gr, b, numSwbCh, coreConfig.tnsData[ch]);

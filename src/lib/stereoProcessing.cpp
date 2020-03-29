@@ -18,15 +18,7 @@
 // constructor
 StereoProcessor::StereoProcessor ()
 {
-  for (unsigned ch = 0; ch < USAC_MAX_NUM_CHANNELS; ch++)
-  {
-    m_avgAbsHpPrev[ch] = 0;
-    m_maxAbsHpPrev[ch] = 0;
-    m_maxIdxHpPrev[ch] = 1;
-    m_pitchLagPrev[ch] = 0;
-    m_tempAnaStats[ch] = 0;
-    m_transientLoc[ch] = -1;
-  }
+  return;
 }
 
 // public functions
@@ -37,7 +29,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
                                                 const uint8_t    numSwbFrame, uint8_t* const sfbStereoData,
                                                 uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2)
 {
-//const bool applyPredSte = (sfbStereoData != nullptr); // use real-valued predictive stereo
+  const bool applyPredSte = (sfbStereoData != nullptr); // use real-valued predictive stereo
   const uint8_t maxSfbSte = __max (groupingData1.sfbsPerGroup, groupingData2.sfbsPerGroup);
 
   if ((mdctSpectrum1 == nullptr) || (mdctSpectrum2 == nullptr) || (groupingData1.numWindowGroups != groupingData2.numWindowGroups) ||
@@ -104,6 +96,17 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
           sfbNext1++; prevReM = dmixReM;
           sfbNext2++; prevReS = dmixReS;
         }
+        if (sfb + 1 == numSwbFrame) // handle remaining sample
+        {
+          const int32_t dmixReM = int32_t (((int64_t) *sfbMdct1 + (int64_t) *sfbMdct2 + 1) >> 1);
+          const int32_t dmixReS = int32_t (((int64_t) *sfbMdct1 - (int64_t) *sfbMdct2 + 1) >> 1);
+
+          sumAbsValM += abs (dmixReM);
+          sumAbsValS += abs (dmixReS);
+
+          *sfbMdct1 = dmixReM;
+          *sfbMdct2 = dmixReS;
+        }
       }
       else // complex data, both MDCTs and MDSTs are available
       {
@@ -152,8 +155,9 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
       {
         double min = __min (grpRms1[sfb], grpRms2[sfb]);
         grpStepSizes1[sfb] = grpStepSizes2[sfb] = uint32_t (__max (SP_EPS, (min > sfbRatLR * sfbRmsMaxMS ? sqrt (sfbRatLR * sfbRmsMaxMS *
-                                                                            min) : __min (1.0/*TODO*/, sfbRatLR) * sfbRmsMaxMS)) + 0.5);
+                                                                            min) : __min (1.0/*0 dB*/, sfbRatLR) * sfbRmsMaxMS)) + 0.5);
       }
+      if (applyPredSte) sfbStereoData[sfb + numSwbFrame * gr] = 16; // zero prediction coefs
     } // for sfb
   }
 

@@ -774,7 +774,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
     {
       grpStats[sfb] = ((uint32_t) maxQBest << 16) | numQBest; // max magnitude and bit count
     }
-  } // if (sfIndex == 0)
+  } // if sfIndex == 0
 
   return __min (sfBest, m_maxSfIndex);
 }

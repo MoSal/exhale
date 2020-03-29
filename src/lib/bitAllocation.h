@@ -1,5 +1,5 @@
 /* bitAllocation.h - header file for class needed for psychoacoustic bit-allocation
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -15,7 +15,7 @@
 
 // constants, experimental macros
 #define BA_EPS                  1
-#define BA_INTER_CHAN_SIM_MASK  0  // cross-channel simultaneous masking for surround
+#define BA_INTER_CHAN_SIM_MASK  0  // 5.1 cross-channel simultaneous masking
 
 // class for audio bit-allocation
 class BitAllocator

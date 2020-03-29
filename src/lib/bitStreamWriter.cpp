@@ -91,7 +91,7 @@ unsigned BitStreamWriter::writeChannelWiseTnsData (const TnsData& tnsData, const
             bitCount += 2 + order * coefBits;
           }
         }
-      } // if (n_filt[w])
+      } // if n_filt[w] > 0
     }
   } // for w
 
@@ -264,14 +264,14 @@ unsigned BitStreamWriter::writeFDChannelStream (const CoreCoderData& elData, Ent
         }
       }
     } // for w
-  } // if (maxSfb == 0)
+  } // if maxSfb == 0
 
   m_auBitStream.write (0, 1); // fac_data_present, no fac_data
 
   return bitCount;
 }
 
-unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
+unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, EntropyCoder& entrCoder,
 #if !RESTRICT_TO_AAC
                                                    const bool timeWarping,
 #endif
@@ -281,6 +281,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
   const IcsInfo& icsInfo1 = elData.icsInfoCurr[1];
   const TnsData& tnsData0 = elData.tnsData[0];
   const TnsData& tnsData1 = elData.tnsData[1];
+  const SfbGroupData& grp = elData.groupingData[0];
   unsigned bitCount = 2, g, b;
 
   m_auBitStream.write (elData.tnsActive ? 1 : 0, 1); // tns_active
@@ -301,7 +302,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
     bitCount += 3;
     if (elData.stereoMode == 1) // write SFB-wise ms_used[][] flag
     {
-      for (g = 0; g < elData.groupingData[0].numWindowGroups; g++)
+      for (g = 0; g < grp.numWindowGroups; g++)
       {
         const uint8_t* const gMsUsed = &elData.stereoData[m_numSwbShort * g];
 
@@ -315,10 +316,12 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
 #if !RESTRICT_TO_AAC
     else if (elData.stereoMode >= 3)  // SFB-wise cplx_pred_data()
     {
+      const bool complexCoef = (elData.stereoConfig & 1);
+
       m_auBitStream.write (elData.stereoMode - 3, 1); // _pred_all
       if (elData.stereoMode == 3)
       {
-        for (g = 0; g < elData.groupingData[0].numWindowGroups; g++)
+        for (g = 0; g < grp.numWindowGroups; g++)
         {
           const uint8_t* const gCplxPredUsed = &elData.stereoData[m_numSwbShort * g];
 
@@ -329,9 +332,50 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData,
         }
         bitCount += ((maxSfbSte + 1) / SFB_PER_PRED_BAND) * g;
       }
-      // pred_dir and complex_coef. TODO: rest of cplx_pred_data()
-      m_auBitStream.write (elData.stereoConfig & 3, 2);
+      m_auBitStream.write (elData.stereoConfig & 3, 2);// pred_dir
       bitCount += 3;
+      if (!indepFlag) // use_prev_frame (&4), delta_code_time (&8)
+      {
+        if (complexCoef)
+        {
+          m_auBitStream.write (elData.stereoConfig & 4 ? 1 : 0, 1);
+          bitCount++;
+        }
+        m_auBitStream.write (elData.stereoConfig & 8 ? 1 : 0, 1);
+        bitCount++;
+      }
+      // TODO: complete the following code for delta_code_time > 0
+      for (g = 0; g < grp.numWindowGroups; g++)
+      {
+        const uint8_t* const gCplxPredUsed = &elData.stereoData[m_numSwbShort * g];
+        uint8_t aqReIdxPred = 16, aqImIdxPred = 16; // alpha_q = 0
+
+        for (b = 0; b < maxSfbSte; b += SFB_PER_PRED_BAND)
+        {
+          if (gCplxPredUsed[b] > 0) // write dpcm_alpha_q_re/_q_im
+          {
+            uint8_t aqIdx = gCplxPredUsed[b] & 31; // -15,..0,..15
+            int aqIdxDpcm = (int) aqIdx - aqReIdxPred;
+            unsigned bits = entrCoder.indexGetBitCount (aqIdxDpcm);
+
+            aqReIdxPred = aqIdx;
+            m_auBitStream.write (entrCoder.indexGetHuffCode (aqIdxDpcm), bits);
+            bitCount += bits;
+
+            if (complexCoef)
+            {
+              aqIdx = gCplxPredUsed[b + 1] & 31; // <32 kHz short!
+              aqIdxDpcm = (int) aqIdx - aqImIdxPred;
+              bits = entrCoder.indexGetBitCount (aqIdxDpcm);
+
+              aqImIdxPred = aqIdx;
+              m_auBitStream.write (entrCoder.indexGetHuffCode (aqIdxDpcm), bits);
+              bitCount += bits;
+            }
+          }
+          else aqReIdxPred = aqImIdxPred = 16;
+        }
+      } // for g
     }
 #endif
   } // common_window
@@ -517,7 +561,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
         m_auBitStream.write (CORE_MODE_FD, 1); // L
         m_auBitStream.write (CORE_MODE_FD, 1); // R
         bitCount += 2;
-        bitCount += writeStereoCoreToolInfo (*elData,
+        bitCount += writeStereoCoreToolInfo (*elData, entropyCoder[ci], // L
 #if !RESTRICT_TO_AAC
                                              tw_mdct[el],
 #endif
