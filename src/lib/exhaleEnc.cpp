@@ -782,18 +782,23 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         }
       } // if coreConfig.commonWindow
 
-      if (coreConfig.stereoMode > 0)  // use M/S, synch statistics
+      if ((errorValue == 0) && (coreConfig.stereoMode == 2))  // frame M/S, synch statistics
       {
-        const bool      eightShorts = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
+        const uint8_t   numSwbFrame = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT ? m_numSwbShort : __min (m_numSwbLong, maxSfbLong));
         const uint32_t peakIndexSte = __max ((m_specAnaCurr[ci] >> 5) & 2047, (m_specAnaCurr[ci + 1] >> 5) & 2047) << 5;
 
-        errorValue |= m_stereoCoder.applyFullFrameMatrix (m_mdctSignals[ci], m_mdctSignals[ci + 1],
-                                                          m_mdstSignals[ci], m_mdstSignals[ci + 1],
-                                                          coreConfig.groupingData[0], coreConfig.groupingData[1],
-                                                          coreConfig.tnsData[0], coreConfig.tnsData[1],
-                                                          (eightShorts ? m_numSwbShort : m_numSwbLong), coreConfig.stereoData,
-                                                          &sfbStepSizes[ ci      * m_numSwbShort * NUM_WINDOW_GROUPS],
-                                                          &sfbStepSizes[(ci + 1) * m_numSwbShort * NUM_WINDOW_GROUPS]);
+        coreConfig.stereoData[0] = (coreConfig.stereoData[0] & 0xFE) | (coreConfig.stereoConfig >> 1); // TODO: pass pred_dir, complex_coef as args
+        errorValue = m_stereoCoder.applyFullFrameMatrix (m_mdctSignals[ci], m_mdctSignals[ci + 1],
+                                                         m_mdstSignals[ci], m_mdstSignals[ci + 1],
+                                                         coreConfig.groupingData[0], coreConfig.groupingData[1],
+                                                         coreConfig.tnsData[0], coreConfig.tnsData[1],
+                                                         numSwbFrame, coreConfig.stereoData,
+                                                         &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS *  ci],
+                                                         &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS * (ci + 1)]);
+        if (errorValue == 2) // use frame M/S with cplx_pred_all=1
+        {
+          coreConfig.stereoMode += 2; errorValue = 0;
+        }
         m_specAnaCurr[ci    ] = (m_specAnaCurr[ci    ] & (UINT_MAX - 65504)) | peakIndexSte;
         m_specAnaCurr[ci + 1] = (m_specAnaCurr[ci + 1] & (UINT_MAX - 65504)) | peakIndexSte;
         meanSpecFlat[ci] = meanSpecFlat[ci + 1] = ((uint16_t) meanSpecFlat[ci] + (uint16_t) meanSpecFlat[ci + 1]) >> 1;
@@ -1226,7 +1231,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           m_perCorrCurr[el] = (uint8_t) __max (prevPerCorr - allowedDiff, __min (prevPerCorr + allowedDiff, (int16_t) s));
         }
 
-        if (s == steAnaStats * -1) coreConfig.stereoConfig = 2; // 2: side > mid, pred_dir=1
+     // if (s == steAnaStats * -1) coreConfig.stereoConfig = 2; // 2: side > mid, pred_dir=1
         if (s > (UCHAR_MAX * 3) / 4) coreConfig.stereoMode = 2; // 2: all, ms_mask_present=2
       }
       else if (nrChannels > 1) m_perCorrCurr[el] = 128; // update history with halfway value

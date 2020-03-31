@@ -98,8 +98,8 @@ unsigned SpecAnalyzer::getMeanAbsValues (const int32_t* const mdctSignal, const 
 
           sumAbsVal += uint64_t (sqrt (complexSqr) + 0.5);
 #else
-          const uint32_t absReal   = abs (bMdct[s]); // Richard Lyons, 1997; en.wikipedia.org/
-          const uint32_t absImag   = abs (bMdst[s]); // wiki/Alpha_max_plus_beta_min_algorithm
+          const uint64_t absReal   = abs (bMdct[s]); // Richard Lyons, 1997; en.wikipedia.org/
+          const uint64_t absImag   = abs (bMdst[s]); // wiki/Alpha_max_plus_beta_min_algorithm
 
           sumAbsVal += (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
 #endif
@@ -123,15 +123,15 @@ unsigned SpecAnalyzer::getMeanAbsValues (const int32_t* const mdctSignal, const 
       {
         // based on S. Merdjani, L. Daudet, "Estimation of Frequency from MDCT-Encoded Files,"
         // DAFx-03, 2003, http://www.eecs.qmul.ac.uk/legacy/dafx03/proceedings/pdfs/dafx01.pdf
-        const uint32_t absReal   = abs (bMdct[s]); // Richard Lyons, 1997; see also code above
-        const uint32_t absEstIm  = abs (bMdct[s + 1] - bMdct[s - 1]) >> 1; // s - 1 may be -1!
+        const uint64_t absReal   = abs (bMdct[s]); // Richard Lyons, 1997; see also code above
+        const uint64_t absEstIm  = abs (bMdct[s + 1] - bMdct[s - 1]) >> 1; // s - 1 may be -1!
 
         sumAbsVal += (absReal > absEstIm ? absReal + ((absEstIm * 3) >> 3) : absEstIm + ((absReal * 3) >> 3));
       }
       if ((b == 0) && (bandWidth > 0)) // correct estimate at DC
       {
-        const uint32_t absReal   = abs (bMdct[0]); // Richard Lyons, 1997; see also code above
-        const uint32_t absEstIm  = abs (bMdct[1] - bMdct[-1]) >> 1; // if s - 1 was -1 earlier
+        const uint64_t absReal   = abs (bMdct[0]); // Richard Lyons, 1997; see also code above
+        const uint64_t absEstIm  = abs (bMdct[1] - bMdct[-1]) >> 1; // if s - 1 was -1 earlier
 
         sumAbsVal -= (absReal > absEstIm ? absReal + ((absEstIm * 3) >> 3) : absEstIm + ((absReal * 3) >> 3));
         sumAbsVal += absReal;
@@ -284,9 +284,9 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
         const double  complexSqr = (double) bMdct[s] * (double) bMdct[s] + (double) bMdst[s] * (double) bMdst[s];
         const uint32_t absSample = uint32_t (sqrt (complexSqr) + 0.5);
 #else
-        const uint32_t absReal   = abs (bMdct[s]);   // Richard Lyons, 1997; en.wikipedia.org/
-        const uint32_t absImag   = abs (bMdst[s]);   // wiki/Alpha_max_plus_beta_min_algorithm
-        const uint32_t absSample = (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
+        const uint64_t absReal   = abs (bMdct[s]);   // Richard Lyons, 1997; en.wikipedia.org/
+        const uint64_t absImag   = abs (bMdst[s]);   // wiki/Alpha_max_plus_beta_min_algorithm
+        const uint32_t absSample = uint32_t (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
 #endif
         sumAbsVal += absSample;
         if (offs + s > 0) // exclude DC from max & min
@@ -383,10 +383,10 @@ int16_t SpecAnalyzer::stereoSigAnalysis (const int32_t* const mdctSignal1, const
         const double complexSqrR = (double) rbMdct[s] * (double) rbMdct[s] + (double) rbMdst[s] * (double) rbMdst[s];
         const uint32_t absMagnR  = uint32_t (sqrt (complexSqrR) + 0.5);
 #else
-        const uint32_t absImagL  = abs (lbMdst[s]);  // Richard Lyons, 1997; en.wikipedia.org/
-        const uint32_t absImagR  = abs (rbMdst[s]);  // wiki/Alpha_max_plus_beta_min_algorithm
-        const uint32_t absMagnL  = (absRealL > absImagL ? absRealL + ((absImagL * 3) >> 3) : absImagL + ((absRealL * 3) >> 3));
-        const uint32_t absMagnR  = (absRealR > absImagR ? absRealR + ((absImagR * 3) >> 3) : absImagR + ((absRealR * 3) >> 3));
+        const uint64_t absImagL  = abs (lbMdst[s]);  // Richard Lyons, 1997; en.wikipedia.org/
+        const uint64_t absImagR  = abs (rbMdst[s]);  // wiki/Alpha_max_plus_beta_min_algorithm
+        const uint64_t absMagnL  = (absRealL > absImagL ? absRealL + ((absImagL * 3) >> 3) : absImagL + ((absRealL * 3) >> 3));
+        const uint64_t absMagnR  = (absRealR > absImagR ? absRealR + ((absImagR * 3) >> 3) : absImagR + ((absRealR * 3) >> 3));
 #endif
         sumRealL += absRealL;
         sumRealR += absRealR;
@@ -395,9 +395,9 @@ int16_t SpecAnalyzer::stereoSigAnalysis (const int32_t* const mdctSignal1, const
 
         sumMagnL += absMagnL;
         sumMagnR += absMagnR;
-        sumPrdLR += ((uint64_t) absMagnL * (uint64_t) absMagnR + anaBwOffset) >> SA_BW_SHIFT;
-        sumPrdLL += ((uint64_t) absMagnL * (uint64_t) absMagnL + anaBwOffset) >> SA_BW_SHIFT;
-        sumPrdRR += ((uint64_t) absMagnR * (uint64_t) absMagnR + anaBwOffset) >> SA_BW_SHIFT;
+        sumPrdLR += (absMagnL * absMagnR + anaBwOffset) >> SA_BW_SHIFT;
+        sumPrdLL += (absMagnL * absMagnL + anaBwOffset) >> SA_BW_SHIFT;
+        sumPrdRR += (absMagnR * absMagnR + anaBwOffset) >> SA_BW_SHIFT;
       } // for s
 
       sumRealL = (sumRealL + anaBwOffset) >> SA_BW_SHIFT; // avg

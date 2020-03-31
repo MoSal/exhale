@@ -12,9 +12,11 @@
 #define _STEREO_PROCESSING_H_
 
 #include "exhaleLibPch.h"
+#include "specAnalysis.h" // for SA_BW... constants
 
 // constants, experimental macros
 #define SP_EPS                  1
+#define SP_OPT_ALPHA_QUANT      1 // quantize alpha_q minimizing RMS distortion in louder channel
 
 // joint-channel processing class
 class StereoProcessor
@@ -22,6 +24,7 @@ class StereoProcessor
 private:
 
   // member variables
+  uint8_t m_stereoCorrValue[1024 >> SA_BW_SHIFT]; // one value for every 32 spectral coefficients
 
 public:
 
