@@ -7,6 +7,10 @@ encode uncompressed WAVE-format audio files into MPEG-4-format files
 complying with the ISO/IEC 23003-3 (MPEG-D) Unified Speech and Audio
 Coding (USAC, also known as Extended High-Efficiency AAC) standard.
 
+In addition, exhale writes program peak-level and loudness data into
+the generated MPEG-4 files according to the ISO/IEC 23003-4, Dynamic
+Range Control (DRC) specification for use by decoders providing DRC.
+
 exhale currently makes use of all frequency-domain (FD) coding tools
 in the scalefactor based MDCT processing path, except for predictive
 joint stereo, which is still being integrated. Its objective is high

@@ -11,10 +11,6 @@
 #include "exhaleLibPch.h"
 #include "stereoProcessing.h"
 
-// static helper functions
-
-// private helper function
-
 // constructor
 StereoProcessor::StereoProcessor ()
 {
@@ -76,8 +72,8 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
 
       if (realOnlyCalc) // real data, only MDCTs are available
       {
-        int32_t* sfbNext1 = &sfbMdct1[1];
-        int32_t* sfbNext2 = &sfbMdct2[1];
+        const int32_t* sfbNext1 = &sfbMdct1[1];
+        const int32_t* sfbNext2 = &sfbMdct2[1];
 
         for (uint16_t s = sfbWidth - (sfb + 1 == numSwbFrame ? 1 : 0); s > 0; s--)
         {
@@ -151,7 +147,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
       grpRms1[sfb] = uint32_t ((sumAbsValM + (sfbWidth >> 1)) / sfbWidth);
       grpRms2[sfb] = uint32_t ((sumAbsValS + (sfbWidth >> 1)) / sfbWidth);
 
-      sfbStereoData[sfb + numSwbFrame * gr] = 16; // alpha = 0
+      if (applyPredSte) sfbStereoData[sfb + numSwbFrame * gr] = 16; // initialize to alpha=0
 
       if ((sfbIsOdd) || (sfb + 1 == maxSfbSte)) // finish pair
       {
@@ -175,7 +171,36 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
           }
           if (realOnlyCalc) // real data, only MDCTs available
           {
-            // TODO
+            const int32_t* nextA = (alterPredDir ? &mdctSpectrum2[offEv + 1] : &mdctSpectrum1[offEv + 1]);
+            const int32_t* nextB = (alterPredDir ? &mdctSpectrum1[offEv + 1] : &mdctSpectrum2[offEv + 1]);
+
+            if (sfbEv == 0) // exclude unavailable DC estimate
+            {
+              mdctA -= width; nextA++;
+              mdctB -= width; nextB++;
+            }
+            else
+            {
+              mdctA -= (width + 1); // point to pre-
+              mdctB -= (width + 1); // vious samples
+            }
+            for (uint16_t s = width - (sfbEv == 0 ? 2 : 1); s > 0; s--) // exclude unavailable final estimate
+            {
+              const int64_t mdstA = ((int64_t) *(nextA++) - (int64_t) *(mdctA++)) >> 1; // estimate, see also
+              const int64_t mdstB = ((int64_t) *(nextB++) - (int64_t) *(mdctB++)) >> 1; // getMeanAbsValues()
+
+              sumPrdRefRes += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdRefRef += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
+            }
+            if (sfb + 1 < numSwbFrame) // process final sample
+            {
+              const int64_t msSgn = (alterPredDir ? -1 : 1);
+              const int64_t mdstA = ((((int64_t) *nextB + *nextA * msSgn + 1) >> 1) - (int64_t) *mdctA) >> 1;
+              const int64_t mdstB = ((((int64_t) *nextA - *nextB * msSgn + 1) >> 1) - (int64_t) *mdctB) >> 1;
+
+              sumPrdRefRes += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdRefRef += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
+            }
           }
           else // complex data, both MDCTs and MDSTs available
           {
@@ -277,7 +302,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
 
   if (numSfbPredSte <= 1) // discard prediction coefficients and stay with legacy M/S stereo
   {
-    memset (sfbStereoData, 16, numSwbFrame * grp.numWindowGroups * sizeof (uint8_t));
+    if (applyPredSte) memset (sfbStereoData, 16, numSwbFrame * grp.numWindowGroups * sizeof (uint8_t));
 
     numSfbPredSte = 0;
   }
@@ -290,7 +315,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
       const uint16_t*  grpOff = &grp.sfbOffsets[numSwbFrame * gr];
       uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[numSwbFrame * gr];
       uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[numSwbFrame * gr];
-      int32_t b = 0, prevResi = 0;
+      int32_t prevResi = 0;
 
       if (realOnlyCalc) // preparation of res. magnitude value
       {
@@ -316,8 +341,8 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
 
         if (realOnlyCalc) // real data, only MDCT is available
         {
-          int32_t* sfbNextD = &sfbMdctD[1];
-          int32_t* sfbNextR = &sfbMdctR[1];
+          const int32_t* sfbNextD = &sfbMdctD[1];
+          const int32_t* sfbNextR = &sfbMdctR[1];
 
           for (uint16_t s = sfbWidth - (sfb + 1 == numSwbFrame ? 1 : 0); s > 0; s--)
           {
