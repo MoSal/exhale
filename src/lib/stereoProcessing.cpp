@@ -30,7 +30,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
   const SfbGroupData& grp = groupingData1;
   const bool  eightShorts = (grp.numWindowGroups > 1);
   const uint8_t maxSfbSte = (eightShorts ? __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) : numSwbFrame);
-  uint16_t  numSfbPredSte = 0; // counter
+  uint32_t  numSfbPredSte = 0; // counter
 
   if ((mdctSpectrum1 == nullptr) || (mdctSpectrum2 == nullptr) || (numSwbFrame < maxSfbSte) || (grp.numWindowGroups != groupingData2.numWindowGroups) ||
       (sfbStepSize1  == nullptr) || (sfbStepSize2  == nullptr) || (numSwbFrame < MIN_NUM_SWB_SHORT) || (numSwbFrame > MAX_NUM_SWB_LONG))
@@ -399,6 +399,25 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
         // average spectral res. magnitude across current band
         sumAbsValR = (sumAbsValR + (sfbWidth >> 1)) / sfbWidth;
         if (alterPredDir) grpRms1[sfb] = (uint32_t) sumAbsValR; else grpRms2[sfb] = (uint32_t) sumAbsValR;
+      }
+
+      if (alterPredDir) // swap channel data when pred_dir = 1
+      {
+        int32_t* sfbMdct1 = &mdctSpectrum1[grpOff[0]];
+        int32_t* sfbMdct2 = &mdctSpectrum2[grpOff[0]];
+
+        for (uint16_t sfb = 0; sfb < maxSfbSte; sfb++)
+        {
+          for (uint16_t s = grpOff[sfb + 1] - grpOff[sfb]; s > 0; s--)
+          {
+            const int32_t i = *sfbMdct1;
+            *(sfbMdct1++)   = *sfbMdct2;
+            *(sfbMdct2++)   = i;
+          }
+          numSfbPredSte = grpRms1[sfb];
+          grpRms1[sfb]  = grpRms2[sfb];
+          grpRms2[sfb]  = numSfbPredSte;
+        }
       }
     } // for gr
 

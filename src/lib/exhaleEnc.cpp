@@ -119,7 +119,7 @@ static uint32_t quantizeSfbWithMinSnr (const unsigned* const coeffMagn, const ui
 // inline helper functions
 static inline void applyStereoPreProcessingCplx (int32_t* mdctSample1, int32_t* mdctSample2,
                                                  int32_t* mdstSample1, int32_t* mdstSample2,
-                                                 const int64_t factIn, const int64_t factDe)
+                                                 const int64_t factIn, const int64_t factDe, const int64_t sign)
 {
   const int32_t  valI1 = *mdstSample1;
   const int32_t  valI2 = *mdstSample2;
@@ -127,39 +127,39 @@ static inline void applyStereoPreProcessingCplx (int32_t* mdctSample1, int32_t* 
   const int32_t  valR2 = *mdctSample2;
   const int64_t  absR1 = abs (valR1);
   const int64_t  absR2 = abs (valR2);
-  int64_t dmxI1, dmxR1 = valR1 * factDe + valR2 * factIn; // cross
-  int64_t dmxI2, dmxR2 = valR1 * factIn + valR2 * factDe; // -talk
+  int64_t dmxI1, dmxR1 = valR1 * factDe + sign * valR2 * factIn; // cross
+  int64_t dmxI2, dmxR2 = valR2 * factDe + sign * valR1 * factIn; // -talk
   double n, d;
 
   if (abs (dmxR1) < absR1 + absR2) // avoid destructive summations
   {
     if (absR1 * factDe < absR2 * factIn)
     {
-      dmxR1 = valR2 * factIn - valR1 * factDe;
-      dmxI1 = valI2 * factIn - valI1 * factDe;
+      dmxR1 = valR2 * factIn - sign * valR1 * factDe;
+      dmxI1 = valI2 * factIn - sign * valI1 * factDe;
     }
     else
     {
-      dmxR1 = valR1 * factDe - valR2 * factIn;
-      dmxI1 = valI1 * factDe - valI2 * factIn;
+      dmxR1 = valR1 * factDe - sign * valR2 * factIn;
+      dmxI1 = valI1 * factDe - sign * valI2 * factIn;
     }
   }
-  else dmxI1 = valI1 * factDe + valI2 * factIn;
+  else dmxI1 = valI1 * factDe + sign * valI2 * factIn;
 
   if (abs (dmxR2) < absR1 + absR2) // avoid destructive summations
   {
     if (absR1 * factIn < absR2 * factDe)
     {
-      dmxR2 = valR2 * factDe - valR1 * factIn;
-      dmxI2 = valI2 * factDe - valI1 * factIn;
+      dmxR2 = valR2 * factDe - sign * valR1 * factIn;
+      dmxI2 = valI2 * factDe - sign * valI1 * factIn;
     }
     else
     {
-      dmxR2 = valR1 * factIn - valR2 * factDe;
-      dmxI2 = valI1 * factIn - valI2 * factDe;
+      dmxR2 = valR1 * factIn - sign * valR2 * factDe;
+      dmxI2 = valI1 * factIn - sign * valI2 * factDe;
     }
   }
-  else dmxI2 = valI1 * factIn + valI2 * factDe;
+  else dmxI2 = valI2 * factDe + sign * valI1 * factIn;
 
   n = (double) valR1 * (double) valR1 + (double) valI1 * (double) valI1;
   d = (double) dmxR1 * (double) dmxR1 + (double) dmxI1 * (double) dmxI1;
@@ -172,7 +172,7 @@ static inline void applyStereoPreProcessingCplx (int32_t* mdctSample1, int32_t* 
 
 static inline void applyStereoPreProcessingReal (int32_t* mdctSample1, int32_t* mdctSample2,
                                                  int32_t* prevSample1, int32_t* prevSample2,
-                                                 const int64_t factIn, const int64_t factDe)
+                                                 const int64_t factIn, const int64_t factDe, const int64_t sign)
 {
   const int64_t  valI1 = (*(mdctSample1 + 1) - (int64_t) *prevSample1) >> 1; // estimate, see also
   const int64_t  valI2 = (*(mdctSample2 + 1) - (int64_t) *prevSample2) >> 1; // getMeanAbsValues()
@@ -180,39 +180,39 @@ static inline void applyStereoPreProcessingReal (int32_t* mdctSample1, int32_t* 
   const int32_t  valR2 = (*prevSample2 = *mdctSample2);
   const int64_t  absR1 = abs (valR1);
   const int64_t  absR2 = abs (valR2);
-  int64_t dmxI1, dmxR1 = valR1 * factDe + valR2 * factIn; // cross
-  int64_t dmxI2, dmxR2 = valR1 * factIn + valR2 * factDe; // -talk
+  int64_t dmxI1, dmxR1 = valR1 * factDe + sign * valR2 * factIn; // cross
+  int64_t dmxI2, dmxR2 = valR2 * factDe + sign * valR1 * factIn; // -talk
   double n, d;
 
   if (abs (dmxR1) < absR1 + absR2) // avoid destructive summations
   {
     if (absR1 * factDe < absR2 * factIn)
     {
-      dmxR1 = valR2 * factIn - valR1 * factDe;
-      dmxI1 = valI2 * factIn - valI1 * factDe;
+      dmxR1 = valR2 * factIn - sign * valR1 * factDe;
+      dmxI1 = valI2 * factIn - sign * valI1 * factDe;
     }
     else
     {
-      dmxR1 = valR1 * factDe - valR2 * factIn;
-      dmxI1 = valI1 * factDe - valI2 * factIn;
+      dmxR1 = valR1 * factDe - sign * valR2 * factIn;
+      dmxI1 = valI1 * factDe - sign * valI2 * factIn;
     }
   }
-  else dmxI1 = valI1 * factDe + valI2 * factIn;
+  else dmxI1 = valI1 * factDe + sign * valI2 * factIn;
 
   if (abs (dmxR2) < absR1 + absR2) // avoid destructive summations
   {
     if (absR1 * factIn < absR2 * factDe)
     {
-      dmxR2 = valR2 * factDe - valR1 * factIn;
-      dmxI2 = valI2 * factDe - valI1 * factIn;
+      dmxR2 = valR2 * factDe - sign * valR1 * factIn;
+      dmxI2 = valI2 * factDe - sign * valI1 * factIn;
     }
     else
     {
-      dmxR2 = valR1 * factIn - valR2 * factDe;
-      dmxI2 = valI1 * factIn - valI2 * factDe;
+      dmxR2 = valR1 * factIn - sign * valR2 * factDe;
+      dmxI2 = valI1 * factIn - sign * valI2 * factDe;
     }
   }
-  else dmxI2 = valI1 * factIn + valI2 * factDe;
+  else dmxI2 = valI2 * factDe + sign * valI1 * factIn;
 
   n = (double) valR1 * (double) valR1 + (double) valI1 * (double) valI1;
   d = (double) dmxR1 * (double) dmxR1 + (double) dmxI1 * (double) dmxI1;
@@ -713,6 +713,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
       if (coreConfig.commonWindow && (m_perCorrCurr[el] > 128)) // run stereo pre-processing
       {
+        const int16_t chanCorrSign = (coreConfig.stereoConfig & 2 ? -1 : 1);
         const bool     eightShorts = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
         const uint16_t nSamplesMax = (samplingRate < 37566 ? nSamplesInFrame : swbOffsetsL[m_swbTableIdx][maxSfbLong]);
         const uint8_t steppFadeLen = (eightShorts ? 4 : (coreConfig.tnsActive ? 32 : 64));
@@ -745,14 +746,14 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
               for (s = steppFadeLen - 1; s > 0; s--, sigR0++, sigR1++) // start with fade-in
               {
-                applyStereoPreProcessingReal (sigR0, sigR1, &prevR0, &prevR1, xTalkI, xTalkD);
+                applyStereoPreProcessingReal (sigR0, sigR1, &prevR0, &prevR1, xTalkI, xTalkD, chanCorrSign);
                 xTalkI += steppWeightI;
                 xTalkD -= steppWeightD;
               }
             }
             for (s = maxLen - steppFadeLen * grpLength; s > 0; s--, sigR0++, sigR1++) // end
             {
-              applyStereoPreProcessingReal (sigR0, sigR1, &prevR0, &prevR1, xTalkI, xTalkD);
+              applyStereoPreProcessingReal (sigR0, sigR1, &prevR0, &prevR1, xTalkI, xTalkD, chanCorrSign);
             }
           }
           else // TNS inactive, both MDCTs and MDSTs are available
@@ -769,14 +770,14 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
               for (s = steppFadeLen - 1; s > 0; s--, sigR0++, sigR1++, sigI0++, sigI1++)
               {
-                applyStereoPreProcessingCplx (sigR0, sigR1, sigI0, sigI1, xTalkI, xTalkD);
+                applyStereoPreProcessingCplx (sigR0, sigR1, sigI0, sigI1, xTalkI, xTalkD, chanCorrSign);
                 xTalkI += steppWeightI;
                 xTalkD -= steppWeightD;
               }
             }
             for (s = maxLen - steppFadeLen * grpLength; s > 0; s--, sigR0++, sigR1++, sigI0++, sigI1++)
             {
-              applyStereoPreProcessingCplx (sigR0, sigR1, sigI0, sigI1, xTalkI, xTalkD);
+              applyStereoPreProcessingCplx (sigR0, sigR1, sigI0, sigI1, xTalkI, xTalkD, chanCorrSign);
             }
           } // if coreConfig.tnsActive
         }
@@ -1023,7 +1024,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint8_t maxSfbShort = (samplingRate < 37566 ? 14 /*32 kHz*/ : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort : maxSfbLong) - 5 + (m_bitRateMode >> 1) + (meanSpecFlat[ci] >> 5);
-          const unsigned targetBitCountX2 = ((48000 + 16000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * grpData.numWindowGroups);
+          const unsigned targetBitCountX2 = ((54000 + 18000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * grpData.numWindowGroups);
           unsigned b = grpData.sfbsPerGroup - 1;
 
           if ((grpRms[b] >> 16) > 0) lastSfb = b;
@@ -1055,7 +1056,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #endif
           b = lastSfb;
           while ((b >= sfmBasedSfbStart) && (grpOff[b] > peakIndex) && ((grpRms[b] >> 16) <= 1) /*coarse quantization*/ &&
-                 ((estimBitCount * 2 > targetBitCountX2) || (grpLength > 1 /*no accurate bit count estimate available*/)))
+                 ((estimBitCount * 9 > targetBitCountX2 * 4) || (grpLength > 1 /*no accurate bit count est. available*/)))
           {
             b--; // search first coarsely quantized high-freq. SFB
           }
@@ -1231,7 +1232,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           m_perCorrCurr[el] = (uint8_t) __max (prevPerCorr - allowedDiff, __min (prevPerCorr + allowedDiff, (int16_t) s));
         }
 
-     // if (s == steAnaStats * -1) coreConfig.stereoConfig = 2; // 2: side > mid, pred_dir=1
+        if (s == steAnaStats * -1) coreConfig.stereoConfig = 2; // 2: side > mid, pred_dir=1
         if (s > (UCHAR_MAX * 3) / 4) coreConfig.stereoMode = 2; // 2: all, ms_mask_present=2
       }
       else if (nrChannels > 1) m_perCorrCurr[el] = 128; // update history with halfway value
@@ -1408,7 +1409,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         errorValue |= m_specAnalyzer.getMeanAbsValues (m_mdctSignals[ci], eightShorts ? nullptr : m_mdstSignals[ci], nSamplesInFrame,
                                                        ci, grpSO, grpData.sfbsPerGroup * grpData.numWindowGroups, grpData.sfbRmsValues);
 #endif
-        errorValue |= applyTnsToWinGroup (coreConfig.tnsData[ch], grpData, eightShorts, icsCurr.maxSfb, ci);
+        errorValue |= applyTnsToWinGroup (coreConfig.tnsData[ch], grpData, eightShorts, grpData.sfbsPerGroup, ci);
         coreConfig.tnsActive |= (coreConfig.tnsData[ch].numFilters > 0); // tns_data_present
       }
 
