@@ -11,6 +11,50 @@
 #include "exhaleLibPch.h"
 #include "bitStreamWriter.h"
 
+// static helper function
+static uint32_t getDeltaCodeTimeFlag (const uint8_t* const alphaQCurr, const unsigned numWinGroups, const unsigned numSwbShort,
+                                      const uint8_t* const alphaQPrev, const unsigned maxSfbSte, const EntropyCoder& entrCoder,
+                                      const bool complexCoef)
+{
+  unsigned b, g, bitCountFreq = 0, bitCountTime = 0;
+
+  if ((alphaQCurr == nullptr) || (alphaQPrev == nullptr)) return 0;
+
+  for (g = 0; g < numWinGroups; g++)
+  {
+    const uint8_t* const aqReIdxPrvGrp = (g == 0 ? alphaQPrev : &alphaQCurr[numSwbShort * (g - 1)]);
+    const uint8_t* const aqImIdxPrvGrp = &aqReIdxPrvGrp[1];
+    const uint8_t* const gCplxPredUsed = &alphaQCurr[numSwbShort * g];
+    int  aqReIdxPred = 16, aqImIdxPred = 16; // init alpha_q_.. = 0
+
+    for (b = 0; b < maxSfbSte; b += SFB_PER_PRED_BAND)
+    {
+      if (gCplxPredUsed[b] > 0) // count dpcm_alpha_q_re/_q_im bits
+      {
+        int aqIdx = gCplxPredUsed[b] & 31; // range -15,...0,...,15
+
+        bitCountFreq += entrCoder.indexGetBitCount (aqIdx - aqReIdxPred);
+        bitCountTime += entrCoder.indexGetBitCount (aqIdx - int (aqReIdxPrvGrp[b] & 31));
+
+        aqReIdxPred = aqIdx;
+
+        if (complexCoef)
+        {
+          aqIdx = gCplxPredUsed[b + 1] & 31; // TODO: <32 kHz short
+
+          bitCountFreq += entrCoder.indexGetBitCount (aqIdx - aqImIdxPred);
+          bitCountTime += entrCoder.indexGetBitCount (aqIdx - int (aqImIdxPrvGrp[b] & 31));
+
+          aqImIdxPred = aqIdx;
+        }
+      }
+      else aqReIdxPred = aqImIdxPred = 16;
+    }
+  } // for g
+
+  return (bitCountFreq > bitCountTime ? 1 : 0);
+}
+
 // private helper functions
 void BitStreamWriter::writeByteAlignment () // write '0' bits until stream is byte-aligned
 {
@@ -281,7 +325,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
   const IcsInfo& icsInfo1 = elData.icsInfoCurr[1];
   const TnsData& tnsData0 = elData.tnsData[0];
   const TnsData& tnsData1 = elData.tnsData[1];
-  const SfbGroupData& grp = elData.groupingData[0];
+  const unsigned nWinGrps = elData.groupingData[0].numWindowGroups;
   unsigned bitCount = 2, g, b;
 
   m_auBitStream.write (elData.tnsActive ? 1 : 0, 1); // tns_active
@@ -302,9 +346,9 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
     bitCount += 3;
     if (elData.stereoMode == 1) // write SFB-wise ms_used[][] flag
     {
-      for (g = 0; g < grp.numWindowGroups; g++)
+      for (g = 0; g < nWinGrps; g++)
       {
-        const uint8_t* const gMsUsed = &elData.stereoData[m_numSwbShort * g];
+        const uint8_t* const gMsUsed = &elData.stereoDataCurr[m_numSwbShort * g];
 
         for (b = 0; b < maxSfbSte; b++)
         {
@@ -317,13 +361,14 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
     else if (elData.stereoMode >= 3)  // SFB-wise cplx_pred_data()
     {
       const bool complexCoef = (elData.stereoConfig & 1);
+      uint32_t deltaCodeTime = 0;
 
       m_auBitStream.write (elData.stereoMode - 3, 1); // _pred_all
       if (elData.stereoMode == 3)
       {
-        for (g = 0; g < grp.numWindowGroups; g++)
+        for (g = 0; g < nWinGrps; g++)
         {
-          const uint8_t* const gCplxPredUsed = &elData.stereoData[m_numSwbShort * g];
+          const uint8_t* const gCplxPredUsed = &elData.stereoDataCurr[m_numSwbShort * g];
 
           for (b = 0; b < maxSfbSte; b += SFB_PER_PRED_BAND)
           {
@@ -334,46 +379,49 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
       }
       m_auBitStream.write (elData.stereoConfig & 3, 2);// pred_dir
       bitCount += 3;
-      if (!indepFlag) // use_prev_frame (&4), delta_code_time (&8)
+      if (!indepFlag)  // write use_prev_frame and delta_code_time
       {
         if (complexCoef)
         {
           m_auBitStream.write (elData.stereoConfig & 4 ? 1 : 0, 1);
           bitCount++;
         }
-        m_auBitStream.write (elData.stereoConfig & 8 ? 1 : 0, 1);
+        deltaCodeTime = getDeltaCodeTimeFlag (elData.stereoDataCurr, nWinGrps, m_numSwbShort, elData.stereoDataPrev, maxSfbSte, entrCoder, complexCoef);
+        m_auBitStream.write (deltaCodeTime, 1);
         bitCount++;
       }
-      // TODO: complete the following code for delta_code_time > 0
-      for (g = 0; g < grp.numWindowGroups; g++)
+
+      for (g = 0; g < nWinGrps; g++)
       {
-        const uint8_t* const gCplxPredUsed = &elData.stereoData[m_numSwbShort * g];
-        uint8_t aqReIdxPred = 16, aqImIdxPred = 16; // alpha_q = 0
+        const uint8_t* const aqReIdxPrvGrp = (g == 0 ? elData.stereoDataPrev : &elData.stereoDataCurr[m_numSwbShort * (g - 1)]);
+        const uint8_t* const aqImIdxPrvGrp = &aqReIdxPrvGrp[1];
+        const uint8_t* const gCplxPredUsed = &elData.stereoDataCurr[m_numSwbShort * g];
+        int  aqReIdxPred = 16, aqImIdxPred = 16; // alpha_q_.. = 0
 
         for (b = 0; b < maxSfbSte; b += SFB_PER_PRED_BAND)
         {
           if (gCplxPredUsed[b] > 0) // write dpcm_alpha_q_re/_q_im
           {
-            uint8_t aqIdx = gCplxPredUsed[b] & 31; // -15,..0,..15
-            int aqIdxDpcm = (int) aqIdx - aqReIdxPred;
+            int aqIdx = gCplxPredUsed[b] & 31; // range -15,...,15
+            int aqIdxDpcm = aqIdx - (deltaCodeTime > 0 ? int (aqReIdxPrvGrp[b] & 31) : aqReIdxPred);
             unsigned bits = entrCoder.indexGetBitCount (aqIdxDpcm);
 
-            aqReIdxPred = aqIdx;
+            if (deltaCodeTime == 0) aqReIdxPred = aqIdx;
             m_auBitStream.write (entrCoder.indexGetHuffCode (aqIdxDpcm), bits);
             bitCount += bits;
 
             if (complexCoef)
             {
               aqIdx = gCplxPredUsed[b + 1] & 31; // <32 kHz short!
-              aqIdxDpcm = (int) aqIdx - aqImIdxPred;
+              aqIdxDpcm = aqIdx - (deltaCodeTime > 0 ? int (aqImIdxPrvGrp[b] & 31) : aqImIdxPred);
               bits = entrCoder.indexGetBitCount (aqIdxDpcm);
 
-              aqImIdxPred = aqIdx;
+              if (deltaCodeTime == 0) aqImIdxPred = aqIdx;
               m_auBitStream.write (entrCoder.indexGetHuffCode (aqIdxDpcm), bits);
               bitCount += bits;
             }
           }
-          else aqReIdxPred = aqImIdxPred = 16;
+          else if (deltaCodeTime == 0) aqReIdxPred = aqImIdxPred = 16;
         }
       } // for g
     }

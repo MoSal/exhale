@@ -23,10 +23,11 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
                                                 SfbGroupData&  groupingData1, SfbGroupData&  groupingData2,
                                                 const TnsData&   filterData1, const TnsData&   filterData2,
                                                 const uint8_t    numSwbFrame, uint8_t* const sfbStereoData,
+                                                const uint8_t  useAltPredDir, const uint8_t useComplexCoef,
                                                 uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2)
 {
   const bool applyPredSte = (sfbStereoData != nullptr); // use real-valued predictive stereo
-  const bool alterPredDir = (applyPredSte && (sfbStereoData[0] & 1)); // true: mid from side
+  const bool alterPredDir = (applyPredSte && (useAltPredDir > 0)); // predict mid from side?
   const SfbGroupData& grp = groupingData1;
   const bool  eightShorts = (grp.numWindowGroups > 1);
   const uint8_t maxSfbSte = (eightShorts ? __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) : numSwbFrame);
@@ -292,7 +293,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
             const double min = (applyPredSte ? __min (rmsSfbM[b], rmsSfbS[b]) : __min (grpRms1[idx], grpRms2[idx]));
             const double rat = __min (1.0, grpStepSizes1[idx] / (sfbRmsL * 2.0)) * __min (1.0, grpStepSizes2[idx] / (sfbRmsR * 2.0)) * sfbFacLR;
 
-            grpStepSizes1[sfb] = grpStepSizes2[sfb] = uint32_t (__max (SP_EPS, (min > rat * sfbTempVar ? sqrt (rat * sfbTempVar * min) :
+            grpStepSizes1[idx] = grpStepSizes2[idx] = uint32_t (__max (SP_EPS, (min > rat * sfbTempVar ? sqrt (rat * sfbTempVar * min) :
                                                                                 __min (1.0, rat) * sfbTempVar)) + 0.5);
           }
         }
@@ -300,13 +301,11 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
     }
   } // for gr
 
-  if (numSfbPredSte <= 1) // discard prediction coefficients and stay with legacy M/S stereo
+  if (numSfbPredSte == 0) // discard prediction coefficients and stay with legacy M/S stereo
   {
     if (applyPredSte) memset (sfbStereoData, 16, numSwbFrame * grp.numWindowGroups * sizeof (uint8_t));
-
-    numSfbPredSte = 0;
   }
-  else // at least two "significant" prediction bands - apply prediction and update RMS data
+  else // at least one "significant" prediction band, apply prediction and update RMS values
   {
     for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
     {
@@ -400,6 +399,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
         sumAbsValR = (sumAbsValR + (sfbWidth >> 1)) / sfbWidth;
         if (alterPredDir) grpRms1[sfb] = (uint32_t) sumAbsValR; else grpRms2[sfb] = (uint32_t) sumAbsValR;
       }
+      if (numSwbFrame > maxSfbSte) memset (&sfbStereoData[maxSfbSte + numSwbFrame * gr], 16, (numSwbFrame - maxSfbSte) * sizeof (uint8_t));
 
       if (alterPredDir) // swap channel data when pred_dir = 1
       {

@@ -788,12 +788,12 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         const uint8_t   numSwbFrame = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT ? m_numSwbShort : __min (m_numSwbLong, maxSfbLong));
         const uint32_t peakIndexSte = __max ((m_specAnaCurr[ci] >> 5) & 2047, (m_specAnaCurr[ci + 1] >> 5) & 2047) << 5;
 
-        coreConfig.stereoData[0] = (coreConfig.stereoData[0] & 0xFE) | (coreConfig.stereoConfig >> 1); // TODO: pass pred_dir, complex_coef as args
         errorValue = m_stereoCoder.applyFullFrameMatrix (m_mdctSignals[ci], m_mdctSignals[ci + 1],
                                                          m_mdstSignals[ci], m_mdstSignals[ci + 1],
                                                          coreConfig.groupingData[0], coreConfig.groupingData[1],
                                                          coreConfig.tnsData[0], coreConfig.tnsData[1],
-                                                         numSwbFrame, coreConfig.stereoData,
+                                                         numSwbFrame, coreConfig.stereoDataCurr,
+                                                         coreConfig.stereoConfig >> 1, coreConfig.stereoConfig & 1,
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS *  ci],
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS * (ci + 1)]);
         if (errorValue == 2) // use frame M/S with cplx_pred_all=1
@@ -1217,7 +1217,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         const uint16_t nSamplesMax = (samplingRate < 37566 ? nSamplesInFrame : swbo[brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate)]);
         const int16_t  steAnaStats = m_specAnalyzer.stereoSigAnalysis (m_mdctSignals[ci], m_mdctSignals[ci + 1],
                                                                        m_mdstSignals[ci], m_mdstSignals[ci + 1], nSamplesMax,
-                                                                       nSamplesInFrame, eightShorts, coreConfig.stereoData);
+                                                                       nSamplesInFrame, eightShorts, coreConfig.stereoDataCurr);
         if (steAnaStats == SHRT_MIN) errorValue = 1;
 
         if ((s = abs (steAnaStats)) * m_perCorrCurr[el] == 0) // transitions to/from silence
@@ -1532,8 +1532,8 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
 
         if (winSeq0 != winSeq1) // try to synch window_sequences
         {
-          const USAC_WSEQ initialWs0 = (USAC_WSEQ) winSeq0;
-          const USAC_WSEQ initialWs1 = (USAC_WSEQ) winSeq1;
+          const USAC_WSEQ initialWs0 = winSeq0;
+          const USAC_WSEQ initialWs1 = winSeq1;
 
           winSeq0 = winSeq1 = windowSequenceSynch[initialWs0][initialWs1];   // equalization
           if ((winSeq0 != initialWs0) && (winSeq0 == EIGHT_SHORT))
@@ -1572,6 +1572,16 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
           icsInfo1.windowShape = WINDOW_KBD; // encourage synch in next frame; KBD dominates
         }
         coreConfig.commonWindow = (winSeq0 == winSeq1); // synch
+
+        memset (coreConfig.stereoDataPrev, 16, (MAX_NUM_SWB_LONG + 1) * sizeof (uint8_t));
+
+        if (((winSeq0 == EIGHT_SHORT) == (coreConfig.icsInfoPrev[0].windowSequence == EIGHT_SHORT)) && !m_indepFlag &&
+            ((winSeq1 == EIGHT_SHORT) == (coreConfig.icsInfoPrev[1].windowSequence == EIGHT_SHORT)) && (coreConfig.stereoMode > 0))
+        {
+          const unsigned lastGrpOffset = (coreConfig.icsInfoPrev[0].windowSequence == EIGHT_SHORT ? m_numSwbShort * (NUM_WINDOW_GROUPS - 1) : 0);
+
+          memcpy (coreConfig.stereoDataPrev, &coreConfig.stereoDataCurr[lastGrpOffset], (coreConfig.icsInfoPrev[0].maxSfb + 1) * sizeof (uint8_t));
+        }
       } // if nrChannels > 1
     }
 

@@ -38,6 +38,7 @@ public:
                                  SfbGroupData&  groupingData1, SfbGroupData&  groupingData2,
                                  const TnsData&   filterData1, const TnsData&   filterData2,
                                  const uint8_t    numSwbFrame, uint8_t* const sfbStereoData,
+                                 const uint8_t  useAltPredDir, const uint8_t useComplexCoef,
                                  uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2);
 }; // StereoProcessor
 

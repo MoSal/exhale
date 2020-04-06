@@ -131,7 +131,8 @@ struct CoreCoderData
   uint8_t       specFillData[2];  // noise filling data for each channel
 #endif
   uint8_t       stereoConfig;  // cplx_pred_data() config: pred_dir etc.
-  uint8_t       stereoData[MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS];
+  uint8_t       stereoDataCurr[MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS];
+  uint8_t       stereoDataPrev[MAX_NUM_SWB_LONG + 1]; // .._q_prev_frame
   uint8_t       stereoMode;   // ms_mask_present in StereoCoreToolInfo()
   bool          tnsActive;    // tns_active flag in StereoCoreToolInfo()
   TnsData       tnsData[2];       // current tns_data() for each channel
