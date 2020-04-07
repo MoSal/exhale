@@ -1024,7 +1024,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint8_t maxSfbShort = (samplingRate < 37566 ? 14 /*32 kHz*/ : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort : maxSfbLong) - 5 + (m_bitRateMode >> 1) + (meanSpecFlat[ci] >> 5);
-          const unsigned targetBitCountX2 = ((54000 + 18000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * grpData.numWindowGroups);
+          const unsigned targetBitCount25 = ((60000 + 20000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
           unsigned b = grpData.sfbsPerGroup - 1;
 
           if ((grpRms[b] >> 16) > 0) lastSfb = b;
@@ -1033,7 +1033,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #if EC_TRELLIS_OPT_CODING
           if (grpLength == 1) // finalize bit count estimate, RDOC
           {
-            estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, __min (estimBitCount + 2, targetBitCountX2),
+            estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, __min (estimBitCount + 2, targetBitCount25),
                                                              grpOff, grpRms, grpData.sfbsPerGroup, m_mdctQuantMag[ci]);
             for (b = 1; b < grpData.sfbsPerGroup; b++)
             {
@@ -1056,7 +1056,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #endif
           b = lastSfb;
           while ((b >= sfmBasedSfbStart) && (grpOff[b] > peakIndex) && ((grpRms[b] >> 16) <= 1) /*coarse quantization*/ &&
-                 ((estimBitCount * 9 > targetBitCountX2 * 4) || (grpLength > 1 /*no accurate bit count est. available*/)))
+                 ((estimBitCount * 5 > targetBitCount25 * 2) || (grpLength > 1 /*no accurate bit count est. available*/)))
           {
             b--; // search first coarsely quantized high-freq. SFB
           }
@@ -1087,7 +1087,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
             }
           }
 
-          if (estimBitCount > targetBitCountX2) // too many bits!!
+          if (estimBitCount > targetBitCount25) // too many bits!!
           {
             for (b = lastSOff; b > 0; b--)
             {
@@ -1108,7 +1108,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
                 grpRms[b] += 3 + entrCoder.indexGetBitCount ((int) grpScaleFacs[b] - grpScaleFacs[b - 1]);
                 estimBitCount += grpRms[b] & USHRT_MAX;
               }
-              if (estimBitCount <= targetBitCountX2) break;
+              if (estimBitCount <= targetBitCount25) break;
             }
 
             for (b++; b <= lastSfb; b++) // re-repeat scale factor
@@ -1118,7 +1118,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
                 grpScaleFacs[b] = grpScaleFacs[b - 1];
               }
             }
-          } // if estimBitCount > targetBitCountX2
+          } // if estimBitCount > targetBitCount25
 
           for (b = lastSfb + 1; b < grpData.sfbsPerGroup; b++)
           {

@@ -165,7 +165,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
     const uint32_t*   rms = grpData.sfbRmsValues;
     uint32_t*   stepSizes = &sfbStepSizes[ch * numSwbShort * NUM_WINDOW_GROUPS];
 // --- apply INTRA-channel simultaneous masking, equal-loudness weighting, and thresholding to SFB RMS data
-    uint32_t maskingSlope = 0, b, elw = 58254; // 8/9
+    uint32_t maskingSlope = 0, gr, b, elw = 58254; // 8/9
     uint32_t rmsEqualLoud = 0;
     uint32_t sumStepSizes = 0;
 
@@ -185,7 +185,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
     }
     if ((ch == lfeChannelIndex) || (grpData.numWindowGroups != 1)) // LFE, SHORT windows: no masking or ELW
     {
-      for (unsigned gr = 0; gr < grpData.numWindowGroups; gr++)
+      for (gr = 0; gr < grpData.numWindowGroups; gr++)
       {
         const uint32_t* gRms = &rms[numSwbShort * gr];
         uint32_t* gStepSizes = &stepSizes[numSwbShort * gr];
@@ -207,11 +207,43 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
       {
 // --- SHORT windows: apply perceptual just noticeable difference (JND) model and local band-peak smoothing
         nMeans++;
+
+        for (b = maxSfbInCh - 1; b > 0; b--) // gentle temporal band-peak smoothing; a spectral one follows
+        {
+          uint32_t maxGrpStep = stepSizes[b], stepSizeM1 = BA_EPS;
+
+          for (gr = 1; gr < grpData.numWindowGroups; gr++)
+          {
+            const uint32_t curGrpStep = stepSizes[b + numSwbShort * gr];
+
+            if (curGrpStep > maxGrpStep) maxGrpStep = curGrpStep;
+          }
+          for (gr = 0; gr + 1 < grpData.numWindowGroups; gr++)
+          {
+            const uint32_t newGrpStep = __max (stepSizeM1, stepSizes[b + numSwbShort * (gr + 1)]);
+
+            stepSizeM1 = stepSizes[b + numSwbShort * gr];
+
+            if ((stepSizeM1 == maxGrpStep) && (maxGrpStep > newGrpStep))
+            {
+              sumStepSizes -= unsigned (0.5 + sqrt ((double) maxGrpStep));
+              stepSizes[b + numSwbShort * gr] = newGrpStep;
+              sumStepSizes += unsigned (0.5 + sqrt ((double) newGrpStep));
+            }
+          }
+          if ((stepSizes[b + numSwbShort * gr] == maxGrpStep) && (maxGrpStep > stepSizeM1))
+          {
+            sumStepSizes -= unsigned (0.5 + sqrt ((double) maxGrpStep));
+            stepSizes[b + numSwbShort * gr] = stepSizeM1;
+            sumStepSizes += unsigned (0.5 + sqrt ((double) stepSizeM1));
+          }
+        } // for b
+
         m_avgStepSize[ch] = __min (USHRT_MAX, uint32_t ((sumStepSizes + (nBandsInCh >> 1)) / nBandsInCh));
         sumMeans += m_avgStepSize[ch];
         m_avgStepSize[ch] *= m_avgStepSize[ch];
 
-        for (unsigned gr = 0; gr < grpData.numWindowGroups; gr++) // separate peak smoothing for each group
+        for (gr = 0; gr < grpData.numWindowGroups; gr++) // separate spectral peak smoothing for each group
         {
           jndPowerLawAndPeakSmoothing (&stepSizes[numSwbShort * gr], maxSfbInCh, m_avgStepSize[ch], m_avgSpecFlat[ch], 0);
         }
