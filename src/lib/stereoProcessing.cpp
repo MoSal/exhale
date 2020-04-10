@@ -30,7 +30,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
   const bool alterPredDir = (applyPredSte && (useAltPredDir > 0)); // predict mid from side?
   const SfbGroupData& grp = groupingData1;
   const bool  eightShorts = (grp.numWindowGroups > 1);
-  const uint8_t maxSfbSte = (eightShorts ? __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) : numSwbFrame);
+  const uint8_t maxSfbSte = (eightShorts ? __min (numSwbFrame, __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) + 1) : numSwbFrame);
   uint32_t  numSfbPredSte = 0; // counter
 
   if ((mdctSpectrum1 == nullptr) || (mdctSpectrum2 == nullptr) || (numSwbFrame < maxSfbSte) || (grp.numWindowGroups != groupingData2.numWindowGroups) ||
@@ -282,7 +282,11 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
 
           sfbTempVar = (applyPredSte ? __max (rmsSfbM[b], rmsSfbS[b]) : __max (grpRms1[idx], grpRms2[idx]));
 
-          if (sfbFacLR <= 1.0) // total simultaneous masking - no positive SNR in either SFB
+          if ((grpStepSizes1[idx] == 0) || (grpStepSizes2[idx] == 0)) // HF noise filled SFB
+          {
+            grpStepSizes1[idx] = grpStepSizes2[idx] = 0;
+          }
+          else if (sfbFacLR <= 1.0)  // simultaneous masking - no positive SNR in either SFB
           {
             const double max = __max (sfbRmsL, sfbRmsR);
 

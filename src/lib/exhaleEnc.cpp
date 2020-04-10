@@ -573,13 +573,13 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
     if (tnsData.filterOrder[0] > 0) // try to reduce TNS start band as long as SNR increases
     {
       const uint16_t filtOrder = tnsData.filterOrder[0];
-      uint16_t b = __min (m_specAnaCurr[channelIndex] & 31, (nSamplesInFrame - filtOrder) >> SA_BW_SHIFT);
+      uint16_t b = __min ((m_specAnaCurr[channelIndex] & 31) + 2, (nSamplesInFrame - filtOrder) >> SA_BW_SHIFT);
       short filterC[MAX_PREDICTION_ORDER] = {0, 0, 0, 0};
       int32_t* predSig = &m_mdctSignals[channelIndex][b << SA_BW_SHIFT]; // TNS start offset
 
       m_linPredictor.parCorToLpCoeffs (tnsData.coeffParCor, filtOrder, filterC);
 
-      for (b = (b > 0 ? b - 1 : 0), predSig--; b > 0; b--) // b is in spectr. analysis units
+      for (b--, predSig--; b > 0; b--) // start a bit higher; b is in spectr. analysis units
       {
         uint64_t sumAbsOrg = 0, sumAbsTns = 0;
 
@@ -664,8 +664,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
   const uint32_t reductionFactor = (samplingRate < 37566 ? 2 : 3);  // undercoding reduction
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37) - ((m_bitRateMode & 7) > 2/*TODO*/ ? nChannels >> 1 : 0);
-  const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - (m_bitRateMode >> 1));
+  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37) - (m_bitRateMode > 3 ? nChannels >> 1 : 0);
+  const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
 //uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS];
@@ -717,7 +717,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         const bool     eightShorts = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
         const uint16_t nSamplesMax = (samplingRate < 37566 ? nSamplesInFrame : swbOffsetsL[m_swbTableIdx][maxSfbLong]);
         const uint8_t steppFadeLen = (eightShorts ? 4 : (coreConfig.tnsActive ? 32 : 64));
-        const uint8_t steppFadeOff = ((m_bitRateMode + 1) & 6) << (eightShorts ? 2 : 5);
+        const uint8_t steppFadeOff = ((m_bitRateMode + 77000 / samplingRate) & 6) << (eightShorts ? 2 : 5);
         const int64_t steppWeightI = __min (64, m_perCorrCurr[el] - 128) >> (eightShorts || coreConfig.tnsActive ? 1 : 0);
         const int64_t steppWeightD = 128 - steppWeightI; // decrement, (1 - crosstalk) * 128
         const TnsData&    tnsData0 = coreConfig.tnsData[0];
@@ -785,7 +785,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
       if ((errorValue == 0) && (coreConfig.stereoMode == 2))  // frame M/S, synch statistics
       {
-        const uint8_t   numSwbFrame = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT ? m_numSwbShort : __min (m_numSwbLong, maxSfbLong));
+        const uint8_t   numSwbFrame = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT ? m_numSwbShort : __min (m_numSwbLong, maxSfbLong + 1));
         const uint32_t peakIndexSte = __max ((m_specAnaCurr[ci] >> 5) & 2047, (m_specAnaCurr[ci + 1] >> 5) & 2047) << 5;
 
         errorValue = m_stereoCoder.applyFullFrameMatrix (m_mdctSignals[ci], m_mdctSignals[ci + 1],
@@ -810,6 +810,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       {
         SfbGroupData&  grpData = coreConfig.groupingData[ch];
         const bool eightShorts = (coreConfig.icsInfoCurr[ch].windowSequence == EIGHT_SHORT);
+        const uint8_t maxSfbCh = grpData.sfbsPerGroup;
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
         const uint8_t  mSfmFac = eightTimesSqrt256Minus[meanSpecFlat[ci]];
         uint32_t*    stepSizes = &sfbStepSizes[ci * m_numSwbShort * NUM_WINDOW_GROUPS];
@@ -827,7 +828,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
           // undercoding reduction for case where large number of coefs is quantized to zero
           s = (eightShorts ? (nSamplesInFrame * grpData.windowGroupLength[gr]) >> 1 : nSamplesInFrame << 2);
-          for (b = 0; b < grpData.sfbsPerGroup; b++)
+          for (b = 0; b < maxSfbCh; b++)
           {
 #if SA_IMPROVED_REAL_ABS
             const uint32_t rmsComp = (coreConfig.stereoMode > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
@@ -860,7 +861,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           }
           s = (eightShorts ? s / ((nSamplesInFrame * grpData.windowGroupLength[gr]) >> 8) : s / (nSamplesInFrame >> 5));
 
-          for (b = 0; b < grpData.sfbsPerGroup; b++)
+          for (b = 0; b < maxSfbCh; b++)
           {
             const unsigned lfConst = (samplingRate < 27713 && !eightShorts ? 1 : 2); // LF SNR boost, cf my M.Sc. thesis
             const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
@@ -876,13 +877,16 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         } // for gr
 
 #if !RESTRICT_TO_AAC
-        if (grpData.sfbsPerGroup > 0 && m_noiseFilling[el] && !eightShorts) // HF noise-fill
+        if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_bitRateMode <= 3 || !eightShorts))
         {
-          const uint8_t numSwbFrame = __min (numSwbCh, maxSfbLong);  // rate based bandwidth
+          const uint8_t numSwbFrame = __min (numSwbCh, (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode > 3 || samplingRate < 37566 ? 0 : 1));
 
-          if (grpData.sfbsPerGroup < numSwbFrame)
+          if (maxSfbCh < numSwbFrame) // increase coding bandwidth
           {
-            memset (&grpData.scaleFactors[grpData.sfbsPerGroup], 0, (numSwbFrame - grpData.sfbsPerGroup) * sizeof (uint8_t));
+            for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
+            {
+              memset (&grpData.scaleFactors[maxSfbCh + m_numSwbShort * gr], 0, (numSwbFrame - maxSfbCh) * sizeof (uint8_t));
+            }
             grpData.sfbsPerGroup = coreConfig.icsInfoCurr[ch].maxSfb = numSwbFrame;
           }
           if (ch > 0) coreConfig.commonMaxSfb = (coreConfig.icsInfoCurr[0].maxSfb == coreConfig.icsInfoCurr[1].maxSfb);
@@ -1213,6 +1217,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
       if (coreConfig.commonWindow && (m_bitRateMode <= 4)) // stereo pre-processing analysis
       {
         const bool     eightShorts = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
+        const uint8_t meanSpecFlat = (((m_specAnaCurr[ci] >> 16) & UCHAR_MAX) + ((m_specAnaCurr[ci + 1] >> 16) & UCHAR_MAX) + 1) >> 1;
         const uint16_t* const swbo = swbOffsetsL[m_swbTableIdx];
         const uint16_t nSamplesMax = (samplingRate < 37566 ? nSamplesInFrame : swbo[brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate)]);
         const int16_t  steAnaStats = m_specAnalyzer.stereoSigAnalysis (m_mdctSignals[ci], m_mdctSignals[ci + 1],
@@ -1222,14 +1227,15 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
         if ((s = abs (steAnaStats)) * m_perCorrCurr[el] == 0) // transitions to/from silence
         {
-          m_perCorrCurr[el] = (uint8_t) s;
+          m_perCorrCurr[el] = uint8_t((32 + s * __min (64, eightTimesSqrt256Minus[meanSpecFlat])) >> 6);
         }
         else // gentle overlap length dependent temporal smoothing
         {
           const int16_t allowedDiff = (coreConfig.icsInfoCurr[0].windowSequence < EIGHT_SHORT ? 16 : 32);
           const int16_t prevPerCorr = __max (128, __min (192, m_perCorrCurr[el]));
+          const int16_t currPerCorr = (32 + s * __min (64, eightTimesSqrt256Minus[meanSpecFlat])) >> 6;
 
-          m_perCorrCurr[el] = (uint8_t) __max (prevPerCorr - allowedDiff, __min (prevPerCorr + allowedDiff, (int16_t) s));
+          m_perCorrCurr[el] = (uint8_t) __max (prevPerCorr - allowedDiff, __min (prevPerCorr + allowedDiff, currPerCorr));
         }
 
         if (s == steAnaStats * -1) coreConfig.stereoConfig = 2; // 2: side > mid, pred_dir=1
@@ -1489,7 +1495,8 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         tsCurr[ch] = (m_tempAnaCurr[ci] /*R*/) & UCHAR_MAX;
         tsNext[ch] = (m_tempAnaNext[ci] >>  8) & UCHAR_MAX;
 
-        const bool lowOlapNext = (m_tranLocNext[ci] >= 0) || (sfNext < 68 && tfNext >= 204) || (tsCurr[ch] >= 153) || (tsNext[ch] >= 153);
+        const bool lowOlapNext = (m_tranLocNext[ci] >= 0) || (sfNext <= UCHAR_MAX / 4 && tfNext > (UCHAR_MAX * 13) / 16) ||
+                                 (tsCurr[ch] > (UCHAR_MAX * 5) / 8) || (tsNext[ch] > (UCHAR_MAX * 5) / 8);
         const bool sineWinCurr = (sfCurr >= 170) && (sfNext >= 170) && (sfCurr < 221) && (sfNext < 221) && (tsCurr[ch] < 20) &&
                                  (tfCurr >= 153) && (tfNext >= 153) && (tfCurr < 184) && (tfNext < 184) && (tsNext[ch] < 20);
         // set window_sequence
@@ -1499,11 +1506,11 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         }
         else // LONG_START_SEQUENCE, STOP_START_SEQUENCE, EIGHT_SHORT_SEQUENCE - min overlap
         {
-          wsCurr = (m_tranLocCurr[ci] >= 0) ? EIGHT_SHORT :
+          wsCurr = (m_tranLocCurr[ci] >= 0) || (tsCurr[ch] > (UCHAR_MAX * 5) / 8) || (tfCurr > (UCHAR_MAX * 15) / 16) ? EIGHT_SHORT :
 #if RESTRICT_TO_AAC
-                   (lowOlapNext && (m_tranLocNext[ci] >= 0 || wsPrev != EIGHT_SHORT) ? EIGHT_SHORT : LONG_STOP);
+                   (lowOlapNext ? EIGHT_SHORT : LONG_STOP);
 #else
-                   (lowOlapNext && (m_tranLocNext[ci] >= 0 || wsPrev != STOP_START) ? STOP_START : LONG_STOP);
+                   (lowOlapNext ? STOP_START : LONG_STOP);
 #endif
         }
 

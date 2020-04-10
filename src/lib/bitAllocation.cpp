@@ -12,6 +12,11 @@
 #include "bitAllocation.h"
 
 // static helper functions
+static inline uint32_t intSqrt (const uint32_t val)
+{
+  return uint32_t (0.5 + sqrt ((double) val));
+}
+
 static inline uint32_t jndModel (const uint32_t val, const uint32_t mean,
                                  const unsigned expTimes512, const unsigned mulTimes512)
 {
@@ -102,7 +107,7 @@ uint8_t BitAllocator::getScaleFac (const uint32_t sfbStepSize, const int32_t* co
   u = 0;
   for (sf = 0; sf < sfbWidth; sf++)
   {
-    u += uint32_t (0.5 + sqrt (abs ((double) sfbSignal[sf])));
+    u += intSqrt (abs (sfbSignal[sf]));
   }
   u = uint32_t ((u * 16384ui64 + (sfbWidth >> 1)) / sfbWidth);
   u = uint32_t (0.5 + sqrt ((double) u) * 128.0);
@@ -197,10 +202,10 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
         for (/*b*/; b > 0; b--)
         {
           gStepSizes[b] = __max (gRms[b], BA_EPS);
-          sumStepSizes += unsigned (0.5 + sqrt ((double) gStepSizes[b]));
+          sumStepSizes += intSqrt (gStepSizes[b]);
         }
         gStepSizes[0]   = __max (gRms[0], BA_EPS);
-        sumStepSizes   += unsigned (0.5 + sqrt ((double) gStepSizes[0]));
+        sumStepSizes   += intSqrt (gStepSizes[0]);
       } // for gr
 
       if (ch != lfeChannelIndex)
@@ -218,28 +223,25 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
 
             if (curGrpStep > maxGrpStep) maxGrpStep = curGrpStep;
           }
-          for (gr = 0; gr + 1 < grpData.numWindowGroups; gr++)
+          for (gr = 0; gr < grpData.numWindowGroups; gr++)
           {
-            const uint32_t newGrpStep = __max (stepSizeM1, stepSizes[b + numSwbShort * (gr + 1)]);
+            const uint32_t newGrpStep = __max (stepSizeM1, (gr + 1 == grpData.numWindowGroups ? BA_EPS : stepSizes[b + numSwbShort * (gr + 1)]));
 
             stepSizeM1 = stepSizes[b + numSwbShort * gr];
 
             if ((stepSizeM1 == maxGrpStep) && (maxGrpStep > newGrpStep))
             {
-              sumStepSizes -= unsigned (0.5 + sqrt ((double) maxGrpStep));
-              stepSizes[b + numSwbShort * gr] = newGrpStep;
-              sumStepSizes += unsigned (0.5 + sqrt ((double) newGrpStep));
+              const uint32_t sqrtOldStep = intSqrt (maxGrpStep);
+              const uint32_t sqrtNewStep = intSqrt (newGrpStep);
+              uint32_t& gStepSize = stepSizes[b + numSwbShort * gr];
+
+              sumStepSizes += (gStepSize = (sqrtOldStep + sqrtNewStep) >> 1) - sqrtOldStep;
+              gStepSize *= gStepSize; // for square-mean-root
             }
-          }
-          if ((stepSizes[b + numSwbShort * gr] == maxGrpStep) && (maxGrpStep > stepSizeM1))
-          {
-            sumStepSizes -= unsigned (0.5 + sqrt ((double) maxGrpStep));
-            stepSizes[b + numSwbShort * gr] = stepSizeM1;
-            sumStepSizes += unsigned (0.5 + sqrt ((double) stepSizeM1));
           }
         } // for b
 
-        m_avgStepSize[ch] = __min (USHRT_MAX, uint32_t ((sumStepSizes + (nBandsInCh >> 1)) / nBandsInCh));
+        m_avgStepSize[ch] = __min (USHRT_MAX, (sumStepSizes + (nBandsInCh >> 1)) / nBandsInCh);
         sumMeans += m_avgStepSize[ch];
         m_avgStepSize[ch] *= m_avgStepSize[ch];
 
@@ -288,29 +290,30 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
         stepSizes[b] = __max (rms[b], maskingSlope + BA_EPS);
       }
     }
+    stepSizes[b] = 0;
     for (b -= 1; b > __min (MF, maxSfbInCh); b--) // complete simultaneous masking by reversing the pattern
     {
-      sumStepSizes += unsigned (0.5 + sqrt ((double) stepSizes[b]));
+      sumStepSizes += intSqrt (stepSizes[b]);
       maskingSlope     = ((uint64_t) stepSizes[b] * (8u + b - MF) + (msOffset << 3u)) >> (msShift + 3u);
       stepSizes[b - 1] = __max (stepSizes[b - 1], maskingSlope);
     }
     for (/*b*/; b > __min (LF, maxSfbInCh); b--)  // typical reversed mid-freq. simultaneous masking slopes
     {
-      sumStepSizes += unsigned (0.5 + sqrt ((double) stepSizes[b]));
+      sumStepSizes += intSqrt (stepSizes[b]);
       maskingSlope     = (stepSizes[b] + msOffset) >> msShift;
       stepSizes[b - 1] = __max (stepSizes[b - 1], maskingSlope);
     }
     for (/*b = min (9, maxSfbInCh)*/; b > 0; b--) // steeper reversed low-freq. simultaneous masking slopes
     {
-      sumStepSizes += unsigned (0.5 + sqrt ((double) stepSizes[b]));
+      sumStepSizes += intSqrt (stepSizes[b]);
       maskingSlope     = (stepSizes[b] + (msOffset << (10u - b))) >> (msShift + 10u - b);
       stepSizes[b - 1] = __max (stepSizes[b - 1], maskingSlope);
     }
-    sumStepSizes   += unsigned (0.5 + sqrt ((double) stepSizes[0]));
+    sumStepSizes   += intSqrt (stepSizes[0]);
 
 // --- LONG window: apply perceptual JND model and local band-peak smoothing, undo equal-loudness weighting
     nMeans++;
-    m_avgStepSize[ch] = __min (USHRT_MAX, uint32_t ((sumStepSizes + (nBandsInCh >> 1)) / nBandsInCh));
+    m_avgStepSize[ch] = __min (USHRT_MAX, (sumStepSizes + (nBandsInCh >> 1)) / nBandsInCh);
     sumMeans += m_avgStepSize[ch];
     m_avgStepSize[ch] *= m_avgStepSize[ch];
 
