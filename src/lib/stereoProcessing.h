@@ -16,6 +16,7 @@
 
 // constants, experimental macros
 #define SP_EPS                  1
+#define SP_MDST_PRED            1
 #define SP_OPT_ALPHA_QUANT      1 // quantize alpha_q minimizing RMS distortion in louder channel
 
 // joint-channel processing class

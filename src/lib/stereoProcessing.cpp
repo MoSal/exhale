@@ -68,6 +68,10 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
       const uint16_t sfbWidth = grpOff[sfb + 1] - sfbStart;
       int32_t* sfbMdct1 = &mdctSpectrum1[sfbStart];
       int32_t* sfbMdct2 = &mdctSpectrum2[sfbStart];
+#if SP_MDST_PRED
+      int32_t* sfbMdst1 = &mdstSpectrum1[sfbStart];
+      int32_t* sfbMdst2 = &mdstSpectrum2[sfbStart];
+#endif
       uint64_t sumAbsValM = 0, sumAbsValS = 0;
       double   sfbTempVar;
 
@@ -94,6 +98,10 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
 
           *(sfbMdct1++) = dmixReM;
           *(sfbMdct2++) = dmixReS;
+#if SP_MDST_PRED
+          *(sfbMdst1++) = dmixImM;
+          *(sfbMdst2++) = dmixImS;
+#endif
           sfbNext1++; prevReM = dmixReM;
           sfbNext2++; prevReS = dmixReS;
         }
@@ -107,13 +115,18 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
 
           *sfbMdct1 = dmixReM;
           *sfbMdct2 = dmixReS;
+#if SP_MDST_PRED
+          *sfbMdst1 = 0;
+          *sfbMdst2 = 0;
+#endif
         }
       }
       else // complex data, both MDCTs and MDSTs are available
       {
+#if !SP_MDST_PRED
         int32_t* sfbMdst1 = &mdstSpectrum1[sfbStart];
         int32_t* sfbMdst2 = &mdstSpectrum2[sfbStart];
-
+#endif
         for (uint16_t s = sfbWidth; s > 0; s--)
         {
           const int32_t dmixReM = int32_t (((int64_t) *sfbMdct1 + (int64_t) *sfbMdct2 + 1) >> 1);
@@ -161,14 +174,36 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
           const uint16_t width = grpOff[sfb + 1] - offEv;
           const int32_t* mdctA = (alterPredDir ? &mdctSpectrum2[offEv] : &mdctSpectrum1[offEv]);
           const int32_t* mdctB = (alterPredDir ? &mdctSpectrum1[offEv] : &mdctSpectrum2[offEv]);
-          int64_t sumPrdRefRes = 0, sumPrdRefRef = SP_EPS;  // stabilizes the division below
+#if SP_MDST_PRED
+          const int32_t* mdstA = (alterPredDir ? &mdstSpectrum2[offEv] : &mdstSpectrum1[offEv]);
+          const int32_t* mdstB = (alterPredDir ? &mdstSpectrum1[offEv] : &mdstSpectrum2[offEv]);
+          int64_t sumPrdImAReB = 0, sumPrdImAImA = SP_EPS;
+#endif
+          int64_t sumPrdReAReB = 0, sumPrdReAReA = SP_EPS;  // stabilizes the division below
           double d, alphaLimit = 1.5; // max alpha_q magnitude
           bool nonZeroPredCoef = false;
 
+#if SP_MDST_PRED
+          for (uint16_t s = width; s > 0; s--, mdctA++, mdctB++, mdstA++, mdstB++)
+          {
+            const int64_t prdReAReA = ((int64_t) *mdctA * (int64_t) *mdctA + SA_BW) >> (SA_BW_SHIFT + 1);
+            const int64_t prdImAImA = ((int64_t) *mdstA * (int64_t) *mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
+
+            sumPrdReAReB += ((int64_t) *mdctA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
+            sumPrdReAReA += prdReAReA;
+            sumPrdImAReB += ((int64_t) *mdstA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
+            sumPrdImAImA += prdImAImA;
+            // add complex conjugate part, increases stability
+            sumPrdReAReB += ((int64_t) *mdstA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
+            sumPrdReAReA += prdImAImA;
+            sumPrdImAReB -= ((int64_t) *mdctA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
+            sumPrdImAImA += prdReAReA;
+          }
+#else
           for (uint16_t s = width; s > 0; s--, mdctA++, mdctB++)
           {
-            sumPrdRefRes += ((int64_t) *mdctA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
-            sumPrdRefRef += ((int64_t) *mdctA * (int64_t) *mdctA + SA_BW) >> (SA_BW_SHIFT + 1);
+            sumPrdReAReB += ((int64_t) *mdctA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
+            sumPrdReAReA += ((int64_t) *mdctA * (int64_t) *mdctA + SA_BW) >> (SA_BW_SHIFT + 1);
           }
           if (realOnlyCalc) // real data, only MDCTs available
           {
@@ -190,8 +225,8 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
               const int64_t mdstA = ((int64_t) *(nextA++) - (int64_t) *(mdctA++)) >> 1; // estimate, see also
               const int64_t mdstB = ((int64_t) *(nextB++) - (int64_t) *(mdctB++)) >> 1; // getMeanAbsValues()
 
-              sumPrdRefRes += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-              sumPrdRefRef += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdReAReB += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdReAReA += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
             }
             if (sfb + 1 < numSwbFrame) // process final sample
             {
@@ -199,8 +234,8 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
               const int64_t mdstA = ((((int64_t) *nextB + *nextA * msSgn + 1) >> 1) - (int64_t) *mdctA) >> 1;
               const int64_t mdstB = ((((int64_t) *nextA - *nextB * msSgn + 1) >> 1) - (int64_t) *mdctB) >> 1;
 
-              sumPrdRefRes += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-              sumPrdRefRef += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdReAReB += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdReAReA += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
             }
           }
           else // complex data, both MDCTs and MDSTs available
@@ -210,27 +245,37 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
 
             for (uint16_t s = width; s > 0; s--, mdstA++, mdstB++)
             {
-              sumPrdRefRes += ((int64_t) *mdstA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-              sumPrdRefRef += ((int64_t) *mdstA * (int64_t) *mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdReAReB += ((int64_t) *mdstA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
+              sumPrdReAReA += ((int64_t) *mdstA * (int64_t) *mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
             }
           }
-          sfbTempVar = (double) sumPrdRefRes / (double) sumPrdRefRef;  // compute alpha_q_re
-
-          for (b = sfbIsOdd; b >= 0; b--) // limit alpha_q_re to avoid residual RMS increase
+#endif
+          for (b = sfbIsOdd; b >= 0; b--) // limit alpha_q to prevent residual RMS increases
           {
             const int idx = sfbEv + b;
 
             d = (alterPredDir ? (double) grpRms1[idx] / __max (SP_EPS, grpRms2[idx]) : (double) grpRms2[idx] / __max (SP_EPS, grpRms1[idx]));
             if (alphaLimit > d) alphaLimit = d;
           }
-          sfbTempVar = CLIP_PM (sfbTempVar, alphaLimit);
+          sfbTempVar = CLIP_PM ((double) sumPrdReAReB / (double) sumPrdReAReA, alphaLimit);
 #if SP_OPT_ALPHA_QUANT
           b = __max (512, 524 - int32_t (abs (10.0 * sfbTempVar))); // rounding optimization
           b = int32_t (10.0 * sfbTempVar + b * (sfbTempVar < 0 ? -0.0009765625 : 0.0009765625));
 #else
           b = int32_t (10.0 * sfbTempVar + (sfbTempVar < 0 ? -0.5 : 0.5));// nearest integer
 #endif
-          sfbStereoData[sfbEv + numSwbFrame * gr] = uint8_t (b + 16);
+          sfbStereoData[sfbEv + numSwbFrame * gr] = uint8_t (b + 16); // finished alpha_q_re
+#if SP_MDST_PRED
+          alphaLimit = CLIP_PM ((double) sumPrdImAReB / (double) sumPrdImAImA, alphaLimit);
+# if SP_OPT_ALPHA_QUANT
+          b = __max (512, 524 - int32_t (abs (10.0 * alphaLimit))); // rounding optimization
+          b = int32_t (10.0 * alphaLimit + b * (alphaLimit < 0 ? -0.0009765625 : 0.0009765625));
+# else
+          b = int32_t (10.0 * alphaLimit + (alphaLimit < 0 ? -0.5 : 0.5));// nearest integer
+# endif
+          if (sfbEv + 1 < numSwbFrame)
+          sfbStereoData[sfbEv + 1 + numSwbFrame * gr] = uint8_t (b + 16); // init alpha_q_im
+#endif
 
           if (!eightShorts && ((offEv & (SA_BW - 1)) == 0) && ((width & (SA_BW - 1)) == 0))
           {
@@ -247,7 +292,9 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
             nonZeroPredCoef = true;
           }
           sfbTempVar *= sfbTempVar;  // account for residual RMS reduction due to prediction
-
+#if SP_MDST_PRED
+          sfbTempVar += alphaLimit * alphaLimit; // including complex prediction by alpha_im
+#endif
           for (b = sfbIsOdd; b >= 0; b--)
           {
             const int idx = sfbEv + b;
