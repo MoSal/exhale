@@ -433,7 +433,7 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
 
       while (grpSO[tnsStartSfb] < tnsStartOffs) tnsStartSfb++;  // start band for TNS filter
     }
-    tnsMaxBands = __min (tnsMaxBands, maxSfb);
+    if ((tnsMaxBands = __min (tnsMaxBands, maxSfb)) <= tnsStartSfb) tnsStartSfb = numSwbWin;
 
     if ((tnsData.filterLength[0] = __max (0, numSwbWin - tnsStartSfb)) > 0)
     {
