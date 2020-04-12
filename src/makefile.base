@@ -42,7 +42,7 @@ RELEASE_OBJS  = $(OBJS:.o=.r.o)
 
 
 ## specification of compiler flags
-CPPFLAGS          = -fPIC $(DEFS) -I$(CURDIR)/$(DIR_INC) -Wall -Werror -Wno-sign-compare -Wshadow -D_FILE_OFFSET_BITS=64
+CPPFLAGS          = -fPIC $(DEFS) -I$(CURDIR)/$(DIR_INC) -Wall -Werror -Wshadow -D_FILE_OFFSET_BITS=64 -std=c++11
 
 # setting of 32-bit compiler flags
 MM32?=0

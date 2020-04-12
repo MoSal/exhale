@@ -448,7 +448,7 @@ int main (const int argc, char* argv[])
       }
       if (bwMax < bw) bwMax = bw;
       // write first AU, add frame to header
-      if ((mp4Writer.addFrameAU (outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
+      if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
       {
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -471,7 +471,7 @@ int main (const int argc, char* argv[])
         }
         if (bwMax < bw) bwMax = bw;
         // write new AU, add frame to header
-        if ((mp4Writer.addFrameAU (outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
+        if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
         {
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -501,7 +501,7 @@ int main (const int argc, char* argv[])
       }
       if (bwMax < bw) bwMax = bw;
       // write final AU, add frame to header
-      if ((mp4Writer.addFrameAU (outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
+      if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
       {
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -528,7 +528,7 @@ int main (const int argc, char* argv[])
         }
         if (bwMax < bw) bwMax = bw;
         // the flush AU, add frame to header
-        if (mp4Writer.addFrameAU (outAuData, bw) != bw) // zero, no loudness update
+        if (mp4Writer.addFrameAU (outAuData, bw) != (int) bw) // no loudness update
         {
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
