@@ -560,7 +560,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
   tnsData.filterOrder[0] = tnsData.filteredWindow = tnsData.numFilters = 0; // zero TNS data
   tnsData.filterDownward[0] = false;   // enforce direction = 0 for now, detection difficult
 
-  if ((mdctSignal == nullptr) || (tnsData.coeffParCor == nullptr) || (maxSfb <= tnsStartSfb) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
+  if ((mdctSignal == nullptr) || (maxSfb <= tnsStartSfb) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
   {
     return 0; // invalid arguments error
   }
