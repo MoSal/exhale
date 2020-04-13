@@ -120,6 +120,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
   {
     const int32_t* const chSig   = &timeSignals[ch][lookaheadOffset];
     const int32_t* const chSigM1 = chSig - 1; // for first-order high-pass
+    const int32_t* const chSigPH = chSig + halfFrameOffset;
 // --- get L1 norm and pitch lag of both sides
     unsigned sumAbsValL = 0,  sumAbsValR = 0;
     unsigned maxAbsValL = 0,  maxAbsValR = 0;
@@ -213,7 +214,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         sumAbsPpL = sumAbsValL; // left side
       }
 #if TA_MORE_PITCH_TESTS
-      if ((sumAbsValR = applyPitchPred (chSig + halfFrameOffset, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
+      if ((sumAbsValR = applyPitchPred (chSigPH, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
       {
         sumAbsPpR = sumAbsValR; // right side
         pLagBestR = pLag;
@@ -229,7 +230,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         sumAbsPpL = sumAbsValL; // left side
       }
 #endif
-      if ((sumAbsValR = applyPitchPred (chSig + halfFrameOffset, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
+      if ((sumAbsValR = applyPitchPred (chSigPH, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
       {
         sumAbsPpR = sumAbsValR; // right side
         pLagBestR = pLag;
@@ -242,29 +243,28 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       {
         sumAbsPpL = sumAbsValL; // left side
       }
-      if ((sumAbsValR = applyPitchPred (chSig + halfFrameOffset, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
+      if ((sumAbsValR = applyPitchPred (chSigPH, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
       {
         sumAbsPpR = sumAbsValR; // right side
         pLagBestR = pLag;
       }
-#if 1 // TA_MORE_PITCH_TESTS
-      if (pLagBestR > halfFrameOffset) // try ½
+#if TA_MORE_PITCH_TESTS
+      if (pLagBestR > 0)  // try half or double
       {
-        pLag = pLagBestR >> 1;
+        pLag = (pLagBestR < halfFrameOffset ? pLagBestR << 1 : pLagBestR >> 1);
         pSgn = (((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] > 0) && (chSig[maxAbsIdxR-pLag] - chSigM1[maxAbsIdxR-pLag] < 0)) ||
                 ((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] < 0) && (chSig[maxAbsIdxR-pLag] - chSigM1[maxAbsIdxR-pLag] > 0)) ? -1 : 1);
         if ((sumAbsValL = applyPitchPred (chSig, halfFrameOffset, pLag, pSgn)) < sumAbsPpL)
         {
           sumAbsPpL = sumAbsValL; // left side
         }
-        if ((sumAbsValR = applyPitchPred (chSig + halfFrameOffset, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
+        if ((sumAbsValR = applyPitchPred (chSigPH, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
         {
           sumAbsPpR = sumAbsValR; // right side
           pLagBestR = pLag;
         }
       }
 #endif
-
       // convert L1 norms into average values
       sumAbsHpL = (sumAbsHpL + unsigned (halfFrameOffset >> 1)) / unsigned (halfFrameOffset);
       sumAbsHpR = (sumAbsHpR + unsigned (halfFrameOffset >> 1)) / unsigned (halfFrameOffset);
