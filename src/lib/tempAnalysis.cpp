@@ -193,10 +193,10 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       m_tempAnaStats[ch] = 0; // flat/stationary frame
       m_transientLoc[ch] = -1;
       // re-init stats history for this channel
-      m_avgAbsHpPrev[ch] = 0; // sumAbsValR >> 9
+      m_avgAbsHpPrev[ch] = 0;
       m_maxAbsHpPrev[ch] = 0; // maxAbsValR
-      m_maxIdxHpPrev[ch] = 1; // (unsigned) maxAbsIdxR
-      m_pitchLagPrev[ch] = 0; // (unsigned) pLagBestR
+      m_maxIdxHpPrev[ch] = 1; // maxAbsIdxR
+      m_pitchLagPrev[ch] = 0; // pLagBestR
     }
     else // nonzero signal in the current frame
     {
@@ -249,9 +249,9 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         pLagBestR = pLag;
       }
 #if TA_MORE_PITCH_TESTS
-      if (pLagBestR > 0)  // try half or double
+      if (pLagBestR >= halfFrameOffset) // half
       {
-        pLag = (pLagBestR < halfFrameOffset ? pLagBestR << 1 : pLagBestR >> 1);
+        pLag = pLagBestR >> 1;
         pSgn = (((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] > 0) && (chSig[maxAbsIdxR-pLag] - chSigM1[maxAbsIdxR-pLag] < 0)) ||
                 ((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] < 0) && (chSig[maxAbsIdxR-pLag] - chSigM1[maxAbsIdxR-pLag] > 0)) ? -1 : 1);
         if ((sumAbsValL = applyPitchPred (chSig, halfFrameOffset, pLag, pSgn)) < sumAbsPpL)
