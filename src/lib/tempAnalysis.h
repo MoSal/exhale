@@ -1,5 +1,5 @@
 /* tempAnalysis.h - header file for class providing temporal analysis of PCM signals
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -15,7 +15,7 @@
 
 // constants, experimental macros
 #define TA_EPS               4096
-#define TA_MORE_PITCH_TESTS     0
+#define TA_MORE_PITCH_TESTS     1
 
 // temporal signal analysis class
 class TempAnalyzer

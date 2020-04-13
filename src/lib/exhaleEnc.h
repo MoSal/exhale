@@ -94,7 +94,7 @@ private:
   SfbQuantizer    m_sfbQuantizer; // powerlaw quantization
   SpecAnalyzer    m_specAnalyzer; // for spectral analysis
   uint32_t        m_specAnaCurr[USAC_MAX_NUM_CHANNELS];
-//uint32_t        m_specAnaPrev[USAC_MAX_NUM_CHANNELS];
+  uint8_t         m_specFlatPrev[USAC_MAX_NUM_CHANNELS];
 #if !RESTRICT_TO_AAC
   SpecGapFiller   m_specGapFiller;// for noise/gap filling
 #endif

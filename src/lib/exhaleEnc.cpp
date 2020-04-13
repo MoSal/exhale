@@ -420,7 +420,7 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
   {
     const int numSwbWin = (eightShorts ? m_numSwbShort : m_numSwbLong);
     uint8_t tnsMaxBands = tnsScaleFactorBandLimit[eightShorts ? 1 : 0][m_swbTableIdx];
-    uint8_t tnsStartSfb = 3 + 32000 / toSamplingRate (m_frequencyIdx);  // 8-short TNS start
+    int     tnsStartSfb = 3 + 32000 / toSamplingRate (m_frequencyIdx);  // 8-short TNS start
 
     if (!eightShorts)
     {
@@ -482,7 +482,7 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
 
       // recalculate SFB RMS in TNS range
       errorValue |= m_specAnalyzer.getMeanAbsValues (mdctSignal, nullptr /*MDST wasn't filtered*/, grpSO[grpData.sfbsPerGroup],
-                                                     0 /*ci*/, &grpSO[tnsStartSfb], __max (0, tnsMaxBands - (int) tnsStartSfb),
+                                                     0 /*ci*/, &grpSO[tnsStartSfb], __max (0, tnsMaxBands - tnsStartSfb),
                                                      &grpData.sfbRmsValues[tnsStartSfb + m_numSwbShort * tnsData.filteredWindow]);
     }
     else tnsData.filterOrder[0] = tnsData.numFilters = 0; // disable zero-length TNS filters
@@ -1177,7 +1177,6 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
   unsigned errorValue = 0; // no error
 
   // get spectral channel statistics for last frame, used for input bandwidth (BW) detection
-//m_specAnalyzer.getSpecAnalysisStats (m_specAnaPrev, nChannels);
   m_specAnalyzer.getSpectralBandwidth (m_bandwidPrev, nChannels);
 
   // spectral analysis for current MCLT signal (windowed time-samples for the current frame)
@@ -1494,6 +1493,10 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
 
         tsCurr[ch] = (m_tempAnaCurr[ci] /*R*/) & UCHAR_MAX;
         tsNext[ch] = (m_tempAnaNext[ci] >>  8) & UCHAR_MAX;
+        // save maximum spectral flatness of current and neighboring frames for quantization
+     // m_specFlatPrev[ci] = __max (m_specFlatPrev[ci], (m_specAnaCurr[ci] >> 16) & UCHAR_MAX);
+        m_tempAnaCurr [ci] = (m_tempAnaCurr[ci] & 0xFFFFFF) | (__max (sfCurr, __max (m_specFlatPrev[ci], sfNext)) << 24);
+        m_specFlatPrev[ci] = (uint8_t) sfCurr;
 
         const bool lowOlapNext = (m_tranLocNext[ci] >= 0) || (sfNext <= UCHAR_MAX / 4 && tfNext > (UCHAR_MAX * 13) / 16) ||
                                  (tsCurr[ch] > (UCHAR_MAX * 5) / 8) || (tsNext[ch] > (UCHAR_MAX * 5) / 8);
@@ -1669,7 +1672,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
     m_mdstSignals[ch]  = nullptr;
     m_scaleFacData[ch] = nullptr;
     m_specAnaCurr[ch]  = 0;
-  //m_specAnaPrev[ch]  = 0;
+    m_specFlatPrev[ch] = 0;
     m_tempAnaCurr[ch]  = 0;
     m_tempAnaNext[ch]  = 0;
     m_timeSignals[ch]  = nullptr;

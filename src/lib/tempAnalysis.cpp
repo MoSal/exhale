@@ -1,5 +1,5 @@
 /* tempAnalysis.cpp - source file for class providing temporal analysis of PCM signals
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -247,6 +247,23 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         sumAbsPpR = sumAbsValR; // right side
         pLagBestR = pLag;
       }
+#if 1 // TA_MORE_PITCH_TESTS
+      if (pLagBestR > halfFrameOffset) // try ½
+      {
+        pLag = pLagBestR >> 1;
+        pSgn = (((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] > 0) && (chSig[maxAbsIdxR-pLag] - chSigM1[maxAbsIdxR-pLag] < 0)) ||
+                ((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] < 0) && (chSig[maxAbsIdxR-pLag] - chSigM1[maxAbsIdxR-pLag] > 0)) ? -1 : 1);
+        if ((sumAbsValL = applyPitchPred (chSig, halfFrameOffset, pLag, pSgn)) < sumAbsPpL)
+        {
+          sumAbsPpL = sumAbsValL; // left side
+        }
+        if ((sumAbsValR = applyPitchPred (chSig + halfFrameOffset, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
+        {
+          sumAbsPpR = sumAbsValR; // right side
+          pLagBestR = pLag;
+        }
+      }
+#endif
 
       // convert L1 norms into average values
       sumAbsHpL = (sumAbsHpL + unsigned (halfFrameOffset >> 1)) / unsigned (halfFrameOffset);
