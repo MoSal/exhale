@@ -34,12 +34,13 @@ public:
   // destructor
   ~StereoProcessor () { }
   // public functions
-  unsigned applyFullFrameMatrix (int32_t* const mdctSpectrum1, int32_t* const mdctSpectrum2,
+  unsigned applyPredJointStereo (int32_t* const mdctSpectrum1, int32_t* const mdctSpectrum2,
                                  int32_t* const mdstSpectrum1, int32_t* const mdstSpectrum2,
                                  SfbGroupData&  groupingData1, SfbGroupData&  groupingData2,
                                  const TnsData&   filterData1, const TnsData&   filterData2,
                                  const uint8_t    numSwbFrame, uint8_t* const sfbStereoData,
-                                 const uint8_t  useAltPredDir, const uint8_t useComplexCoef,
+                                 const bool    usePerCorrData, const bool    useFullFrameMS,
+                                 const bool    reversePredDir, const bool    useComplexCoef,
                                  uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2);
 }; // StereoProcessor
 

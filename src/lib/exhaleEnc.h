@@ -89,7 +89,8 @@ private:
   unsigned char*  m_outAuData;
   BitStreamWriter m_outStream; // for access unit creation
   int32_t*        m_pcm24Data;
-  uint8_t         m_perCorrCurr[USAC_MAX_NUM_ELEMENTS];
+  uint8_t         m_perCorrHCurr[USAC_MAX_NUM_ELEMENTS];
+  uint8_t         m_perCorrLCurr[USAC_MAX_NUM_ELEMENTS];
   SfbGroupData*   m_scaleFacData[USAC_MAX_NUM_CHANNELS];
   SfbQuantizer    m_sfbQuantizer; // powerlaw quantization
   SpecAnalyzer    m_specAnalyzer; // for spectral analysis

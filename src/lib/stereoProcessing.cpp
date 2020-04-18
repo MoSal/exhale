@@ -18,19 +18,21 @@ StereoProcessor::StereoProcessor ()
 }
 
 // public functions
-unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, int32_t* const mdctSpectrum2,
+unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, int32_t* const mdctSpectrum2,
                                                 int32_t* const mdstSpectrum1, int32_t* const mdstSpectrum2,
                                                 SfbGroupData&  groupingData1, SfbGroupData&  groupingData2,
                                                 const TnsData&   filterData1, const TnsData&   filterData2,
                                                 const uint8_t    numSwbFrame, uint8_t* const sfbStereoData,
-                                                const uint8_t  useAltPredDir, const uint8_t useComplexCoef,
+                                                const bool    usePerCorrData, const bool    useFullFrameMS,
+                                                const bool    reversePredDir, const bool    useComplexCoef,
                                                 uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2)
 {
   const bool applyPredSte = (sfbStereoData != nullptr); // use real-valued predictive stereo
-  const bool alterPredDir = (applyPredSte && (useAltPredDir > 0)); // predict mid from side?
+  const bool alterPredDir = (applyPredSte && reversePredDir); // predict mid from side band?
   const SfbGroupData& grp = groupingData1;
   const bool  eightShorts = (grp.numWindowGroups > 1);
   const uint8_t maxSfbSte = (eightShorts ? __min (numSwbFrame, __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) + 1) : numSwbFrame);
+  const bool  perCorrData = (usePerCorrData && !eightShorts); // use perceptual correlation?
   uint32_t  numSfbPredSte = 0; // counter
 
   if ((mdctSpectrum1 == nullptr) || (mdctSpectrum2 == nullptr) || (numSwbFrame < maxSfbSte) || (grp.numWindowGroups != groupingData2.numWindowGroups) ||
@@ -38,8 +40,16 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
   {
     return 1;  // invalid arguments error
   }
+#if 1
+  if (!useFullFrameMS) // TODO
+  {
+    if (applyPredSte) memset (sfbStereoData, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
 
-  if (applyPredSte && !eightShorts) memcpy (m_stereoCorrValue, sfbStereoData, (grp.sfbOffsets[numSwbFrame] >> SA_BW_SHIFT) * sizeof (uint8_t));
+    return 0;
+  }
+#endif
+
+  if (applyPredSte && perCorrData) memcpy (m_stereoCorrValue, sfbStereoData, (grp.sfbOffsets[numSwbFrame] >> SA_BW_SHIFT) * sizeof (uint8_t));
 
   for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
   {
@@ -277,7 +287,7 @@ unsigned StereoProcessor::applyFullFrameMatrix (int32_t* const mdctSpectrum1, in
           sfbStereoData[sfbEv + 1 + numSwbFrame * gr] = uint8_t (b + 16); // init alpha_q_im
 #endif
 
-          if (!eightShorts && ((offEv & (SA_BW - 1)) == 0) && ((width & (SA_BW - 1)) == 0))
+          if (perCorrData && ((offEv & (SA_BW - 1)) == 0) && ((width & (SA_BW - 1)) == 0))
           {
             const uint8_t* const perCorr = &m_stereoCorrValue[offEv >> SA_BW_SHIFT];
 

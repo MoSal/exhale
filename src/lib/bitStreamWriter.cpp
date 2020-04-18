@@ -11,7 +11,12 @@
 #include "exhaleLibPch.h"
 #include "bitStreamWriter.h"
 
-// static helper function
+// static helper functions
+static inline int getPredCoefPrevGrp (const uint8_t aqIdxPrevGrp)
+{
+  return int (aqIdxPrevGrp > 0 ? aqIdxPrevGrp & 31 : 16);
+}
+
 static uint32_t getDeltaCodeTimeFlag (const uint8_t* const alphaQCurr, const unsigned numWinGroups, const unsigned numSwbShort,
                                       const uint8_t* const alphaQPrev, const unsigned maxSfbSte, const EntropyCoder& entrCoder,
                                       const bool complexCoef)
@@ -34,7 +39,7 @@ static uint32_t getDeltaCodeTimeFlag (const uint8_t* const alphaQCurr, const uns
         int aqIdx = gCplxPredUsed[b] & 31; // range -15,...0,...,15
 
         bitCountFreq += entrCoder.indexGetBitCount (aqIdx - aqReIdxPred);
-        bitCountTime += entrCoder.indexGetBitCount (aqIdx - int (aqReIdxPrvGrp[b] & 31));
+        bitCountTime += entrCoder.indexGetBitCount (aqIdx - getPredCoefPrevGrp (aqReIdxPrvGrp[b]));
 
         aqReIdxPred = aqIdx;
 
@@ -43,7 +48,7 @@ static uint32_t getDeltaCodeTimeFlag (const uint8_t* const alphaQCurr, const uns
           aqIdx = gCplxPredUsed[b + 1] & 31; // TODO: <32 kHz short
 
           bitCountFreq += entrCoder.indexGetBitCount (aqIdx - aqImIdxPred);
-          bitCountTime += entrCoder.indexGetBitCount (aqIdx - int (aqImIdxPrvGrp[b] & 31));
+          bitCountTime += entrCoder.indexGetBitCount (aqIdx - getPredCoefPrevGrp (aqImIdxPrvGrp[b]));
 
           aqImIdxPred = aqIdx;
         }
@@ -403,7 +408,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
           if (gCplxPredUsed[b] > 0) // write dpcm_alpha_q_re/_q_im
           {
             int aqIdx = gCplxPredUsed[b] & 31; // range -15,...,15
-            int aqIdxDpcm = aqIdx - (deltaCodeTime > 0 ? int (aqReIdxPrvGrp[b] & 31) : aqReIdxPred);
+            int aqIdxDpcm = aqIdx - (deltaCodeTime > 0 ? getPredCoefPrevGrp (aqReIdxPrvGrp[b]) : aqReIdxPred);
             unsigned bits = entrCoder.indexGetBitCount (aqIdxDpcm);
 
             if (deltaCodeTime == 0) aqReIdxPred = aqIdx;
@@ -413,7 +418,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
             if (complexCoef)
             {
               aqIdx = gCplxPredUsed[b + 1] & 31; // <32 kHz short!
-              aqIdxDpcm = aqIdx - (deltaCodeTime > 0 ? int (aqImIdxPrvGrp[b] & 31) : aqImIdxPred);
+              aqIdxDpcm = aqIdx - (deltaCodeTime > 0 ? getPredCoefPrevGrp (aqImIdxPrvGrp[b]) : aqImIdxPred);
               bits = entrCoder.indexGetBitCount (aqIdxDpcm);
 
               if (deltaCodeTime == 0) aqImIdxPred = aqIdx;
