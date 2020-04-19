@@ -15,9 +15,11 @@
 #include "specAnalysis.h" // for SA_BW... constants
 
 // constants, experimental macros
+#define SP_0_DOT_1_16BIT     6554
 #define SP_EPS                  1
 #define SP_MDST_PRED            1
 #define SP_OPT_ALPHA_QUANT      1 // quantize alpha_q minimizing RMS distortion in louder channel
+#define SP_SFB_WISE_STEREO      1
 
 // joint-channel processing class
 class StereoProcessor
@@ -25,6 +27,12 @@ class StereoProcessor
 private:
 
   // member variables
+#if SP_SFB_WISE_STEREO
+  int32_t m_originBandMdct1[200]; // i.e. 40 * 5 - NOTE: increase this when maximum grpLength > 5
+  int32_t m_originBandMdct2[200];
+  int32_t m_originBandMdst1[200];
+  int32_t m_originBandMdst2[200];
+#endif
   uint8_t m_stereoCorrValue[1024 >> SA_BW_SHIFT]; // one value for every 32 spectral coefficients
 
 public:

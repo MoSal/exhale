@@ -262,6 +262,7 @@ static inline uint8_t stereoCorrGrouping (const SfbGroupData& grpData, const uns
   {
     const uint16_t grpLength = grpData.windowGroupLength[gr];
     const uint16_t grpLenFac = oneTwentyEightOver[grpLength]; // for grpStereoCorr/grpLength
+    const uint16_t grpLenOff = ((grpLenFac & (grpLenFac - 1)) > 0 ? 0 : 64); // for rounding
 
     for (uint16_t b = 0; b < numBandsWin; b++)
     {
@@ -270,7 +271,7 @@ static inline uint8_t stereoCorrGrouping (const SfbGroupData& grpData, const uns
       for (w = 0; w < grpLength; w++) grpStereoCorr += stereoCorrData[b + w * numBandsWin];
 
       if (b == 0) m += grpStereoCorr;
-      grpStereoCorr = (grpStereoCorr * grpLenFac) >> 7;
+      grpStereoCorr = (grpStereoCorr * grpLenFac + grpLenOff) >> 7;
 
       for (w = 0; w < grpLength; w++) stereoCorrData[b + w * numBandsWin] = grpStereoCorr;
     }
@@ -1259,7 +1260,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
         if ((s = abs (steAnaStats)) * m_perCorrHCurr[el] == 0) // transition to/from silence
         {
-          m_perCorrHCurr[el] = uint8_t((32 + s * __min (64, eightTimesSqrt256Minus[meanSpecFlat])) >> 6);
+          m_perCorrHCurr[el] = uint8_t ((32 + s * __min (64, eightTimesSqrt256Minus[meanSpecFlat])) >> 6);
         }
         else // gentle overlap length dependent temporal smoothing
         {
