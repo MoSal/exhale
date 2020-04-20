@@ -307,8 +307,8 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           }
           else b = UCHAR_MAX; // previous correlation data unavailable, assume maximum value
 
-          if ((b > SCHAR_MAX) && (sfbEv < __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup)) &&
-              (sfbStereoData[sfbEv + numSwbFrame * gr] != 16))
+          if ((b > SCHAR_MAX && sfbStereoData[sfbEv + numSwbFrame * gr] != 16) ||  // signi-
+              (2 <= abs ( (int) sfbStereoData[sfbEv + numSwbFrame * gr] - 16)))   // ficant?
           {
             nonZeroPredCoef = true;
           }
@@ -349,7 +349,8 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           const uint64_t bandSumM = (applyPredSte ? (uint64_t) rmsSfbM[0] + (uint64_t) rmsSfbM[1] : bandSum1) >> 1;
           const uint64_t bandSumS = (applyPredSte ? (uint64_t) rmsSfbS[0] + (uint64_t) rmsSfbS[1] : bandSum2) >> 1;
 
-          if (__min (bandSumM, bandSumS) * __max (bandSumL, bandSumR) >= __min (bandSumL, bandSumR) * __max (bandSumM, bandSumS))
+          if ((__min (bandSumM, bandSumS) * __max (bandSumL, bandSumR) >= __min (bandSumL, bandSumR) * __max (bandSumM, bandSumS)) ||
+              (nonZeroPredCoef && (abs ( (int) sfbStereoData[sfbEv + numSwbFrame * gr] - 16) >= 10)))
           {
             const uint16_t sfbOffEv = grpOff[sfbEv];
             const uint16_t cpyWidth = (grpOff[sfb + 1] - sfbOffEv) * sizeof (int32_t);
@@ -367,7 +368,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
               grpRms2[idx] = rmsSfbR[b];
               if (applyPredSte) sfbStereoData[idx + numSwbFrame * gr] = 0; // zeroed ms_used
             }
-            continue;
+            continue; // M/S is not used
           }
         }
 #endif
@@ -443,7 +444,6 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
       for (uint16_t sfb = 0; sfb < maxSfbSte; sfb++)
       {
         const uint16_t sfbEv = sfb & 0xFFFE; // even SFB index
-
         const uint16_t sfbStart = grpOff[sfb];
         const uint16_t sfbWidth = grpOff[sfb + 1] - sfbStart;
         const int64_t   alphaRe = (grpSData[sfbEv] > 0 ? (int) grpSData[sfbEv] - 16 : 0) * SP_0_DOT_1_16BIT;
@@ -518,12 +518,15 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 
       if (alterPredDir) // swap channel data when pred_dir = 1
       {
-        int32_t* sfbMdct1 = &mdctSpectrum1[grpOff[0]];
-        int32_t* sfbMdct2 = &mdctSpectrum2[grpOff[0]];
-
         for (uint16_t sfb = 0; sfb < maxSfbSte; sfb++)
         {
-          for (uint16_t s = grpOff[sfb + 1] - grpOff[sfb]; s > 0; s--)
+          const uint16_t sfbStart = grpOff[sfb];
+          int32_t* sfbMdct1 = &mdctSpectrum1[sfbStart];
+          int32_t* sfbMdct2 = &mdctSpectrum2[sfbStart];
+
+          if (grpSData[sfb] == 0) continue; // M/S is not used
+
+          for (uint16_t s = grpOff[sfb + 1] - sfbStart; s > 0; s--)
           {
             const int32_t i = *sfbMdct1;
             *(sfbMdct1++)   = *sfbMdct2;
