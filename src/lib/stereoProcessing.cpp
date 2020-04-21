@@ -451,7 +451,16 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
         int32_t* sfbMdctR = (alterPredDir ? &mdctSpectrum1[sfbStart] : &mdctSpectrum2[sfbStart]);
         uint64_t sumAbsValR = 0;
 
-        if (alphaRe == 0) continue; // nothing to do, no pred.
+        if (alphaRe == 0)
+        {
+          if (realOnlyCalc) // update previous magnitude value
+          {
+            sfbMdctR += sfbWidth - 1;
+            prevResi = (grpSData[sfbEv] > 0 ? *sfbMdctR : int32_t (((int64_t) sfbMdctD[sfbWidth - 1] +
+                                          (alterPredDir ? 1 : -1) * (int64_t) *sfbMdctR + 1) >> 1));
+          }
+          continue; // nothing more to do, i.e., no prediction
+        }
 
         if (realOnlyCalc) // real data, only MDCT is available
         {
