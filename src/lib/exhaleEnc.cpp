@@ -693,7 +693,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
   const uint32_t reductionFactor = (samplingRate < 37566 ? 2 : 3);  // undercoding reduction
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37) - (m_bitRateMode > 3 ? nChannels >> 1 : 0);
+  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37) - (m_bitRateMode > 2 ? nChannels >> 1 : 0);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
@@ -857,7 +857,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           const uint32_t* refRms = &coreConfig.groupingData[1 - ch].sfbRmsValues[m_numSwbShort * gr];
           uint8_t*  grpScaleFacs = &grpData.scaleFactors[m_numSwbShort * gr];
           uint32_t* grpStepSizes = &stepSizes[m_numSwbShort * gr];
+#if SA_IMPROVED_REAL_ABS
           uint8_t* grpStereoData = &coreConfig.stereoDataCurr[m_numSwbShort * gr];
+#endif
           uint32_t  b, grpRmsMin = INT_MAX; // min. RMS value, used for overcoding reduction
 
           // undercoding reduction for case where large number of coefs is quantized to zero
@@ -873,6 +875,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                                      getComplexRmsValue (refRms[b], gr, b, numSwbCh, coreConfig.tnsData[1 - ch]) >> 9);
 #endif
             if (grpRms[b] < grpRmsMin) grpRmsMin = grpRms[b];
+#ifndef NO_DTX_MODE
+            if ((m_bitRateMode > 3) || (meanSpecFlat[ci] > (SCHAR_MAX >> 1)) || (rmsComp >= TA_EPS))
+#endif
             if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
             {
               s -= ((grpOff[b + 1] - grpOff[b]) * reductionFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
@@ -888,6 +893,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             const uint32_t rmsRef9 = (!coreConfig.commonWindow ? rmsComp :
                                      getComplexRmsValue (refRms[b], gr, b, numSwbCh, coreConfig.tnsData[1 - ch]) >> 9);
 #endif
+#ifndef NO_DTX_MODE
+            if ((m_bitRateMode > 3) || (meanSpecFlat[ci] > (SCHAR_MAX >> 1)) || (rmsComp >= TA_EPS))
+#endif
             if (rmsComp >= rmsRef9) // check only first SFB above max_sfb for simplification
             {
               s -= ((grpOff[maxSfbLong] - grpOff[b]) * reductionFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
@@ -901,7 +909,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
             const uint64_t rateFac = mSfmFac * s * __min (32, lfAtten * grpData.numWindowGroups); // rate control part 1
-            const uint64_t sScaled = ((1u << 23) + __max (grpRmsMin, grpStepSizes[b]) * (scaleBr - (grpStereoData[b] > 0 ? 1 : 0)) * rateFac) >> 24;
+            const uint64_t sScaled = ((1u << 23) + __max (grpRmsMin, grpStepSizes[b]) * scaleBr * rateFac) >> 24;
 
             // scale step-sizes according to VBR mode & derive scale factors from step-sizes
             grpStepSizes[b] = uint32_t (__max (BA_EPS, __min (UINT_MAX, sScaled)));
@@ -919,6 +927,15 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           {
             for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
             {
+#ifndef NO_DTX_MODE
+              if (meanSpecFlat[ci] <= (SCHAR_MAX >> 1)) // noise-like low-energy "DTX" frame
+              {
+                for (s = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT ? 24 : m_specGapFiller.getFirstGapFillSfb ()); s < maxSfbCh; s++)
+                {
+                  if (grpData.sfbRmsValues[s + m_numSwbShort * gr] < ((3 * TA_EPS) >> 1)) grpData.scaleFactors[s + m_numSwbShort * gr] = 0;
+                }
+              }
+#endif
               memset (&grpData.scaleFactors[maxSfbCh + m_numSwbShort * gr], 0, (numSwbFrame - maxSfbCh) * sizeof (uint8_t));
             }
             grpData.sfbsPerGroup = coreConfig.icsInfoCurr[ch].maxSfb = numSwbFrame;
@@ -1061,7 +1078,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint8_t maxSfbLong  = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           const uint8_t maxSfbShort = (samplingRate < 37566 ? 14 /*32 kHz*/ : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
-          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort : maxSfbLong) - 5 + (m_bitRateMode >> 1) + (meanSpecFlat[ci] >> 5);
+          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 4 : maxSfbLong - 6) + (m_bitRateMode >> 1) + (meanSpecFlat[ci] >> 5);
           const unsigned targetBitCount25 = ((60000 + 20000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
           unsigned b = grpData.sfbsPerGroup - 1;
 

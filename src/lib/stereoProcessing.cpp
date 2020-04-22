@@ -453,7 +453,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 
         if (alphaRe == 0)
         {
-          if (realOnlyCalc) // update previous magnitude value
+          if (realOnlyCalc) // update previous res. MDCT value
           {
             sfbMdctR += sfbWidth - 1;
             prevResi = (grpSData[sfbEv] > 0 ? *sfbMdctR : int32_t (((int64_t) sfbMdctD[sfbWidth - 1] +
