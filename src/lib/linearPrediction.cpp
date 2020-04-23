@@ -1,5 +1,5 @@
 /* linearPrediction.cpp - source file for class providing linear prediction capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -417,5 +417,5 @@ bool LinearPredictor::similarParCorCoeffs (const short* const parCorCoeffs1, con
     sumAbsDiff += abs (parCorCoeffs1[s] - parCorCoeffs2[s]);
   }
 
-  return (sumAbsDiff < ((unsigned) nCoeffs << (parCorCoeffBitDepth >> 1)));
+  return (sumAbsDiff < ((3u * (unsigned) nCoeffs) << (parCorCoeffBitDepth >> 1)));
 }
