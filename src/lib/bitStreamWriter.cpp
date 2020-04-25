@@ -359,7 +359,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
   if (elData.commonWindow)
   {
     const unsigned maxSfbSte = __max (icsInfo0.maxSfb, icsInfo1.maxSfb);
-    const unsigned  sfb1Bits = icsInfo1.windowSequence == EIGHT_SHORT ? 4 : 6;
+    const unsigned  sfb1Bits = (icsInfo1.windowSequence == EIGHT_SHORT ? 4 : 6);
     const uint8_t msMaskMode = getOptMsMaskModeValue (elData.stereoDataCurr, nWinGrps, m_numSwbShort, elData.stereoMode, maxSfbSte);
 
     bitCount += writeChannelWiseIcsInfo (icsInfo0);  // ics_info()
@@ -552,7 +552,7 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
   if (loudnessInfo > 0) // ISO 23003-4: loudnessInfo()
   {
     const unsigned methodDefinition = (loudnessInfo >> 14) & 0xF;
-    const unsigned methodValueBits  = (methodDefinition == 7 ? 5 : (methodDefinition == 8 ? 2 : 8)); 
+    const unsigned methodValueBits  = (methodDefinition == 7 ? 5 : (methodDefinition == 8 ? 2 : 8));
 
     m_auBitStream.write (0, 2); // numConfigExtensions
     m_auBitStream.write (ID_EXT_LOUDNESS_INFO, 4);
