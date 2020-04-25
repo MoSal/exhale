@@ -417,5 +417,5 @@ bool LinearPredictor::similarParCorCoeffs (const short* const parCorCoeffs1, con
     sumAbsDiff += abs (parCorCoeffs1[s] - parCorCoeffs2[s]);
   }
 
-  return (sumAbsDiff < ((3u * (unsigned) nCoeffs) << (parCorCoeffBitDepth >> 1)));
+  return (sumAbsDiff < ((4u * (unsigned) nCoeffs) << (parCorCoeffBitDepth >> 1)));
 }

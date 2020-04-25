@@ -60,6 +60,27 @@ static uint32_t getDeltaCodeTimeFlag (const uint8_t* const alphaQCurr, const uns
   return (bitCountFreq > bitCountTime ? 1 : 0);
 }
 
+static uint8_t getOptMsMaskModeValue (const uint8_t* const msUsed, const unsigned numWinGroups, const unsigned numSwbShort,
+                                      const uint8_t    msMaskMode, const unsigned maxSfbSte)
+{
+  const unsigned sfbStep = (msMaskMode < 3 ? 1 : SFB_PER_PRED_BAND);
+  unsigned b, g;
+
+  if ((msUsed == nullptr) || ((msMaskMode & 1) == 0)) return msMaskMode;
+
+  for (g = 0; g < numWinGroups; g++)
+  {
+    const uint8_t* const gMsUsed = &msUsed[numSwbShort * g];
+
+    for (b = 0; b < maxSfbSte; b += sfbStep)
+    {
+      if (gMsUsed[b] == 0) return msMaskMode;  // M/S in some bands
+    }
+  } // for g
+
+  return (msMaskMode + 1); // upgrade mask mode to M/S in all bands
+}
+
 // private helper functions
 void BitStreamWriter::writeByteAlignment () // write '0' bits until stream is byte-aligned
 {
@@ -338,7 +359,8 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
   if (elData.commonWindow)
   {
     const unsigned maxSfbSte = __max (icsInfo0.maxSfb, icsInfo1.maxSfb);
-    const unsigned sfb1Bits  = icsInfo1.windowSequence == EIGHT_SHORT ? 4 : 6;
+    const unsigned  sfb1Bits = icsInfo1.windowSequence == EIGHT_SHORT ? 4 : 6;
+    const uint8_t msMaskMode = getOptMsMaskModeValue (elData.stereoDataCurr, nWinGrps, m_numSwbShort, elData.stereoMode, maxSfbSte);
 
     bitCount += writeChannelWiseIcsInfo (icsInfo0);  // ics_info()
     m_auBitStream.write (elData.commonMaxSfb ? 1 : 0, 1);
@@ -347,9 +369,9 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
       m_auBitStream.write (icsInfo1.maxSfb, sfb1Bits); // max_sfb1
       bitCount += sfb1Bits;
     }
-    m_auBitStream.write (__min (3, elData.stereoMode), 2); // ms_mask_present
+    m_auBitStream.write (__min (3, msMaskMode), 2); // ms_mask_pr.
     bitCount += 3;
-    if (elData.stereoMode == 1) // write SFB-wise ms_used[][] flag
+    if (msMaskMode == 1)  // some M/S, write SFB-wise ms_used flag
     {
       for (g = 0; g < nWinGrps; g++)
       {
@@ -363,13 +385,13 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
       bitCount += maxSfbSte * g;
     }
 #if !RESTRICT_TO_AAC
-    else if (elData.stereoMode >= 3)  // SFB-wise cplx_pred_data()
+    else if (msMaskMode >= 3) // pred. M/S, write cplx_pred_data()
     {
       const bool complexCoef = (elData.stereoConfig & 1);
       uint32_t deltaCodeTime = 0;
 
-      m_auBitStream.write (elData.stereoMode - 3, 1); // _pred_all
-      if (elData.stereoMode == 3)
+      m_auBitStream.write (msMaskMode - 3, 1);    // cplx_pred_all
+      if (msMaskMode == 3)
       {
         for (g = 0; g < nWinGrps; g++)
         {

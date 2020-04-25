@@ -928,7 +928,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
             {
 #ifndef NO_DTX_MODE
-              if (meanSpecFlat[ci] <= (SCHAR_MAX >> 1)) // noise-like low-energy "DTX" frame
+              if ((m_bitRateMode <= 4) && (meanSpecFlat[ci] <= (SCHAR_MAX >> 1))) // low-RMS
               {
                 for (s = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT ? 24 : m_specGapFiller.getFirstGapFillSfb ()); s < maxSfbCh; s++)
                 {
@@ -1390,7 +1390,8 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
             TnsData& tnsData0 = coreConfig.tnsData[0];
             TnsData& tnsData1 = coreConfig.tnsData[1];
 
-            if (m_linPredictor.similarParCorCoeffs (tnsData0.coeffParCor, tnsData1.coeffParCor, maxTnsOrder, LP_DEPTH))
+            if ((maxTnsOrder > 0 && coreConfig.stereoMode > 0) ||
+                m_linPredictor.similarParCorCoeffs (tnsData0.coeffParCor, tnsData1.coeffParCor, maxTnsOrder, LP_DEPTH))
             {
               coreConfig.commonTnsData = true; // synch tns_data
               for (s = 0; s < maxTnsOrder; s++)
