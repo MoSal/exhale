@@ -28,10 +28,10 @@ private:
 
   // member variables
 #if SP_SFB_WISE_STEREO
-  int32_t m_originBandMdct1[200]; // i.e. 40 * 5 - NOTE: increase this when maximum grpLength > 5
-  int32_t m_originBandMdct2[200];
-  int32_t m_originBandMdst1[200];
-  int32_t m_originBandMdst2[200];
+  int32_t m_originBandMdct1[320]; // i.e. 64 * 5 - NOTE: increase this when maximum grpLength > 5
+  int32_t m_originBandMdct2[320];
+  int32_t m_originBandMdst1[320];
+  int32_t m_originBandMdst2[320];
 #endif
   uint8_t m_stereoCorrValue[1024 >> SA_BW_SHIFT]; // one value for every 32 spectral coefficients
 

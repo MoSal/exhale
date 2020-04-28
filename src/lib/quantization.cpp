@@ -542,7 +542,7 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 
   if ((m_coeffMagn = (unsigned*) malloc (maxTransfLength * sizeof (unsigned))) == nullptr ||
 #if EC_TRELLIS_OPT_CODING
-      (m_coeffTemp = (uint8_t* ) malloc (maxTransfLength + quantRateLength  )) == nullptr ||
+      (m_coeffTemp = (uint8_t* ) malloc (maxTransfLength + quantRateLength*2)) == nullptr ||
 #endif
       (m_lut2ExpX4 = (double*  ) malloc (numScaleFactors * sizeof (double  ))) == nullptr ||
       (m_lutSfNorm = (double*  ) malloc (numScaleFactors * sizeof (double  ))) == nullptr ||
