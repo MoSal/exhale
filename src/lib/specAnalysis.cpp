@@ -120,7 +120,6 @@ unsigned SpecAnalyzer::getMeanAbsValues (const int32_t* const mdctSignal, const 
       const unsigned bandOffset  = __min (nSamplesInFrame, bandStartOffsets[b]);
       const unsigned bandWidth   = __min (nSamplesInFrame, bandStartOffsets[b + 1]) - bandOffset;
       const int32_t* const bMdct = &mdctSignal[bandOffset];
-#if SA_IMPROVED_REAL_ABS
       uint64_t sumAbsVal = (bandStartOffsets[b + 1] == nSamplesInFrame ? abs (bMdct[bandWidth - 1]) : 0);
 
       for (int s = bandWidth - (bandStartOffsets[b + 1] == nSamplesInFrame ? 2 : 1); s >= 0; s--)
@@ -140,14 +139,6 @@ unsigned SpecAnalyzer::getMeanAbsValues (const int32_t* const mdctSignal, const 
         sumAbsVal -= (absReal > absEstIm ? absReal + ((absEstIm * 3) >> 3) : absEstIm + ((absReal * 3) >> 3));
         sumAbsVal += absReal;
       }
-#else
-      uint64_t sumAbsVal = 0;
-
-      for (int s = bandWidth - 1; s >= 0; s--)
-      {
-        sumAbsVal += abs (bMdct[s]);
-      }
-#endif
       // average spectral sample magnitude across frequency band
       meanBandValues[b] = uint32_t ((sumAbsVal + (bandWidth >> 1)) / bandWidth);
     } // for b

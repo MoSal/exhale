@@ -26,7 +26,6 @@
 
 // constant and experimental macro
 #define WIN_SCALE double (1 << 23)
-#define EE_OPT_TNS_SPEC_RANGE    1
 
 // channelConfigurationIndex setup
 typedef enum USAC_CCI : char
@@ -118,11 +117,8 @@ private:
   // helper functions
   unsigned applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpData, const bool eightShorts, const uint8_t maxSfb,
                                const unsigned channelIndex);
-  unsigned eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets, int32_t* const mdctSignal
-#if SA_IMPROVED_REAL_ABS
-                             , int32_t* const mdstSignal = nullptr
-#endif
-                               );
+  unsigned eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets, int32_t* const mdctSignal,
+                               int32_t* const mdstSignal = nullptr);
   unsigned getOptParCorCoeffs (const int32_t* const mdctSignal, const SfbGroupData& grpData, const uint8_t maxSfb,
                                const unsigned channelIndex, TnsData& tnsData, const uint8_t firstGroupIndexToTest = 0);
   unsigned psychBitAllocation ();

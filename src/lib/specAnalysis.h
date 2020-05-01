@@ -19,7 +19,6 @@
 #define SA_BW  (1 << SA_BW_SHIFT)
 #define SA_EPS               1024
 #define SA_EXACT_COMPLEX_ABS    0
-#define SA_IMPROVED_REAL_ABS    1
 #define SA_IMPROVED_SFM_ESTIM   1
 #define SA_OPT_WINDOW_GROUPING  1
 
