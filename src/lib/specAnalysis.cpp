@@ -30,6 +30,10 @@ SpecAnalyzer::SpecAnalyzer ()
   for (unsigned ch = 0; ch < USAC_MAX_NUM_CHANNELS; ch++)
   {
     m_bandwidthOff[ch] = 0;
+#if SA_IMPROVED_SFM_ESTIM
+    m_magnCorrPrev[ch] = 0;
+    m_magnSpectra [ch] = nullptr;
+#endif
     m_numAnaBands [ch] = 0;
     m_specAnaStats[ch] = 0;
     memset (m_parCorCoeffs[ch], 0, MAX_PREDICTION_ORDER * sizeof (short));
@@ -171,14 +175,23 @@ void SpecAnalyzer::getSpectralBandwidth (uint16_t bandwidthOffset[USAC_MAX_NUM_C
   memcpy (bandwidthOffset, m_bandwidthOff, nChannels * sizeof (uint16_t));
 }
 
-unsigned SpecAnalyzer::initLinPredictor (LinearPredictor* const linPredictor)
+unsigned SpecAnalyzer::initSigAnaMemory (LinearPredictor* const linPredictor, const unsigned nChannels, const unsigned maxTransfLength)
 {
   if (linPredictor == nullptr)
   {
     return 1; // invalid arguments error
   }
   m_tnsPredictor = linPredictor;
-
+#if SA_IMPROVED_SFM_ESTIM
+  for (unsigned ch = 0; ch < nChannels; ch++)
+  {
+    if ((m_magnSpectra[ch] = (uint32_t*) malloc (maxTransfLength * sizeof (uint32_t))) == nullptr)
+    {
+      return 2; // mem. allocation error
+    }
+    memset (m_magnSpectra[ch], 0, maxTransfLength * sizeof (uint32_t));
+  }
+#endif
   return 0; // no error
 }
 
@@ -236,6 +249,7 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
                                          const unsigned nChannels, const unsigned nSamplesInFrame, const unsigned samplingRate,
                                          const unsigned lfeChannelIndex /*= USAC_MAX_NUM_CHANNELS*/) // to skip an LFE channel
 {
+  const uint64_t anaBwOffset = SA_BW >> 1;
   const unsigned lpcStopBand16k = (samplingRate <= 32000 ? nSamplesInFrame : (32000 * nSamplesInFrame) / samplingRate) >> SA_BW_SHIFT;
   const unsigned thresholdSlope = (48000 + SA_EPS * samplingRate) / 96000;
   const unsigned thresholdStart = samplingRate >> 15;
@@ -250,6 +264,11 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
   {
     const int32_t* const chMdct = mdctSignals[ch];
     const int32_t* const chMdst = mdstSignals[ch];
+#if SA_IMPROVED_SFM_ESTIM
+    uint32_t* const   chPrvMagn = m_magnSpectra[ch];
+    const bool improvedSfmEstim = (chPrvMagn != nullptr);
+    uint16_t currMC = 0, numMC = 0; // channel average
+#endif
 // --- get L1 norm and max value in each band
     uint16_t idxMaxSpec = 0;
     uint64_t sumAvgBand = 0;
@@ -273,10 +292,17 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
       const uint16_t         offs = b << SA_BW_SHIFT; // start offset of current analysis band
       const int32_t* const  bMdct = &chMdct[offs];
       const int32_t* const  bMdst = &chMdst[offs];
+#if SA_IMPROVED_SFM_ESTIM
+      uint32_t* const     prvMagn = (improvedSfmEstim ? &chPrvMagn[offs] : nullptr);
+#endif
       uint16_t maxAbsIdx = 0;
       uint32_t maxAbsVal = 0, tmp = UINT_MAX;
       uint64_t sumAbsVal = 0;
-
+#if SA_IMPROVED_SFM_ESTIM
+      uint64_t sumAbsPrv = 0;
+      uint64_t sumPrdCP  = 0, sumPrdCC = 0, sumPrdPP = 0;
+      double ncp, dcc, dpp;
+#endif
       for (int s = SA_BW - 1; s >= 0; s--)
       {
         // sum absolute values of complex spectrum, derive L1 norm, peak value, and peak index
@@ -287,6 +313,19 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
         const uint64_t absReal   = abs (bMdct[s]);   // Richard Lyons, 1997; en.wikipedia.org/
         const uint64_t absImag   = abs (bMdst[s]);   // wiki/Alpha_max_plus_beta_min_algorithm
         const uint32_t absSample = uint32_t (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
+#endif
+#if SA_IMPROVED_SFM_ESTIM
+        if (improvedSfmEstim)   // correlation between current and previous magnitude spectrum
+        {
+          const uint64_t prvSample = prvMagn[s];
+
+          sumPrdCP += ((uint64_t) absSample * prvSample + anaBwOffset) >> SA_BW_SHIFT;
+          sumPrdCC += ((uint64_t) absSample * absSample + anaBwOffset) >> SA_BW_SHIFT;
+          sumPrdPP += ((uint64_t) prvSample * prvSample + anaBwOffset) >> SA_BW_SHIFT;
+
+          sumAbsPrv += prvSample;
+          prvMagn[s] = absSample;
+        }
 #endif
         sumAbsVal += absSample;
         if (offs + s > 0) // exclude DC from max & min
@@ -310,9 +349,22 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
         m_bandwidthOff[ch] = __min (m_bandwidthOff[ch], nSamplesInFrame);
       }
       // save mean magnitude
-      tmp/*mean*/ = uint32_t ((sumAbsVal + (1 << (SA_BW_SHIFT - 1))) >> SA_BW_SHIFT);
+      tmp/*mean*/ = uint32_t ((sumAbsVal + anaBwOffset) >> SA_BW_SHIFT);
       m_meanAbsValue[ch][b] = tmp;
       // spectral statistics
+#if SA_IMPROVED_SFM_ESTIM
+      if (improvedSfmEstim && (b > 0) && ((unsigned) b < lpcStopBand16k))
+      {
+        dcc = double (tmp);
+        dpp = double ((sumAbsPrv + anaBwOffset) >> SA_BW_SHIFT);
+        ncp = (sumPrdCP + dcc * dpp) * SA_BW - sumAbsVal * dpp - sumAbsPrv * dcc;
+        dcc = (sumPrdCC + dcc * dcc) * SA_BW - sumAbsVal * dcc - sumAbsVal * dcc;
+        dpp = (sumPrdPP + dpp * dpp) * SA_BW - sumAbsPrv * dpp - sumAbsPrv * dpp;
+        sumPrdCP = uint64_t ((ncp <= 0.0) || (dcc * dpp <= 0.0) ? 0 : 0.5 + (256.0 * ncp * ncp) / (dcc * dpp));
+
+        currMC += (uint16_t) __min (UCHAR_MAX, sumPrdCP); numMC++; // temporal correlation sum
+      }
+#endif
       if (b > 0)
       {
         sumAvgBand += tmp;
@@ -334,6 +386,16 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
     m_tnsPredGains[ch] = m_tnsPredictor->calcParCorCoeffs (&chMdct[b], __min (m_bandwidthOff[ch], lpcStopBand16k << SA_BW_SHIFT) - b,
                                                            MAX_PREDICTION_ORDER, m_parCorCoeffs[ch]);
     m_specAnaStats[ch] = packAvgSpecAnalysisStats (sumAvgBand, sumMaxBand, m_tnsPredGains[ch] >> 24, idxMaxSpec, (unsigned) b >> SA_BW_SHIFT);
+#if SA_IMPROVED_SFM_ESTIM
+    if (improvedSfmEstim)
+    {
+      if (numMC > 1) currMC = (currMC + (numMC >> 1)) / numMC;// smoothed temporal correlation
+      valMaxSpec = (currMC + m_magnCorrPrev[ch] + 1) >> 1;
+      m_magnCorrPrev[ch] = (uint8_t) currMC; // update
+
+      if (valMaxSpec > ((m_specAnaStats[ch] >> 16) & UCHAR_MAX)) m_specAnaStats[ch] = (m_specAnaStats[ch] & 0xFF00FFFF) | (valMaxSpec << 16);
+    }
+#endif
   } // for ch
 
   return 0; // no error

@@ -20,6 +20,7 @@
 #define SA_EPS               1024
 #define SA_EXACT_COMPLEX_ABS    0
 #define SA_IMPROVED_REAL_ABS    1
+#define SA_IMPROVED_SFM_ESTIM   1
 #define SA_OPT_WINDOW_GROUPING  1
 
 // spectral signal analysis class
@@ -29,6 +30,10 @@ private:
 
   // member variables
   uint16_t m_bandwidthOff[USAC_MAX_NUM_CHANNELS];
+#if SA_IMPROVED_SFM_ESTIM
+  uint8_t  m_magnCorrPrev[USAC_MAX_NUM_CHANNELS];
+  uint32_t* m_magnSpectra[USAC_MAX_NUM_CHANNELS];
+#endif
   uint32_t m_meanAbsValue[USAC_MAX_NUM_CHANNELS][1024 >> SA_BW_SHIFT];
   uint16_t m_numAnaBands [USAC_MAX_NUM_CHANNELS];
   short    m_parCorCoeffs[USAC_MAX_NUM_CHANNELS][MAX_PREDICTION_ORDER];
@@ -41,7 +46,11 @@ public:
   // constructor
   SpecAnalyzer ();
   // destructor
+#if SA_IMPROVED_SFM_ESTIM
+  ~SpecAnalyzer () { for (unsigned ch = 0; ch < USAC_MAX_NUM_CHANNELS; ch++) MFREE (m_magnSpectra[ch]); }
+#else
   ~SpecAnalyzer () { }
+#endif
   // public functions
   unsigned getLinPredCoeffs (short parCorCoeffs[MAX_PREDICTION_ORDER], const unsigned channelIndex); // returns best filter order
   unsigned getMeanAbsValues (const int32_t* const mdctSignal, const int32_t* const mdstSignal, const unsigned nSamplesInFrame,
@@ -49,7 +58,7 @@ public:
                              uint32_t* const meanBandValues);
   void getSpecAnalysisStats (uint32_t avgSpecAnaStats[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   void getSpectralBandwidth (uint16_t bandwidthOffset[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
-  unsigned initLinPredictor (LinearPredictor* const linPredictor);
+  unsigned initSigAnaMemory (LinearPredictor* const linPredictor, const unsigned nChannels, const unsigned maxTransfLength);
 #if SA_OPT_WINDOW_GROUPING
   unsigned optimizeGrouping (const unsigned channelIndex, const unsigned preferredBandwidth, const unsigned preferredGrouping);
 #endif

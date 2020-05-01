@@ -845,7 +845,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         const bool eightShorts = (coreConfig.icsInfoCurr[ch].windowSequence == EIGHT_SHORT);
         const uint8_t maxSfbCh = grpData.sfbsPerGroup;
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
-        const uint8_t  mSfmFac = eightTimesSqrt256Minus[meanSpecFlat[ci]];
+        const uint16_t mSfmFac = UCHAR_MAX - ((9u * meanSpecFlat[ci]) >> 4);
         uint32_t*    stepSizes = &sfbStepSizes[ci * m_numSwbShort * NUM_WINDOW_GROUPS];
 
         memset (grpData.scaleFactors, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
@@ -909,7 +909,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
             const uint64_t rateFac = mSfmFac * s * __min (32, lfAtten * grpData.numWindowGroups); // rate control part 1
-            const uint64_t sScaled = ((1u << 23) + __max (grpRmsMin, grpStepSizes[b]) * scaleBr * rateFac) >> 24;
+            const uint64_t sScaled = ((1u << 24) + __max (grpRmsMin, grpStepSizes[b]) * scaleBr * rateFac) >> 25;
 
             // scale step-sizes according to VBR mode & derive scale factors from step-sizes
             grpStepSizes[b] = uint32_t (__max (BA_EPS, __min (UINT_MAX, sScaled)));
@@ -1972,7 +1972,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 #else
   if (m_sfbQuantizer.initQuantMemory (nSamplesInFrame) > 0 ||
 #endif
-      m_specAnalyzer.initLinPredictor (&m_linPredictor) > 0 ||
+      m_specAnalyzer.initSigAnaMemory (&m_linPredictor, m_bitRateMode <= 4 ? nChannels : 0, nSamplesInFrame) > 0 ||
       m_transform.initConstants (m_tempIntBuf, m_timeWindowL, m_timeWindowS, nSamplesInFrame) > 0)
   {
     errorValue |= 1;
