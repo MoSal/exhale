@@ -42,7 +42,7 @@ RELEASE_OBJS  = $(OBJS:.o=.r.o)
 
 
 ## specification of compiler flags
-CPPFLAGS          = -fPIC $(DEFS) -I$(CURDIR)/$(DIR_INC) -Wall -Werror -Wshadow -D_FILE_OFFSET_BITS=64 -std=c++11
+CPPFLAGS          = -fPIC $(DEFS) -I$(CURDIR)/$(DIR_INC) -Wall -Werror -Wshadow -D_FILE_OFFSET_BITS=64 -std=c++11 $(CXXFLAGS)
 
 # setting of 32-bit compiler flags
 MM32?=0
@@ -56,7 +56,7 @@ RELEASE_CPPFLAGS  = -O3 -Wuninitialized
 
 
 ## specification of linker flags
-ALL_LDFLAGS       = -Wall
+ALL_LDFLAGS       = -Wall $(ADDITIONAL_LDFLAGS)
 
 # setting of 32-bit linker flags
 ifeq ($(MM32), 1)

@@ -26,6 +26,9 @@
 #include <time.h>
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
 #include <windows.h>
+#ifdef __MINGW32__
+#include <share.h>
+#endif
 
 #define EXHALE_TEXT_BLUE  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN)
 #define EXHALE_TEXT_PINK  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED)

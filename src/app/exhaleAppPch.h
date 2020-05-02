@@ -39,7 +39,7 @@
 #ifndef __min
 # define __min(a, b)           ((a) < (b) ? (a) : (b))
 #endif
-#ifndef fprintf_s
+#if !defined (fprintf_s) && !defined (__MINGW32__)
 # define fprintf_s             fprintf
 #endif
 
