@@ -672,7 +672,6 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint32_t reductionFactor = (m_bitRateMode < 3 ? 2 : 3); // for undercoding reduction
   const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37) - (m_bitRateMode > 1 ? nChannels >> 1 : 0);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
@@ -718,6 +717,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
     }
     else // SCE or CPE: bandwidth-to-max_sfb mapping, short-window grouping for each channel
     {
+      const uint32_t reductionFactor = (m_bitRateMode < 3 ? 2 : 3) - (coreConfig.stereoConfig >> 3);
+
       if (coreConfig.commonWindow && (coreConfig.stereoMode == 0) && (m_perCorrHCurr[el] > SCHAR_MAX || m_perCorrLCurr[el] > (UCHAR_MAX * 3) / 4))
       {
         coreConfig.stereoMode = 1;
@@ -805,7 +806,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                                                          coreConfig.tnsData[0], coreConfig.tnsData[1],
                                                          numSwbFrame, coreConfig.stereoDataCurr,
                                                          m_bitRateMode <= 4, coreConfig.stereoMode > 1,
-                                                         (coreConfig.stereoConfig >> 1) > 0, (coreConfig.stereoConfig & 1) > 0,
+                                                         (coreConfig.stereoConfig & 2) > 0, (coreConfig.stereoConfig & 1) > 0,
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS *  ci],
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS * (ci + 1)]);
         if (errorValue == 2) // signal M/S with complex prediction
@@ -1258,6 +1259,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
         if ((int) s == steAnaStats * -1) coreConfig.stereoConfig = 2;  // 2: S>M, pred_dir=1
         if (s > (UCHAR_MAX * 3) / 4) coreConfig.stereoMode = 2; // 2: all, ms_mask_present=2
+        if (s >= UCHAR_MAX) coreConfig.stereoConfig |= 8; // coding of mono-in-stereo signal
       }
       else if (nrChannels > 1) m_perCorrHCurr[el] = m_perCorrLCurr[el] = 128; // "mid" value
 
