@@ -9,7 +9,7 @@
  */
 
 #include "..\..\include\version.h" // for EXHALELIB_VERSION_... strings
-#include "winres.h"
+#include <windows.h>
 
 0 ICON "exhaleApp.ico"
 VS_VERSION_INFO VERSIONINFO
