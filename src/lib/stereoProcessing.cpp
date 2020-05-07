@@ -24,7 +24,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
                                                 const TnsData&   filterData1, const TnsData&   filterData2,
                                                 const uint8_t    numSwbFrame, uint8_t* const sfbStereoData,
                                                 const bool    usePerCorrData, const bool    useFullFrameMS,
-                                                const bool    reversePredDir, const bool    useComplexCoef,
+                                                const bool    reversePredDir, const uint8_t realOnlyOffset,
                                                 uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2)
 {
   const bool applyPredSte = (sfbStereoData != nullptr); // use real-valued predictive stereo

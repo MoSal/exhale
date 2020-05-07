@@ -11,7 +11,21 @@
 #include "exhaleLibPch.h"
 #include "specAnalysis.h"
 
-// static helper function
+// static helper functions
+static inline uint64_t complexAbs (const int32_t realPart, const int32_t imagPart)
+{
+#if SA_EXACT_COMPLEX_ABS
+  const double complexSqr = (double) realPart * (double) realPart + (double) imagPart * (double) imagPart;
+
+  return uint64_t (sqrt (complexSqr) + 0.5);
+#else
+  const uint64_t absReal  = abs (realPart); // Richard Lyons, 1997; en.wikipedia.org/
+  const uint64_t absImag  = abs (imagPart); // wiki/Alpha_max_plus_beta_min_algorithm
+
+  return (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
+#endif
+}
+
 static inline uint32_t packAvgSpecAnalysisStats (const uint64_t sumAvgBand, const uint64_t sumMaxBand,
                                                  const uint8_t  predGain,
                                                  const uint16_t idxMaxSpec, const uint16_t idxLpStart)
@@ -77,9 +91,9 @@ unsigned SpecAnalyzer::getMeanAbsValues (const int32_t* const mdctSignal, const 
   {
     for (unsigned b = 0; b < nBands; b++)
     {
-      const unsigned bandOffset  = __min (nSamplesInFrame, bandStartOffsets[b]);
-      const unsigned bandWidth   = __min (nSamplesInFrame, bandStartOffsets[b + 1]) - bandOffset;
-      const unsigned anaBandIdx  = bandOffset >> SA_BW_SHIFT;
+      const unsigned bandOffset = __min (nSamplesInFrame, bandStartOffsets[b]);
+      const unsigned bandWidth  = __min (nSamplesInFrame, bandStartOffsets[b + 1]) - bandOffset;
+      const unsigned anaBandIdx = bandOffset >> SA_BW_SHIFT;
 
       if ((channelIndex < USAC_MAX_NUM_CHANNELS) && (anaBandIdx < m_numAnaBands[channelIndex]) &&
           (bandOffset == (anaBandIdx << SA_BW_SHIFT)) && ((bandWidth & (SA_BW - 1)) == 0))
@@ -91,23 +105,12 @@ unsigned SpecAnalyzer::getMeanAbsValues (const int32_t* const mdctSignal, const 
       }
       else // no previous data available, compute mean magnitude
       {
-        const int32_t* const bMdct = &mdctSignal[bandOffset];
-        const int32_t* const bMdst = &mdstSignal[bandOffset];
-        uint64_t sumAbsVal = 0;
+        const int32_t* bMdct = &mdctSignal[bandOffset];
+        const int32_t* bMdst = &mdstSignal[bandOffset];
+        uint64_t   sumAbsVal = 0;
 
-        for (int s = bandWidth - 1; s >= 0; s--)
-        {
-#if SA_EXACT_COMPLEX_ABS
-          const double  complexSqr = (double) bMdct[s] * (double) bMdct[s] + (double) bMdst[s] * (double) bMdst[s];
+        for (unsigned s = bandWidth; s > 0; s--) sumAbsVal += complexAbs (*(bMdct++), *(bMdst++));
 
-          sumAbsVal += uint64_t (sqrt (complexSqr) + 0.5);
-#else
-          const uint64_t absReal   = abs (bMdct[s]); // Richard Lyons, 1997; en.wikipedia.org/
-          const uint64_t absImag   = abs (bMdst[s]); // wiki/Alpha_max_plus_beta_min_algorithm
-
-          sumAbsVal += (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
-#endif
-        }
         // average spectral sample magnitude across current band
         meanBandValues[b] = uint32_t ((sumAbsVal + (bandWidth >> 1)) / bandWidth);
       }
@@ -115,35 +118,28 @@ unsigned SpecAnalyzer::getMeanAbsValues (const int32_t* const mdctSignal, const 
   }
   else // no imaginary part available, real-valued spectral data
   {
+    int64_t prevMdct = mdctSignal[bandStartOffsets[0] + ((bandStartOffsets[0] > 0) && (channelIndex < USAC_MAX_NUM_CHANNELS) ? -1 : 1)];
+
     for (unsigned b = 0; b < nBands; b++)
     {
-      const unsigned bandOffset  = __min (nSamplesInFrame, bandStartOffsets[b]);
-      const unsigned bandWidth   = __min (nSamplesInFrame, bandStartOffsets[b + 1]) - bandOffset;
-      const int32_t* const bMdct = &mdctSignal[bandOffset];
-      uint64_t sumAbsVal = (bandStartOffsets[b + 1] == nSamplesInFrame ? abs (bMdct[bandWidth - 1]) : 0);
+      const unsigned bandOffset = __min (nSamplesInFrame, bandStartOffsets[b]);
+      const unsigned bandWidth  = __min (nSamplesInFrame, bandStartOffsets[b + 1]) - bandOffset;
+      const int32_t* bMdct = &mdctSignal[bandOffset];
+      const int32_t* bNext = &bMdct[1];
+      uint64_t   sumAbsVal = (bandStartOffsets[b + 1] >= nSamplesInFrame ? abs (bMdct[bandWidth - 1]) : 0);
 
-      for (int s = bandWidth - (bandStartOffsets[b + 1] == nSamplesInFrame ? 2 : 1); s >= 0; s--)
+      for (int s = bandWidth - (bandStartOffsets[b + 1] >= nSamplesInFrame ? 1 : 0); s > 0; s--)
       {
         // based on S. Merdjani, L. Daudet, "Estimation of Frequency from MDCT-Encoded Files,"
         // DAFx-03, 2003, http://www.eecs.qmul.ac.uk/legacy/dafx03/proceedings/pdfs/dafx01.pdf
-        const uint64_t absReal   = abs (bMdct[s]); // Richard Lyons, 1997; see also code above
-        const uint64_t absEstIm  = abs (bMdct[s + 1] - bMdct[s - 1]) >> 1; // s - 1 may be -1!
-
-        sumAbsVal += (absReal > absEstIm ? absReal + ((absEstIm * 3) >> 3) : absEstIm + ((absReal * 3) >> 3));
-      }
-      if ((b == 0) && (bandWidth > 0)) // correct estimate at DC
-      {
-        const uint64_t absReal   = abs (bMdct[0]); // Richard Lyons, 1997; see also code above
-        const uint64_t absEstIm  = abs (bMdct[1] - bMdct[-1]) >> 1; // if s - 1 was -1 earlier
-
-        sumAbsVal -= (absReal > absEstIm ? absReal + ((absEstIm * 3) >> 3) : absEstIm + ((absReal * 3) >> 3));
-        sumAbsVal += absReal;
+        sumAbsVal += complexAbs (*bMdct, int32_t ((*bNext - prevMdct) >> 1));
+        bNext++;  prevMdct = *(bMdct++);
       }
       // average spectral sample magnitude across frequency band
       meanBandValues[b] = uint32_t ((sumAbsVal + (bandWidth >> 1)) / bandWidth);
     } // for b
   }
-  m_numAnaBands[channelIndex] = 0; // mark spectral data as used
+  if (channelIndex < USAC_MAX_NUM_CHANNELS) m_numAnaBands[channelIndex] = 0; // mark data used
 
   return 0; // no error
 }
@@ -297,25 +293,18 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
       for (int s = SA_BW - 1; s >= 0; s--)
       {
         // sum absolute values of complex spectrum, derive L1 norm, peak value, and peak index
-#if SA_EXACT_COMPLEX_ABS
-        const double  complexSqr = (double) bMdct[s] * (double) bMdct[s] + (double) bMdst[s] * (double) bMdst[s];
-        const uint32_t absSample = uint32_t (sqrt (complexSqr) + 0.5);
-#else
-        const uint64_t absReal   = abs (bMdct[s]);   // Richard Lyons, 1997; en.wikipedia.org/
-        const uint64_t absImag   = abs (bMdst[s]);   // wiki/Alpha_max_plus_beta_min_algorithm
-        const uint32_t absSample = uint32_t (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
-#endif
+        const uint64_t absSample = complexAbs (bMdct[s], bMdst[s]);
 #if SA_IMPROVED_SFM_ESTIM
         if (improvedSfmEstim)   // correlation between current and previous magnitude spectrum
         {
           const uint64_t prvSample = prvMagn[s];
 
-          sumPrdCP += ((uint64_t) absSample * prvSample + anaBwOffset) >> SA_BW_SHIFT;
-          sumPrdCC += ((uint64_t) absSample * absSample + anaBwOffset) >> SA_BW_SHIFT;
-          sumPrdPP += ((uint64_t) prvSample * prvSample + anaBwOffset) >> SA_BW_SHIFT;
+          sumPrdCP += (absSample * prvSample + anaBwOffset) >> SA_BW_SHIFT;
+          sumPrdCC += (absSample * absSample + anaBwOffset) >> SA_BW_SHIFT;
+          sumPrdPP += (prvSample * prvSample + anaBwOffset) >> SA_BW_SHIFT;
 
           sumAbsPrv += prvSample;
-          prvMagn[s] = absSample;
+          prvMagn[s] = (uint32_t) absSample;
         }
 #endif
         sumAbsVal += absSample;
@@ -323,12 +312,12 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
         {
           if (maxAbsVal < absSample) // update maximum
           {
-            maxAbsVal = absSample;
+            maxAbsVal = (uint32_t) absSample;
             maxAbsIdx = (uint16_t) s;
           }
           if (tmp/*min*/> absSample) // update minimum
           {
-            tmp/*min*/= absSample;
+            tmp/*min*/= (uint32_t) absSample;
           }
         }
       } // for s
@@ -428,21 +417,11 @@ int16_t SpecAnalyzer::stereoSigAnalysis (const int32_t* const mdctSignal1, const
 
       for (int s = SA_BW - 1; s >= 0; s--)
       {
-        const uint32_t absRealL  = abs (lbMdct[s]);
-        const uint32_t absRealR  = abs (rbMdct[s]);
-#if SA_EXACT_COMPLEX_ABS
-        const double complexSqrL = (double) lbMdct[s] * (double) lbMdct[s] + (double) lbMdst[s] * (double) lbMdst[s];
-        const uint32_t absMagnL  = uint32_t (sqrt (complexSqrL) + 0.5);
-        const double complexSqrR = (double) rbMdct[s] * (double) rbMdct[s] + (double) rbMdst[s] * (double) rbMdst[s];
-        const uint32_t absMagnR  = uint32_t (sqrt (complexSqrR) + 0.5);
-#else
-        const uint64_t absImagL  = abs (lbMdst[s]);  // Richard Lyons, 1997; en.wikipedia.org/
-        const uint64_t absImagR  = abs (rbMdst[s]);  // wiki/Alpha_max_plus_beta_min_algorithm
-        const uint64_t absMagnL  = (absRealL > absImagL ? absRealL + ((absImagL * 3) >> 3) : absImagL + ((absRealL * 3) >> 3));
-        const uint64_t absMagnR  = (absRealR > absImagR ? absRealR + ((absImagR * 3) >> 3) : absImagR + ((absRealR * 3) >> 3));
-#endif
-        sumRealL += absRealL;
-        sumRealR += absRealR;
+        const uint64_t absMagnL = complexAbs (lbMdct[s], lbMdst[s]);
+        const uint64_t absMagnR = complexAbs (rbMdct[s], rbMdst[s]);
+
+        sumRealL += abs (lbMdct[s]);
+        sumRealR += abs (rbMdct[s]);
         sumRealM += abs (lbMdct[s] + rbMdct[s]); // i.e., 2*mid,
         sumRealS += abs (lbMdct[s] - rbMdct[s]); // i.e., 2*side
 

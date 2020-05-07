@@ -116,7 +116,7 @@ private:
 
   // helper functions
   unsigned applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpData, const bool eightShorts, const uint8_t maxSfb,
-                               const unsigned channelIndex);
+                               const unsigned channelIndex, const bool realOnlyCalc);
   unsigned eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets, int32_t* const mdctSignal,
                                int32_t* const mdstSignal = nullptr);
   unsigned getOptParCorCoeffs (const int32_t* const mdctSignal, const SfbGroupData& grpData, const uint8_t maxSfb,
