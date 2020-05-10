@@ -11,6 +11,68 @@
 #include "exhaleLibPch.h"
 #include "stereoProcessing.h"
 
+// static helper functions
+static inline uint64_t complexAbsMS (const int32_t realPart, const int32_t imagPart)
+{
+#if SA_EXACT_COMPLEX_ABS
+  const double complexSqr = (double) realPart * (double) realPart + (double) imagPart * (double) imagPart;
+
+  return uint64_t (sqrt (complexSqr) + 0.5);
+#else
+  const uint64_t absReal  = abs (realPart); // Richard Lyons, 1997; en.wikipedia.org/
+  const uint64_t absImag  = abs (imagPart); // wiki/Alpha_max_plus_beta_min_algorithm
+
+  return (absReal > absImag ? absReal + ((absImag * 3) >> 3) : absImag + ((absReal * 3) >> 3));
+#endif
+}
+
+static inline int32_t  getMidSample (const int64_t value1, const int64_t value2)
+{
+  return int32_t ((value1 + value2 + 1) >> 1);
+}
+
+static inline int32_t getSideSample (const int64_t value1, const int64_t value2)
+{
+  return int32_t ((value1 - value2 + 1) >> 1);
+}
+
+static inline int32_t getResiSample (const int64_t valueR, const int64_t valueD, const int64_t alphaQ)
+{
+  return int32_t (valueR - ((valueD * alphaQ - SHRT_MIN) >> 16));
+}
+
+static inline void   setStepSizesMS (const uint32_t* const rmsSfbL, const uint32_t* const rmsSfbR,
+                                     const uint32_t* const rmsSfbM, const uint32_t* const rmsSfbS,
+                                     const uint32_t* const grpRms1, const uint32_t* const grpRms2,
+                                     uint32_t* const grpStepSizes1, uint32_t* const grpStepSizes2,
+                                     const uint16_t sfb, const uint16_t b, const bool applyPredSte)
+{
+  const uint16_t     idx = sfb + b;
+  const uint32_t sfbRmsL = __max (SP_EPS, rmsSfbL[b]);
+  const uint32_t sfbRmsR = __max (SP_EPS, rmsSfbR[b]);
+  const double  sfbFacLR = (sfbRmsL < (grpStepSizes1[idx] >> 1) ? 1.0 : 2.0) * (sfbRmsR < (grpStepSizes2[idx] >> 1) ? 1.0 : 2.0);
+  const double  sfbMaxMS = (applyPredSte ? __max (rmsSfbM[b], rmsSfbS[b]) : __max (grpRms1[idx], grpRms2[idx]));
+
+  if ((grpStepSizes1[idx] == 0) || (grpStepSizes2[idx] == 0))  // HF noise filled SFB
+  {
+    grpStepSizes1[idx] = grpStepSizes2[idx] = 0;
+  }
+  else if (sfbFacLR <= 1.0) // simultaneous masking, so no positive SNR in either SFB
+  {
+    const double max = __max (sfbRmsL, sfbRmsR);
+
+    grpStepSizes1[idx] = grpStepSizes2[idx] = uint32_t (__max (grpStepSizes1[idx], grpStepSizes2[idx]) * (sfbMaxMS / max) + 0.5);
+  }
+  else // partial/no masking, redistribute positive SNR into at least one channel SFB
+  {
+    const double min = (applyPredSte ? __min (rmsSfbM[b], rmsSfbS[b]) : __min (grpRms1[idx], grpRms2[idx]));
+    const double rat = __min (1.0, grpStepSizes1[idx] / (sfbRmsL * 2.0)) * __min (1.0, grpStepSizes2[idx] / (sfbRmsR * 2.0)) * sfbFacLR;
+
+    grpStepSizes1[idx] = grpStepSizes2[idx] = uint32_t (__max (SP_EPS, (min > rat * sfbMaxMS ? sqrt (rat * sfbMaxMS * min) :
+                                                                        __min (1.0, rat) * sfbMaxMS)) + 0.5);
+  }
+}
+
 // constructor
 StereoProcessor::StereoProcessor ()
 {
@@ -33,7 +95,15 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   const bool  eightShorts = (grp.numWindowGroups > 1);
   const uint8_t maxSfbSte = (eightShorts ? __min (numSwbFrame, __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) + 1) : numSwbFrame);
   const bool  perCorrData = (usePerCorrData && !eightShorts); // use perceptual correlation?
+  uint32_t rmsSfbL[2] = {0, 0}, rmsSfbR[2] = {0, 0};
   uint32_t  numSfbPredSte = 0; // counter
+#if SP_SFB_WISE_STEREO
+  uint16_t  numSfbNoMsSte = 0, idxSfbNoMsSte = 0;
+  uint32_t rms1NoMsSte[2] = {0, 0}, rms2NoMsSte[2] = {0, 0};
+  uint32_t rmsMNoMsSte[2] = {0, 0}, rmsSNoMsSte[2] = {0, 0};
+  uint8_t  dataNoMsSte[2] = {0, 0};
+  bool nonZeroPredNoMsSte = false;
+#endif
 
   if ((mdctSpectrum1 == nullptr) || (mdctSpectrum2 == nullptr) || (numSwbFrame < maxSfbSte) || (grp.numWindowGroups != groupingData2.numWindowGroups) ||
       (sfbStepSize1  == nullptr) || (sfbStepSize2  == nullptr) || (numSwbFrame < MIN_NUM_SWB_SHORT) || (numSwbFrame > MAX_NUM_SWB_LONG))
@@ -53,22 +123,22 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 
   for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
   {
+    const uint16_t grOffset = numSwbFrame * gr;
     const bool realOnlyCalc = (filterData1.numFilters > 0 && gr == filterData1.filteredWindow) || (mdstSpectrum1 == nullptr) ||
                               (filterData2.numFilters > 0 && gr == filterData2.filteredWindow) || (mdstSpectrum2 == nullptr);
-    const uint16_t*  grpOff = &grp.sfbOffsets[numSwbFrame * gr];
-    uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[numSwbFrame * gr];
-    uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[numSwbFrame * gr];
-    uint32_t* grpStepSizes1 = &sfbStepSize1[numSwbFrame * gr];
-    uint32_t* grpStepSizes2 = &sfbStepSize2[numSwbFrame * gr];
+    const uint16_t*  grpOff = &grp.sfbOffsets[grOffset];
+    uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[grOffset];
+    uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[grOffset];
+    uint32_t* grpStepSizes1 = &sfbStepSize1[grOffset];
+    uint32_t* grpStepSizes2 = &sfbStepSize2[grOffset];
     int32_t  b = 0, prevReM = 0, prevReS = 0;
-    uint32_t rmsSfbL[2] = {0, 0}, rmsSfbR[2] = {0, 0};
 
     if (realOnlyCalc) // preparation for first magnitude value
     {
-      const uint16_t sPlus1 = grpOff[0] + 1;
+      const uint16_t sIndex = grpOff[realOnlyOffset] + (grpOff[realOnlyOffset] > 0 ? -1 : 1);
 
-      prevReM = int32_t (((int64_t) mdctSpectrum1[sPlus1] + (int64_t) mdctSpectrum2[sPlus1] + 1) >> 1);
-      prevReS = int32_t (((int64_t) mdctSpectrum1[sPlus1] - (int64_t) mdctSpectrum2[sPlus1] + 1) >> 1);
+      prevReM = getMidSample (mdctSpectrum1[sIndex], mdctSpectrum2[sIndex]);
+      prevReS = getSideSample(mdctSpectrum1[sIndex], mdctSpectrum2[sIndex]);
     }
 
     for (uint16_t sfb = 0; sfb < maxSfbSte; sfb++)
@@ -78,10 +148,8 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
       const uint16_t sfbWidth = grpOff[sfb + 1] - sfbStart;
       int32_t* sfbMdct1 = &mdctSpectrum1[sfbStart];
       int32_t* sfbMdct2 = &mdctSpectrum2[sfbStart];
-#if SP_MDST_PRED
       int32_t* sfbMdst1 = &mdstSpectrum1[sfbStart];
       int32_t* sfbMdst2 = &mdstSpectrum2[sfbStart];
-#endif
       uint64_t sumAbsValM = 0, sumAbsValS = 0;
       double   sfbTempVar;
 
@@ -96,85 +164,61 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
         memcpy (m_originBandMdst2, sfbMdst2, cpyWidth);
       }
 #endif
-      if (realOnlyCalc) // real data, only MDCTs are available
+      if (realOnlyCalc && (sfb >= realOnlyOffset)) // real-valued data, only MDCTs available
       {
         const int32_t* sfbNext1 = &sfbMdct1[1];
         const int32_t* sfbNext2 = &sfbMdct2[1];
 
         for (uint16_t s = sfbWidth - (sfb + 1 == numSwbFrame ? 1 : 0); s > 0; s--)
         {
-          const int32_t dmixReM = int32_t (((int64_t) *sfbMdct1 + (int64_t) *sfbMdct2 + 1) >> 1);
-          const int32_t dmixReS = int32_t (((int64_t) *sfbMdct1 - (int64_t) *sfbMdct2 + 1) >> 1);
+          const int32_t dmixReM = getMidSample (*sfbMdct1, *sfbMdct2);
+          const int32_t dmixReS = getSideSample(*sfbMdct1, *sfbMdct2);
           // TODO: improve the following lines since the calculation is partially redundant!
-          const int32_t dmixImM = int32_t ((((*sfbNext1 + (int64_t) *sfbNext2 + 1) >> 1) - (int64_t) prevReM) >> 1); // estimate, see also
-          const int32_t dmixImS = int32_t ((((*sfbNext1 - (int64_t) *sfbNext2 + 1) >> 1) - (int64_t) prevReS) >> 1); // getMeanAbsValues()
+          const int32_t dmixImM = int32_t ((getMidSample (*sfbNext1, *sfbNext2) - (int64_t) prevReM) >> 1); // estimate, see also
+          const int32_t dmixImS = int32_t ((getSideSample(*sfbNext1, *sfbNext2) - (int64_t) prevReS) >> 1); // getMeanAbsValues()
 
-          const uint64_t absReM = abs (dmixReM);
-          const uint64_t absReS = abs (dmixReS);   // Richard Lyons, 1997; en.wikipedia.org/
-          const uint64_t absImM = abs (dmixImM);   // wiki/Alpha_max_plus_beta_min_algorithm
-          const uint64_t absImS = abs (dmixImS);
-
-          sumAbsValM += (absReM > absImM ? absReM + ((absImM * 3) >> 3) : absImM + ((absReM * 3) >> 3));
-          sumAbsValS += (absReS > absImS ? absReS + ((absImS * 3) >> 3) : absImS + ((absReS * 3) >> 3));
+          sumAbsValM += complexAbsMS (dmixReM, dmixImM);
+          sumAbsValS += complexAbsMS (dmixReS, dmixImS);
 
           *(sfbMdct1++) = dmixReM;
           *(sfbMdct2++) = dmixReS;
-#if SP_MDST_PRED
           *(sfbMdst1++) = dmixImM;
           *(sfbMdst2++) = dmixImS;
-#endif
           sfbNext1++; prevReM = dmixReM;
           sfbNext2++; prevReS = dmixReS;
         }
-        if (sfb + 1 == numSwbFrame) // handle remaining sample
+        if (sfb + 1 == numSwbFrame) // process the last sample
         {
-          const int32_t dmixReM = int32_t (((int64_t) *sfbMdct1 + (int64_t) *sfbMdct2 + 1) >> 1);
-          const int32_t dmixReS = int32_t (((int64_t) *sfbMdct1 - (int64_t) *sfbMdct2 + 1) >> 1);
+          const int32_t dmixReM = getMidSample (*sfbMdct1, *sfbMdct2);
+          const int32_t dmixReS = getSideSample(*sfbMdct1, *sfbMdct2);
 
           sumAbsValM += abs (dmixReM);
           sumAbsValS += abs (dmixReS);
 
           *sfbMdct1 = dmixReM;
           *sfbMdct2 = dmixReS;
-#if SP_MDST_PRED
           *sfbMdst1 = 0;
           *sfbMdst2 = 0;
-#endif
         }
       }
       else // complex data, both MDCTs and MDSTs are available
       {
-#if !SP_MDST_PRED
-        int32_t* sfbMdst1 = &mdstSpectrum1[sfbStart];
-        int32_t* sfbMdst2 = &mdstSpectrum2[sfbStart];
-#endif
         for (uint16_t s = sfbWidth; s > 0; s--)
         {
-          const int32_t dmixReM = int32_t (((int64_t) *sfbMdct1 + (int64_t) *sfbMdct2 + 1) >> 1);
-          const int32_t dmixReS = int32_t (((int64_t) *sfbMdct1 - (int64_t) *sfbMdct2 + 1) >> 1);
-          const int32_t dmixImM = int32_t (((int64_t) *sfbMdst1 + (int64_t) *sfbMdst2 + 1) >> 1);
-          const int32_t dmixImS = int32_t (((int64_t) *sfbMdst1 - (int64_t) *sfbMdst2 + 1) >> 1);
-#if SA_EXACT_COMPLEX_ABS
-          const double cplxSqrM = (double) dmixReM * (double) dmixReM + (double) dmixImM * (double) dmixImM;
-          const double cplxSqrS = (double) dmixReS * (double) dmixReS + (double) dmixImS * (double) dmixImS;
+          const int32_t dmixReM = getMidSample (*sfbMdct1, *sfbMdct2);
+          const int32_t dmixReS = getSideSample(*sfbMdct1, *sfbMdct2);
+          const int32_t dmixImM = getMidSample (*sfbMdst1, *sfbMdst2);
+          const int32_t dmixImS = getSideSample(*sfbMdst1, *sfbMdst2);
 
-          sumAbsValM += uint64_t (sqrt (cplxSqrM) + 0.5);
-          sumAbsValS += uint64_t (sqrt (cplxSqrS) + 0.5);
-#else
-          const uint64_t absReM = abs (dmixReM);
-          const uint64_t absReS = abs (dmixReS);   // Richard Lyons, 1997; en.wikipedia.org/
-          const uint64_t absImM = abs (dmixImM);   // wiki/Alpha_max_plus_beta_min_algorithm
-          const uint64_t absImS = abs (dmixImS);
+          sumAbsValM += complexAbsMS (dmixReM, dmixImM);
+          sumAbsValS += complexAbsMS (dmixReS, dmixImS);
 
-          sumAbsValM += (absReM > absImM ? absReM + ((absImM * 3) >> 3) : absImM + ((absReM * 3) >> 3));
-          sumAbsValS += (absReS > absImS ? absReS + ((absImS * 3) >> 3) : absImS + ((absReS * 3) >> 3));
-#endif
           *(sfbMdct1++) = dmixReM;
           *(sfbMdct2++) = dmixReS;
           *(sfbMdst1++) = dmixImM;
           *(sfbMdst2++) = dmixImS;
         }
-      } // realOnlyCalc
+      } // realOnlyCalc && sfb >= realOnlyOffset
 
       rmsSfbL[sfbIsOdd] = grpRms1[sfb];
       rmsSfbR[sfbIsOdd] = grpRms2[sfb];
@@ -182,7 +226,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
       grpRms1[sfb] = uint32_t ((sumAbsValM + (sfbWidth >> 1)) / sfbWidth);
       grpRms2[sfb] = uint32_t ((sumAbsValS + (sfbWidth >> 1)) / sfbWidth);
 
-      if (applyPredSte) sfbStereoData[sfb + numSwbFrame * gr] = 16; // initialize to alpha=0
+      if (applyPredSte) sfbStereoData[sfb + grOffset] = 16; // initialize to alpha_q to zero
 
       if ((sfbIsOdd) || (sfb + 1 == maxSfbSte)) // finish pair
       {
@@ -196,15 +240,12 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           const uint16_t width = grpOff[sfb + 1] - offEv;
           const int32_t* mdctA = (alterPredDir ? &mdctSpectrum2[offEv] : &mdctSpectrum1[offEv]);
           const int32_t* mdctB = (alterPredDir ? &mdctSpectrum1[offEv] : &mdctSpectrum2[offEv]);
-#if SP_MDST_PRED
           const int32_t* mdstA = (alterPredDir ? &mdstSpectrum2[offEv] : &mdstSpectrum1[offEv]);
           const int32_t* mdstB = (alterPredDir ? &mdstSpectrum1[offEv] : &mdstSpectrum2[offEv]);
-          int64_t sumPrdImAReB = 0, sumPrdImAImA = SP_EPS;
-#endif
           int64_t sumPrdReAReB = 0, sumPrdReAReA = SP_EPS;  // stabilizes the division below
+          int64_t sumPrdImAReB = 0, sumPrdImAImA = SP_EPS;
           double d, alphaLimit = 1.5; // max alpha_q magnitude
 
-#if SP_MDST_PRED
           for (uint16_t s = width; s > 0; s--, mdctA++, mdctB++, mdstA++, mdstB++)
           {
             const int64_t prdReAReA = ((int64_t) *mdctA * (int64_t) *mdctA + SA_BW) >> (SA_BW_SHIFT + 1);
@@ -220,57 +261,6 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             sumPrdImAReB -= ((int64_t) *mdctA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
             sumPrdImAImA += prdReAReA;
           }
-#else
-          for (uint16_t s = width; s > 0; s--, mdctA++, mdctB++)
-          {
-            sumPrdReAReB += ((int64_t) *mdctA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
-            sumPrdReAReA += ((int64_t) *mdctA * (int64_t) *mdctA + SA_BW) >> (SA_BW_SHIFT + 1);
-          }
-          if (realOnlyCalc) // real data, only MDCTs available
-          {
-            const int32_t* nextA = (alterPredDir ? &mdctSpectrum2[offEv + 1] : &mdctSpectrum1[offEv + 1]);
-            const int32_t* nextB = (alterPredDir ? &mdctSpectrum1[offEv + 1] : &mdctSpectrum2[offEv + 1]);
-
-            if (sfbEv == 0) // exclude unavailable DC estimate
-            {
-              mdctA -= width; nextA++;
-              mdctB -= width; nextB++;
-            }
-            else
-            {
-              mdctA -= (width + 1); // point to pre-
-              mdctB -= (width + 1); // vious samples
-            }
-            for (uint16_t s = width - (sfbEv == 0 ? 2 : 1); s > 0; s--) // exclude unavailable final estimate
-            {
-              const int64_t mdstA = ((int64_t) *(nextA++) - (int64_t) *(mdctA++)) >> 1; // estimate, see also
-              const int64_t mdstB = ((int64_t) *(nextB++) - (int64_t) *(mdctB++)) >> 1; // getMeanAbsValues()
-
-              sumPrdReAReB += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-              sumPrdReAReA += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
-            }
-            if (sfb + 1 < numSwbFrame) // process final sample
-            {
-              const int64_t msSgn = (alterPredDir ? -1 : 1);
-              const int64_t mdstA = ((((int64_t) *nextB + *nextA * msSgn + 1) >> 1) - (int64_t) *mdctA) >> 1;
-              const int64_t mdstB = ((((int64_t) *nextA - *nextB * msSgn + 1) >> 1) - (int64_t) *mdctB) >> 1;
-
-              sumPrdReAReB += (mdstA * mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-              sumPrdReAReA += (mdstA * mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
-            }
-          }
-          else // complex data, both MDCTs and MDSTs available
-          {
-            const int32_t* mdstA = (alterPredDir ? &mdstSpectrum2[offEv] : &mdstSpectrum1[offEv]);
-            const int32_t* mdstB = (alterPredDir ? &mdstSpectrum1[offEv] : &mdstSpectrum2[offEv]);
-
-            for (uint16_t s = width; s > 0; s--, mdstA++, mdstB++)
-            {
-              sumPrdReAReB += ((int64_t) *mdstA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-              sumPrdReAReA += ((int64_t) *mdstA * (int64_t) *mdstA + SA_BW) >> (SA_BW_SHIFT + 1);
-            }
-          }
-#endif
           for (b = sfbIsOdd; b >= 0; b--) // limit alpha_q to prevent residual RMS increases
           {
             const int idx = sfbEv + b;
@@ -285,7 +275,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 #else
           b = int32_t (10.0 * sfbTempVar + (sfbTempVar < 0 ? -0.5 : 0.5));// nearest integer
 #endif
-          sfbStereoData[sfbEv + numSwbFrame * gr] = uint8_t (b + 16); // finished alpha_q_re
+          sfbStereoData[sfbEv + grOffset] = uint8_t (b + 16); // save SFB's final alpha_q_re
 #if SP_MDST_PRED
           alphaLimit = CLIP_PM ((double) sumPrdImAReB / (double) sumPrdImAImA, alphaLimit);
 # if SP_OPT_ALPHA_QUANT
@@ -295,7 +285,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           b = int32_t (10.0 * alphaLimit + (alphaLimit < 0 ? -0.5 : 0.5));// nearest integer
 # endif
           if (sfbEv + 1 < numSwbFrame)
-          sfbStereoData[sfbEv + 1 + numSwbFrame * gr] = uint8_t (b + 16); // init alpha_q_im
+          sfbStereoData[sfbEv + 1 + grOffset] = uint8_t (b + 16); // save initial alpha_q_im
 #endif
 
           if (perCorrData && ((offEv & (SA_BW - 1)) == 0) && ((width & (SA_BW - 1)) == 0))
@@ -307,8 +297,8 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           }
           else b = UCHAR_MAX; // previous correlation data unavailable, assume maximum value
 
-          if ((b > SCHAR_MAX && sfbStereoData[sfbEv + numSwbFrame * gr] != 16) ||  // signi-
-              (2 <= abs ( (int) sfbStereoData[sfbEv + numSwbFrame * gr] - 16)))   // ficant?
+          if ((b > SCHAR_MAX && sfbStereoData[sfbEv + grOffset] != 16) || // if perceptually
+              (2 <= abs ( (int) sfbStereoData[sfbEv + grOffset] - 16))) // significant pred.
           {
             nonZeroPredCoef = true;
           }
@@ -350,7 +340,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           const uint64_t bandSumS = (applyPredSte ? (uint64_t) rmsSfbS[0] + (uint64_t) rmsSfbS[1] : bandSum2) >> 1;
 
           if ((__min (bandSumM, bandSumS) * __max (bandSumL, bandSumR) >= __min (bandSumL, bandSumR) * __max (bandSumM, bandSumS)) ||
-              (nonZeroPredCoef && (abs ( (int) sfbStereoData[sfbEv + numSwbFrame * gr] - 16) >= 10)))
+              (nonZeroPredCoef && (abs ( (int) sfbStereoData[sfbEv + grOffset] - 16) >= 10)))
           {
             const uint16_t sfbOffEv = grpOff[sfbEv];
             const uint16_t cpyWidth = (grpOff[sfb + 1] - sfbOffEv) * sizeof (int32_t);
@@ -364,47 +354,101 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             {
               const int idx = sfbEv + b;
 
-              grpRms1[idx] = rmsSfbL[b];
+              if (numSfbNoMsSte == 0)
+              {
+                rms1NoMsSte[b] = grpRms1[idx];
+                rms2NoMsSte[b] = grpRms2[idx];
+              }
+              grpRms1[idx] = rmsSfbL[b]; // recover left/right band energies
               grpRms2[idx] = rmsSfbR[b];
-              if (applyPredSte) sfbStereoData[idx + numSwbFrame * gr] = 0; // zeroed ms_used
+              if (applyPredSte)
+              {
+                if (numSfbNoMsSte == 0)
+                {
+                  rmsMNoMsSte[b] = rmsSfbM[b];
+                  rmsSNoMsSte[b] = rmsSfbS[b];
+                  dataNoMsSte[b] = sfbStereoData[idx + grOffset];
+                }
+                sfbStereoData[idx + grOffset] = 0;  // set ms_used flag to 0
+              }
             }
+            numSfbNoMsSte++;
+            idxSfbNoMsSte = sfbEv + grOffset;
+            nonZeroPredNoMsSte = nonZeroPredCoef;
+
             continue; // M/S is not used
           }
-        }
+        } // if !useFullFrameMS
 #endif
-        if (nonZeroPredCoef) numSfbPredSte++;  // a perceptually significant prediction band
-
-        for (b = sfbIsOdd; b >= 0; b--)
-        {
-          const int idx = sfbEv + b;
-          const uint32_t sfbRmsL = __max (SP_EPS, rmsSfbL[b]);
-          const uint32_t sfbRmsR = __max (SP_EPS, rmsSfbR[b]);
-          const double  sfbFacLR = (sfbRmsL < (grpStepSizes1[idx] >> 1) ? 1.0 : 2.0) * (sfbRmsR < (grpStepSizes2[idx] >> 1) ? 1.0 : 2.0);
-
-          sfbTempVar = (applyPredSte ? __max (rmsSfbM[b], rmsSfbS[b]) : __max (grpRms1[idx], grpRms2[idx]));
-
-          if ((grpStepSizes1[idx] == 0) || (grpStepSizes2[idx] == 0)) // HF noise filled SFB
-          {
-            grpStepSizes1[idx] = grpStepSizes2[idx] = 0;
-          }
-          else if (sfbFacLR <= 1.0)  // simultaneous masking - no positive SNR in either SFB
-          {
-            const double max = __max (sfbRmsL, sfbRmsR);
-
-            grpStepSizes1[idx] = grpStepSizes2[idx] = uint32_t (__max (grpStepSizes1[idx], grpStepSizes2[idx]) * (sfbTempVar / max) + 0.5);
-          }
-          else // partial/no masking - redistribute positive SNR into at least 1 channel SFB
-          {
-            const double min = (applyPredSte ? __min (rmsSfbM[b], rmsSfbS[b]) : __min (grpRms1[idx], grpRms2[idx]));
-            const double rat = __min (1.0, grpStepSizes1[idx] / (sfbRmsL * 2.0)) * __min (1.0, grpStepSizes2[idx] / (sfbRmsR * 2.0)) * sfbFacLR;
-
-            grpStepSizes1[idx] = grpStepSizes2[idx] = uint32_t (__max (SP_EPS, (min > rat * sfbTempVar ? sqrt (rat * sfbTempVar * min) :
-                                                                                __min (1.0, rat) * sfbTempVar)) + 0.5);
-          }
-        }
+        for (b = sfbIsOdd; b >= 0; b--) setStepSizesMS (rmsSfbL, rmsSfbR, rmsSfbM, rmsSfbS, grpRms1, grpRms2,
+                                                        grpStepSizes1, grpStepSizes2, sfbEv, (uint16_t) b, applyPredSte);
+        if (nonZeroPredCoef) numSfbPredSte++; // if perceptually significant prediction band
       } // if pair completed
     }
   } // for gr
+
+#if SP_SFB_WISE_STEREO
+  if (numSfbNoMsSte == 1) // upgrade single L/R to M/S band to reduce M/S signaling overhead
+  {
+    const uint16_t   grNoMS = idxSfbNoMsSte / numSwbFrame;
+    const uint16_t  offNoMS = numSwbFrame * grNoMS;
+    const uint16_t  sfbNoMS = idxSfbNoMsSte - offNoMS;
+    const bool realOnlyCalc = (filterData1.numFilters > 0 && grNoMS == filterData1.filteredWindow) || (mdstSpectrum1 == nullptr) ||
+                              (filterData2.numFilters > 0 && grNoMS == filterData2.filteredWindow) || (mdstSpectrum2 == nullptr);
+    const uint16_t*  grpOff = &grp.sfbOffsets[offNoMS];
+    uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[offNoMS];
+    uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[offNoMS];
+
+    for (int32_t b = (sfbNoMS + 1 < maxSfbSte ? 1 : 0); b >= 0; b--)
+    {
+      const int idx = sfbNoMS + b; // sfbNoMS = even SFB index
+      const uint16_t sfbStart = grpOff[idx];
+      const uint16_t sfbWidth = grpOff[idx + 1] - sfbStart;
+      int32_t* sfbMdct1 = &mdctSpectrum1[sfbStart];
+      int32_t* sfbMdct2 = &mdctSpectrum2[sfbStart];
+
+      rmsSfbL[b] = grpRms1[idx];  // save left/right band RMSs
+      rmsSfbR[b] = grpRms2[idx];
+      grpRms1[idx] = rms1NoMsSte[b];  // recover M/S band RMSs
+      grpRms2[idx] = rms2NoMsSte[b];
+      if (applyPredSte) sfbStereoData[idx + offNoMS] = dataNoMsSte[b];
+
+      if (realOnlyCalc && (idx >= realOnlyOffset)) // real-valued data, only MDCTs available
+      {
+        for (uint16_t s = sfbWidth; s > 0; s--)
+        {
+          const int32_t dmixReM = getMidSample (*sfbMdct1, *sfbMdct2);
+          const int32_t dmixReS = getSideSample(*sfbMdct1, *sfbMdct2);
+
+          *(sfbMdct1++) = dmixReM;
+          *(sfbMdct2++) = dmixReS;
+        }
+      }
+      else // complex data, both MDCTs and MDSTs are available
+      {
+        int32_t* sfbMdst1 = &mdstSpectrum1[sfbStart];
+        int32_t* sfbMdst2 = &mdstSpectrum2[sfbStart];
+
+        for (uint16_t s = sfbWidth; s > 0; s--)
+        {
+          const int32_t dmixReM = getMidSample (*sfbMdct1, *sfbMdct2);
+          const int32_t dmixReS = getSideSample(*sfbMdct1, *sfbMdct2);
+          const int32_t dmixImM = getMidSample (*sfbMdst1, *sfbMdst2);
+          const int32_t dmixImS = getSideSample(*sfbMdst1, *sfbMdst2);
+
+          *(sfbMdct1++) = dmixReM;
+          *(sfbMdct2++) = dmixReS;
+          *(sfbMdst1++) = dmixImM;
+          *(sfbMdst2++) = dmixImS;
+        }
+      } // realOnlyCalc && idx >= realOnlyOffset
+
+      setStepSizesMS (rmsSfbL, rmsSfbR, rmsMNoMsSte, rmsSNoMsSte, grpRms1, grpRms2,
+                      &sfbStepSize1[offNoMS], &sfbStepSize2[offNoMS], sfbNoMS, (uint16_t) b, applyPredSte);
+    }
+    if (nonZeroPredNoMsSte) numSfbPredSte++; // was perceptually significant prediction band
+  } // if numSfbNoMsSte == 1
+#endif
 
   if (numSfbPredSte == 0) // discard prediction coefficients and stay with legacy M/S stereo
   {
@@ -424,21 +468,22 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   {
     for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
     {
+      const uint16_t grOffset = numSwbFrame * gr;
       const bool realOnlyCalc = (filterData1.numFilters > 0 && gr == filterData1.filteredWindow) || (mdstSpectrum1 == nullptr) ||
                                 (filterData2.numFilters > 0 && gr == filterData2.filteredWindow) || (mdstSpectrum2 == nullptr);
-      const uint16_t*  grpOff = &grp.sfbOffsets[numSwbFrame * gr];
-      uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[numSwbFrame * gr];
-      uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[numSwbFrame * gr];
-      uint8_t* const grpSData = &sfbStereoData[numSwbFrame * gr];
+      const uint16_t*  grpOff = &grp.sfbOffsets[grOffset];
+      uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[grOffset];
+      uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[grOffset];
+      uint8_t* const grpSData = &sfbStereoData[grOffset];
       int32_t prevResi = 0;
 
       if (realOnlyCalc) // preparation of res. magnitude value
       {
-        const int64_t alphaRe = (grpSData[0] > 0 ? (int) grpSData[0] - 16 : 0) * SP_0_DOT_1_16BIT;
-        const uint16_t sPlus1 = grpOff[0] + 1;
+        const int64_t alphaRe = (grpSData[realOnlyOffset & 0xFE] > 0 ? (int) grpSData[realOnlyOffset & 0xFE] - 16 : 0) * SP_0_DOT_1_16BIT;
+        const uint16_t sIndex = grpOff[realOnlyOffset] + (grpOff[realOnlyOffset] > 0 ? -1 : 1);
 
-        prevResi = (alterPredDir ? mdctSpectrum1[sPlus1] - int32_t ((mdctSpectrum2[sPlus1] * alphaRe - SHRT_MIN) >> 16)
-                                 : mdctSpectrum2[sPlus1] - int32_t ((mdctSpectrum1[sPlus1] * alphaRe - SHRT_MIN) >> 16));
+        prevResi = (alterPredDir ? getResiSample (mdctSpectrum1[sIndex], mdctSpectrum2[sIndex], alphaRe)
+                                 : getResiSample (mdctSpectrum2[sIndex], mdctSpectrum1[sIndex], alphaRe));
       }
 
       for (uint16_t sfb = 0; sfb < maxSfbSte; sfb++)
@@ -453,7 +498,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 
         if (alphaRe == 0)
         {
-          if (realOnlyCalc) // update previous res. MDCT value
+          if (realOnlyCalc && (sfb >= realOnlyOffset)) // update previous residual MDCT data
           {
             sfbMdctR += sfbWidth - 1;
             prevResi = (grpSData[sfbEv] > 0 ? *sfbMdctR : int32_t (((int64_t) sfbMdctD[sfbWidth - 1] +
@@ -462,22 +507,18 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           continue; // nothing more to do, i.e., no prediction
         }
 
-        if (realOnlyCalc) // real data, only MDCT is available
+        if (realOnlyCalc && (sfb >= realOnlyOffset))  // real-valued, only MDCT is available
         {
           const int32_t* sfbNextD = &sfbMdctD[1];
           const int32_t* sfbNextR = &sfbMdctR[1];
 
           for (uint16_t s = sfbWidth - (sfb + 1 == numSwbFrame ? 1 : 0); s > 0; s--)
           {
-            const int32_t  resiRe = *sfbMdctR - int32_t ((*sfbMdctD * alphaRe - SHRT_MIN) >> 16);
+            const int32_t  resiRe = getResiSample (*sfbMdctR, *sfbMdctD, alphaRe);
             // TODO: improve the following line since the calculation is partially redundant
-            //       Also, in the final s index of this band, the wrong alphaRe may be used!
-            const int32_t  resiIm = int32_t (((*sfbNextR - ((*sfbNextD * alphaRe - SHRT_MIN) >> 16)) - (int64_t) prevResi) >> 1);
+            const int32_t  resiIm = int32_t ((getResiSample (*sfbNextR, *sfbNextD, alphaRe) - (int64_t) prevResi) >> 1);
 
-            const uint64_t absReR = abs (resiRe);  // Richard Lyons, 1997; en.wikipedia.org/
-            const uint64_t absImR = abs (resiIm);  // wiki/Alpha_max_plus_beta_min_algorithm
-
-            sumAbsValR += (absReR > absImR ? absReR + ((absImR * 3) >> 3) : absImR + ((absReR * 3) >> 3));
+            sumAbsValR += complexAbsMS (resiRe, resiIm);
 
             sfbMdctD++;
             *(sfbMdctR++) = resiRe;
@@ -486,7 +527,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           }
           if (sfb + 1 == numSwbFrame)  // process final sample
           {
-            const int32_t resiRe = *sfbMdctR - int32_t ((*sfbMdctD * alphaRe - SHRT_MIN) >> 16);
+            const int32_t  resiRe = getResiSample (*sfbMdctR, *sfbMdctD, alphaRe);
 
             sumAbsValR += abs (resiRe);
 
@@ -500,24 +541,17 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 
           for (uint16_t s = sfbWidth; s > 0; s--)
           {
-            const int32_t  resiRe = *sfbMdctR - int32_t ((*sfbMdctD * alphaRe - SHRT_MIN) >> 16);
-            const int32_t  resiIm = *sfbMdstR - int32_t ((*sfbMdstD * alphaRe - SHRT_MIN) >> 16);
-#if SA_EXACT_COMPLEX_ABS
-            const double cplxSqrR = (double) resiRe * (double) resiRe + (double) resiIm * (double) resiIm;
+            const int32_t  resiRe = getResiSample (*sfbMdctR, *sfbMdctD, alphaRe);
+            const int32_t  resiIm = getResiSample (*sfbMdstR, *sfbMdstD, alphaRe);
 
-            sumAbsValR += uint64_t (sqrt (cplxSqrR) + 0.5);
-#else
-            const uint64_t absReR = abs (resiRe);  // Richard Lyons, 1997; en.wikipedia.org/
-            const uint64_t absImR = abs (resiIm);  // wiki/Alpha_max_plus_beta_min_algorithm
+            sumAbsValR += complexAbsMS (resiRe, resiIm);
 
-            sumAbsValR += (absReR > absImR ? absReR + ((absImR * 3) >> 3) : absImR + ((absReR * 3) >> 3));
-#endif
             sfbMdctD++;
             *(sfbMdctR++) = resiRe;
             sfbMdstD++;
             *(sfbMdstR++) = resiIm;
           }
-        } // realOnlyCalc
+        } // realOnlyCalc && sfb >= realOnlyOffset
 
         // average spectral res. magnitude across current band
         sumAbsValR = (sumAbsValR + (sfbWidth >> 1)) / sfbWidth;
@@ -533,7 +567,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           int32_t* sfbMdct1 = &mdctSpectrum1[sfbStart];
           int32_t* sfbMdct2 = &mdctSpectrum2[sfbStart];
 
-          if (grpSData[sfb] == 0) continue; // M/S is not used
+          if (grpSData[sfb & 0xFFFE] == 0) continue; // no M/S
 
           for (uint16_t s = grpOff[sfb + 1] - sfbStart; s > 0; s--)
           {
