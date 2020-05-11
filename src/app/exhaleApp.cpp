@@ -84,14 +84,14 @@ int main (const int argc, char* argv[])
   }
 
   // print program header with compile info in plain text if we pass -V
-  if (argc > 1 && (strcmp(argv[1], "-V") == 0 || strcmp(argv[1], "-v") == 0))
+  if ((argc > 1) && (strcmp (argv[1], "-V") == 0 || strcmp (argv[1], "-v") == 0))
   {
 #if defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
-    fprintf_s(stdout, "exhale %s.%s%s (x64)\n",
+    fprintf_s (stdout, "exhale %s.%s%s (x64)\n",
 #else // 32-bit OS
-    fprintf_s(stdout, "exhale %s.%s%s (x86)\n",
+    fprintf_s (stdout, "exhale %s.%s%s (x86)\n",
 #endif
-        EXHALELIB_VERSION_MAJOR, EXHALELIB_VERSION_MINOR, EXHALELIB_VERSION_BUGFIX);
+               EXHALELIB_VERSION_MAJOR, EXHALELIB_VERSION_MINOR, EXHALELIB_VERSION_BUGFIX);
     return 0;
   }
 
@@ -397,7 +397,7 @@ int main (const int argc, char* argv[])
 #else
       ExhaleEncoder  exhaleEnc (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
 #endif
-                                (sampleRate > 24000 ? 0 : 1 - (variableCoreBitRateMode >> 2)) // compensate for low sampling rates
+                                (sampleRate > 16000 ? 0 : 1 - (variableCoreBitRateMode >> 2)) // compensate for low sampling rates
 #if !RESTRICT_TO_AAC
                               , true /*noise filling*/, compatibleExtensionFlag > 0
 #endif

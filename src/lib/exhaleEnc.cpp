@@ -681,7 +681,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint64_t scaleSr         = (samplingRate < 27713 ? 37 - m_bitRateMode : 37) - (m_bitRateMode > 1 ? nChannels >> 1 : 0);
+  const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 24000 ? 32 : 34) - m_bitRateMode : 37) - (nChannels >> 1);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? 32 : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
@@ -1272,7 +1272,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
         if ((int) s == steAnaStats * -1) coreConfig.stereoConfig = 2;  // 2: S>M, pred_dir=1
         if (s > (UCHAR_MAX * 3) / 4) coreConfig.stereoMode = 2; // 2: all, ms_mask_present=2
-        if (s >= UCHAR_MAX) coreConfig.stereoConfig |= 8; // coding of mono-in-stereo signal
+        if (s >= UCHAR_MAX - 1) coreConfig.stereoConfig |= 8; // true: mono-in-stereo signal
       }
       else if (nrChannels > 1) m_perCorrHCurr[el] = m_perCorrLCurr[el] = 128; // "mid" value
 
@@ -1390,9 +1390,9 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
               coreConfig.commonTnsData = (*coeff0 == *coeff1); // first four coeffs the same
             }
-            if (coreConfig.commonTnsData) // synch TNS start SFB
+            if (coreConfig.commonTnsData || (abs (tnsStart[0] - tnsStart[1]) <= (UCHAR_MAX >> 5)))
             {
-              const uint32_t avgTnsStart = (tnsStart[0] + tnsStart[1]) >> 1;  // mean offset
+              const uint32_t avgTnsStart = (tnsStart[0] + tnsStart[1]) >> 1;  // synch start
 
               sa0 = (sa0 & (UINT_MAX - 31)) | avgTnsStart;  // is used by applyTnsToWinGroup
               sa1 = (sa1 & (UINT_MAX - 31)) | avgTnsStart;
@@ -1419,20 +1419,19 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
       const uint16_t*  grpSO = grpData.sfbOffsets;
       const IcsInfo& icsCurr = coreConfig.icsInfoCurr[ch];
       const bool eightShorts = (icsCurr.windowSequence == EIGHT_SHORT);
-      unsigned grpEndLine = 0;
 
       if (eightShorts) // map grouping table idx to scale_factor_grouping idx for bit-stream
       {
         coreConfig.icsInfoCurr[ch].windowGrouping = scaleFactorGrouping[icsCurr.windowGrouping];
       }
-
+      s = 0;
       for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
       {
-        const unsigned grpSOStart = grpSO[grpData.sfbsPerGroup + m_numSwbShort * gr];
+        const unsigned grMax = grpSO[grpData.sfbsPerGroup + m_numSwbShort * gr];
 
-        grpEndLine += (eightShorts ? nSamplesInShort : nSamplesInFrame) * grpData.windowGroupLength[gr];
-        memset (&m_mdctSignals[ci][grpSOStart], 0, (grpEndLine - grpSOStart) * sizeof (int32_t));
-        memset (&m_mdstSignals[ci][grpSOStart], 0, (grpEndLine - grpSOStart) * sizeof (int32_t));
+        s += (eightShorts ? nSamplesInShort : nSamplesInFrame) * grpData.windowGroupLength[gr];
+        memset (&m_mdctSignals[ci][grMax], 0, (s - grMax) * sizeof (int32_t));
+        memset (&m_mdstSignals[ci][grMax], 0, (s - grMax) * sizeof (int32_t));
       }
       memset (grpData.sfbRmsValues, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint32_t));
 
