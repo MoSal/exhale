@@ -304,23 +304,19 @@ int main (const int argc, char* argv[])
       goto mainFinish;  // bad output string
     }
 
-    if ((variableCoreBitRateMode < 2) && (wavReader.getSampleRate () > 24000))
+    if ((variableCoreBitRateMode < 2) && (wavReader.getSampleRate () > 32000))
     {
-      fprintf_s (stderr, " ERROR during encoding! Input sample rate must be <=24 kHz for preset mode %d!\n\n", variableCoreBitRateMode);
+      fprintf_s (stderr, " ERROR during encoding! Input sample rate must be <=32 kHz for preset mode %d!\n\n", variableCoreBitRateMode);
       i = 4096; // return value
 
-      goto mainFinish; // resample to 24 kHz
+      goto mainFinish; // resample to 32 kHz
     }
-    if ((variableCoreBitRateMode < 3) && (wavReader.getSampleRate () > 48000))
+    if ((variableCoreBitRateMode < 4) && (wavReader.getSampleRate () > 48000))
     {
       fprintf_s (stderr, " ERROR during encoding! Input sample rate must be <=48 kHz for preset mode %d!\n\n", variableCoreBitRateMode);
       i = 4096; // return value
 
       goto mainFinish; // resample to 44 kHz
-    }
-    if ((variableCoreBitRateMode == 2) && (wavReader.getSampleRate () > 32000))
-    {
-      fprintf_s (stderr, " WARNING: The input sampling rate should be 32 kHz or less for preset mode %d!\n\n", variableCoreBitRateMode);
     }
 
     if (outPathEnd == 0) // name has no path

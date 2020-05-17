@@ -726,7 +726,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
     }
     else // SCE or CPE: bandwidth-to-max_sfb mapping, short-window grouping for each channel
     {
-      const uint32_t redFactor = (m_bitRateMode < 3 ? 2 : 3) - (coreConfig.stereoConfig >> 3);
+      const uint32_t redFactor = __max ((samplingRate < 27713 ? 2 : 1), __min (3, m_bitRateMode)) - (coreConfig.stereoConfig >> 3);
       const bool  eightShorts0 = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
       const TnsData&  tnsData0 = coreConfig.tnsData[0];
       const TnsData&  tnsData1 = coreConfig.tnsData[1];
@@ -818,7 +818,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                                                          coreConfig.groupingData[0], coreConfig.groupingData[1],
                                                          coreConfig.tnsData[0], coreConfig.tnsData[1],
                                                          numSwbFrame, coreConfig.stereoDataCurr,
-                                                         m_bitRateMode <= 4, coreConfig.stereoMode > 1,
+                                                         m_bitRateMode, coreConfig.stereoMode > 1,
                                                          (coreConfig.stereoConfig & 2) > 0, realOnlyStartSfb,
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS *  ci],
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS * (ci + 1)]);

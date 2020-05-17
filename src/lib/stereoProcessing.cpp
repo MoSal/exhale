@@ -76,6 +76,12 @@ static inline void   setStepSizesMS (const uint32_t* const rmsSfbL, const uint32
 // constructor
 StereoProcessor::StereoProcessor ()
 {
+#if SP_OPT_ALPHA_QUANT
+  memset (m_randomIntMemRe, 0, (MAX_NUM_SWB_LONG / 2) * sizeof (int32_t));
+# if SP_MDST_PRED
+  memset (m_randomIntMemIm, 0, (MAX_NUM_SWB_LONG / 2) * sizeof (int32_t));
+# endif
+#endif
   memset (m_stereoCorrValue, 0, (1024 >> SA_BW_SHIFT) * sizeof (uint8_t));
 }
 
@@ -85,7 +91,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
                                                 SfbGroupData&  groupingData1, SfbGroupData&  groupingData2,
                                                 const TnsData&   filterData1, const TnsData&   filterData2,
                                                 const uint8_t    numSwbFrame, uint8_t* const sfbStereoData,
-                                                const bool    usePerCorrData, const bool    useFullFrameMS,
+                                                const uint8_t    bitRateMode, const bool    useFullFrameMS,
                                                 const bool    reversePredDir, const uint8_t realOnlyOffset,
                                                 uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2)
 {
@@ -94,7 +100,10 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   const SfbGroupData& grp = groupingData1;
   const bool  eightShorts = (grp.numWindowGroups > 1);
   const uint8_t maxSfbSte = (eightShorts ? __min (numSwbFrame, __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) + 1) : numSwbFrame);
-  const bool  perCorrData = (usePerCorrData && !eightShorts); // use perceptual correlation?
+  const bool  perCorrData = ((bitRateMode <= 4) && !eightShorts); // perceptual correlation?
+#if SP_OPT_ALPHA_QUANT
+  const bool  quantDither = ((bitRateMode >= 4) && !eightShorts); // quantization dithering?
+#endif
   uint32_t rmsSfbL[2] = {0, 0}, rmsSfbR[2] = {0, 0};
   uint32_t  numSfbPredSte = 0; // counter
 #if SP_SFB_WISE_STEREO
@@ -120,6 +129,18 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 #endif
 
   if (applyPredSte && perCorrData) memcpy (m_stereoCorrValue, sfbStereoData, (grp.sfbOffsets[numSwbFrame] >> SA_BW_SHIFT) * sizeof (uint8_t));
+#if SP_OPT_ALPHA_QUANT
+  if ((bitRateMode >= 4) && eightShorts) // reset quantizer dither memory in short transform
+  {
+    for (uint16_t sfb = 0; sfb < MAX_NUM_SWB_LONG / 2; sfb++)
+    {
+      m_randomIntMemRe[sfb] = (1 << 30);
+# if SP_MDST_PRED
+      m_randomIntMemIm[sfb] = (1 << 30);
+# endif
+    }
+  }
+#endif
 
   for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
   {
@@ -226,7 +247,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
       grpRms1[sfb] = uint32_t ((sumAbsValM + (sfbWidth >> 1)) / sfbWidth);
       grpRms2[sfb] = uint32_t ((sumAbsValS + (sfbWidth >> 1)) / sfbWidth);
 
-      if (applyPredSte) sfbStereoData[sfb + grOffset] = 16; // initialize to alpha_q to zero
+      if (applyPredSte) sfbStereoData[sfb + grOffset] = 16; // initialize alpha_q_.. to zero
 
       if ((sfbIsOdd) || (sfb + 1 == maxSfbSte)) // finish pair
       {
@@ -271,7 +292,18 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           sfbTempVar = CLIP_PM ((double) sumPrdReAReB / (double) sumPrdReAReA, alphaLimit);
 #if SP_OPT_ALPHA_QUANT
           b = __max (512, 524 - int32_t (abs (10.0 * sfbTempVar))); // rounding optimization
-          b = int32_t (10.0 * sfbTempVar + b * (sfbTempVar < 0 ? -0.0009765625 : 0.0009765625));
+# if 1
+          if (quantDither)
+          {
+            const int32_t r = (int32_t) m_randomInt32 ();
+            const double dr = 10.0 * sfbTempVar + (r - m_randomIntMemRe[sfbEv >> 1]) * SP_DIV;
+
+            b = int32_t (dr + b * (dr < 0.0 ? -0.0009765625 : 0.0009765625));
+            m_randomIntMemRe[sfbEv >> 1] = r;
+          }
+          else
+# endif
+          b = int32_t (10.0 * sfbTempVar + b * (sfbTempVar < 0.0 ? -0.0009765625 : 0.0009765625));
 #else
           b = int32_t (10.0 * sfbTempVar + (sfbTempVar < 0 ? -0.5 : 0.5));// nearest integer
 #endif
@@ -280,13 +312,24 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           alphaLimit = CLIP_PM ((double) sumPrdImAReB / (double) sumPrdImAImA, alphaLimit);
 # if SP_OPT_ALPHA_QUANT
           b = __max (512, 524 - int32_t (abs (10.0 * alphaLimit))); // rounding optimization
-          b = int32_t (10.0 * alphaLimit + b * (alphaLimit < 0 ? -0.0009765625 : 0.0009765625));
+#  if 1
+          if (quantDither)
+          {
+            const int32_t r = (int32_t) m_randomInt32 ();
+            const double dr = 10.0 * alphaLimit + (r - m_randomIntMemIm[sfbEv >> 1]) * SP_DIV;
+
+            b = int32_t (dr + b * (dr < 0.0 ? -0.0009765625 : 0.0009765625));
+            m_randomIntMemIm[sfbEv >> 1] = r;
+          }
+          else
+#  endif
+          b = int32_t (10.0 * alphaLimit + b * (alphaLimit < 0.0 ? -0.0009765625 : 0.0009765625));
 # else
           b = int32_t (10.0 * alphaLimit + (alphaLimit < 0 ? -0.5 : 0.5));// nearest integer
 # endif
           if (sfbEv + 1 < numSwbFrame)
           sfbStereoData[sfbEv + 1 + grOffset] = uint8_t (b + 16); // save initial alpha_q_im
-#endif
+#endif // SP_MDST_PRED
 
           if (perCorrData && ((offEv & (SA_BW - 1)) == 0) && ((width & (SA_BW - 1)) == 0))
           {
@@ -304,7 +347,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           }
           sfbTempVar *= sfbTempVar;  // account for residual RMS reduction due to prediction
 #if SP_MDST_PRED
-          sfbTempVar += alphaLimit * alphaLimit; // including complex prediction by alpha_im
+          if (bitRateMode > 1) sfbTempVar += alphaLimit * alphaLimit;  // including alpha_im
 #endif
           for (b = sfbIsOdd; b >= 0; b--)
           {
