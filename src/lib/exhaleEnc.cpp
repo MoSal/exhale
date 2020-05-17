@@ -1056,7 +1056,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
         if (grpData.sfbsPerGroup > 0) // rate control part 2 to reach constrained VBR (CVBR)
         {
-          const uint8_t maxSfbLong  = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+          const uint8_t maxSfbLong  = (samplingRate < 37566 ? 49 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           const uint8_t maxSfbShort = (samplingRate < 37566 ? 14 /*32 kHz*/ : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 4 : maxSfbLong + (samplingRate >> 14) - 8) + (meanSpecFlat[ci] >> 5);
