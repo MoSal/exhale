@@ -274,7 +274,7 @@ uint8_t LinearPredictor::calcOptTnsCoeffs (short* const parCorCoeffs, int8_t* co
     return 0;  // LPC prediction gain is too low
   }
 
-  d = (7 << (LP_DEPTH - 1)) >> 3;
+  d = (3 << (LP_DEPTH - 1)) >> 2;
 
   if (i > d) // apply direct-form filter damping
   {

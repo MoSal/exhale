@@ -264,7 +264,9 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           const int32_t* mdstA = (alterPredDir ? &mdstSpectrum2[offEv] : &mdstSpectrum1[offEv]);
           const int32_t* mdstB = (alterPredDir ? &mdstSpectrum1[offEv] : &mdstSpectrum2[offEv]);
           int64_t sumPrdReAReB = 0, sumPrdReAReA = SP_EPS;  // stabilizes the division below
-          int64_t sumPrdImAReB = 0, sumPrdImAImA = SP_EPS;
+#if SP_MDST_PRED
+          int64_t sumPrdImAReB = 0;
+#endif
           double d, alphaLimit = 1.5; // max alpha_q magnitude
 
           for (uint16_t s = width; s > 0; s--, mdctA++, mdctB++, mdstA++, mdstB++)
@@ -274,13 +276,15 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 
             sumPrdReAReB += ((int64_t) *mdctA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
             sumPrdReAReA += prdReAReA;
+#if SP_MDST_PRED
             sumPrdImAReB += ((int64_t) *mdstA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
-            sumPrdImAImA += prdImAImA;
+#endif
             // add complex conjugate part, increases stability
             sumPrdReAReB += ((int64_t) *mdstA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
             sumPrdReAReA += prdImAImA;
+#if SP_MDST_PRED
             sumPrdImAReB -= ((int64_t) *mdctA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-            sumPrdImAImA += prdReAReA;
+#endif
           }
           for (b = sfbIsOdd; b >= 0; b--) // limit alpha_q to prevent residual RMS increases
           {
@@ -309,7 +313,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 #endif
           sfbStereoData[sfbEv + grOffset] = uint8_t (b + 16); // save SFB's final alpha_q_re
 #if SP_MDST_PRED
-          alphaLimit = CLIP_PM ((double) sumPrdImAReB / (double) sumPrdImAImA, alphaLimit);
+          alphaLimit = CLIP_PM ((double) sumPrdImAReB / (double) sumPrdReAReA, alphaLimit);
 # if SP_OPT_ALPHA_QUANT
           b = __max (512, 524 - int32_t (abs (10.0 * alphaLimit))); // rounding optimization
 #  if 1
