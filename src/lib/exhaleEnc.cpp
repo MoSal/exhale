@@ -1056,10 +1056,10 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
         if (grpData.sfbsPerGroup > 0) // rate control part 2 to reach constrained VBR (CVBR)
         {
-          const uint8_t maxSfbLong  = (samplingRate < 37566 ? 49 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-          const uint8_t maxSfbShort = (samplingRate < 37566 ? 14 /*32 kHz*/ : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
+          const uint8_t maxSfbLong  = (samplingRate < 37566 ? 63 - (samplingRate >> 11) : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+          const uint8_t maxSfbShort = (samplingRate < 37566 ? 21 - (samplingRate >> 12) : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
-          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 4 : maxSfbLong + (samplingRate >> 14) - 8) + (meanSpecFlat[ci] >> 5);
+          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 4 : maxSfbLong - 6) + (meanSpecFlat[ci] >> 5);
           const unsigned targetBitCount25 = ((60000 + 20000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
           unsigned b = grpData.sfbsPerGroup - 1;
 
@@ -1243,6 +1243,8 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
     }
     else // SCE or CPE: bandwidth-to-max_sfb mapping, short-window grouping for each channel
     {
+      const bool prevStereoAllSfbs = (coreConfig.stereoMode == 2 || coreConfig.stereoMode == 4);
+
       coreConfig.stereoConfig = coreConfig.stereoMode = 0;
 
       if (coreConfig.commonWindow && (m_bitRateMode <= 4)) // stereo pre-processing analysis
@@ -1369,8 +1371,8 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
             TnsData& tnsData0 = coreConfig.tnsData[0];
             TnsData& tnsData1 = coreConfig.tnsData[1];
 
-            if ((maxTnsOrder > 0 && coreConfig.stereoMode > 0) ||
-                m_linPredictor.similarParCorCoeffs (tnsData0.coeffParCor, tnsData1.coeffParCor, maxTnsOrder, LP_DEPTH))
+            if ((maxTnsOrder > 0) && (coreConfig.stereoMode > 0 || (prevStereoAllSfbs && m_perCorrHCurr[el] > (UCHAR_MAX * 11) / 16) ||
+                m_linPredictor.similarParCorCoeffs (tnsData0.coeffParCor, tnsData1.coeffParCor, maxTnsOrder, LP_DEPTH)))
             {
               coreConfig.commonTnsData = true; // synch tns_data
               for (s = 0; s < maxTnsOrder; s++)
