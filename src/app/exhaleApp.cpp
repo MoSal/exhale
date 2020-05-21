@@ -391,9 +391,8 @@ int main (const int argc, char* argv[])
 #if USE_EXHALELIB_DLL
       ExhaleEncAPI&  exhaleEnc = *exhaleCreate (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
 #else
-      ExhaleEncoder  exhaleEnc (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode +
+      ExhaleEncoder  exhaleEnc (inPcmData, outAuData, sampleRate, numChannels, frameLength, indepPeriod, variableCoreBitRateMode
 #endif
-                                (sampleRate > 16000 ? 0 : 1 - (variableCoreBitRateMode >> 2)) // compensate for low sampling rates
 #if !RESTRICT_TO_AAC
                               , true /*noise filling*/, compatibleExtensionFlag > 0
 #endif
