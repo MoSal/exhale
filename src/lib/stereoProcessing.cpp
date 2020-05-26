@@ -107,7 +107,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   uint32_t rmsSfbL[2] = {0, 0}, rmsSfbR[2] = {0, 0};
   uint32_t  numSfbPredSte = 0; // counter
 #if SP_SFB_WISE_STEREO
-  uint16_t  numSfbNoMsSte = 0, idxSfbNoMsSte = 0;
+  uint16_t  numSfbNoMsSte = 0, idxSfbNoMsSte = 0, nNoMS = 0;
   uint32_t rms1NoMsSte[2] = {0, 0}, rms2NoMsSte[2] = {0, 0};
   uint32_t rmsMNoMsSte[2] = {0, 0}, rmsSNoMsSte[2] = {0, 0};
   uint8_t  dataNoMsSte[2] = {0, 0};
@@ -142,11 +142,11 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   }
 #endif
 
-  for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
+  for (uint16_t n = 0, gr = 0; gr < grp.numWindowGroups; gr++)
   {
     const uint16_t grOffset = numSwbFrame * gr;
-    const bool realOnlyCalc = (filterData1.numFilters > 0 && gr == filterData1.filteredWindow) || (mdstSpectrum1 == nullptr) ||
-                              (filterData2.numFilters > 0 && gr == filterData2.filteredWindow) || (mdstSpectrum2 == nullptr);
+    const uint8_t grpLength = grp.windowGroupLength[gr];
+    const bool realOnlyCalc = ((grpLength == 1) && (filterData1.numFilters[n] > 0 || filterData2.numFilters[n] > 0)) || !mdstSpectrum1 || !mdstSpectrum2;
     const uint16_t*  grpOff = &grp.sfbOffsets[grOffset];
     uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[grOffset];
     uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[grOffset];
@@ -419,7 +419,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
                 sfbStereoData[idx + grOffset] = 0;  // set ms_used flag to 0
               }
             }
-            numSfbNoMsSte++;
+            numSfbNoMsSte++;  nNoMS = n;
             idxSfbNoMsSte = sfbEv + grOffset;
             nonZeroPredNoMsSte = nonZeroPredCoef;
 
@@ -432,6 +432,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
         if (nonZeroPredCoef) numSfbPredSte++; // if perceptually significant prediction band
       } // if pair completed
     }
+    if (grpLength == 1) n++;
   } // for gr
 
 #if SP_SFB_WISE_STEREO
@@ -440,8 +441,8 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
     const uint16_t   grNoMS = idxSfbNoMsSte / numSwbFrame;
     const uint16_t  offNoMS = numSwbFrame * grNoMS;
     const uint16_t  sfbNoMS = idxSfbNoMsSte - offNoMS;
-    const bool realOnlyCalc = (filterData1.numFilters > 0 && grNoMS == filterData1.filteredWindow) || (mdstSpectrum1 == nullptr) ||
-                              (filterData2.numFilters > 0 && grNoMS == filterData2.filteredWindow) || (mdstSpectrum2 == nullptr);
+    const uint8_t grpLength = grp.windowGroupLength[grNoMS];
+    const bool realOnlyCalc = ((grpLength == 1) && (filterData1.numFilters[nNoMS] > 0 || filterData2.numFilters[nNoMS] > 0)) || !mdstSpectrum1 || !mdstSpectrum2;
     const uint16_t*  grpOff = &grp.sfbOffsets[offNoMS];
     uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[offNoMS];
     uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[offNoMS];
@@ -513,11 +514,11 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   }
   else // at least one "significant" prediction band, apply prediction and update RMS values
   {
-    for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
+    for (uint16_t n = 0, gr = 0; gr < grp.numWindowGroups; gr++)
     {
       const uint16_t grOffset = numSwbFrame * gr;
-      const bool realOnlyCalc = (filterData1.numFilters > 0 && gr == filterData1.filteredWindow) || (mdstSpectrum1 == nullptr) ||
-                                (filterData2.numFilters > 0 && gr == filterData2.filteredWindow) || (mdstSpectrum2 == nullptr);
+      const uint8_t grpLength = grp.windowGroupLength[gr];
+      const bool realOnlyCalc = ((grpLength == 1) && (filterData1.numFilters[n] > 0 || filterData2.numFilters[n] > 0)) || !mdstSpectrum1 || !mdstSpectrum2;
       const uint16_t*  grpOff = &grp.sfbOffsets[grOffset];
       uint32_t* const grpRms1 = &groupingData1.sfbRmsValues[grOffset];
       uint32_t* const grpRms2 = &groupingData2.sfbRmsValues[grOffset];
@@ -627,6 +628,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           grpRms2[sfb]  = numSfbPredSte;
         }
       }
+      if (grpLength == 1) n++;
     } // for gr
 
     numSfbPredSte = 2;

@@ -115,12 +115,12 @@ private:
   LappedTransform m_transform; // time-frequency transform
 
   // helper functions
-  unsigned applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpData, const bool eightShorts, const uint8_t maxSfb,
-                               const unsigned channelIndex, const bool realOnlyCalc);
-  unsigned eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets, int32_t* const mdctSignal,
-                               int32_t* const mdstSignal = nullptr);
-  unsigned getOptParCorCoeffs (const int32_t* const mdctSignal, const SfbGroupData& grpData, const uint8_t maxSfb,
-                               const unsigned channelIndex, TnsData& tnsData, const uint8_t firstGroupIndexToTest = 0);
+  unsigned applyTnsToWinGroup (SfbGroupData& grpData, const uint8_t grpIndex, const uint8_t maxSfb, TnsData& tnsData,
+                               const unsigned channelIndex, const unsigned n, const bool realOnlyCalc);
+  unsigned eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets,
+                               int32_t* const mdctSignal, int32_t* const mdstSignal);
+  unsigned getOptParCorCoeffs (const SfbGroupData& grpData, const uint8_t maxSfb, TnsData& tnsData,
+                               const unsigned channelIndex, const uint8_t firstGroupIndexToTest = 0);
   unsigned psychBitAllocation ();
   unsigned quantizationCoding ();
   unsigned spectralProcessing ();

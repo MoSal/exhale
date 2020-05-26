@@ -227,6 +227,60 @@ static inline void applyStereoPreProcessingReal (int32_t* mdctSample1, int32_t* 
   *mdctSample2 = int32_t (dmxR2 * sqrt (n / __max (1.0, d)) + (dmxR2 < 0 ? -0.5 : 0.5));
 }
 
+static inline void applyTnsCoeff2ChannelSynch (LinearPredictor& predictor, TnsData& tnsData1, TnsData& tnsData2,
+                                               const uint16_t maxTnsOrder, const unsigned  n, bool* const commonFlag)
+{
+  int16_t* const parCor1 = tnsData1.coeffParCor[n];
+  int16_t* const parCor2 = tnsData2.coeffParCor[n];
+
+  for (uint16_t s = 0; s < maxTnsOrder; s++) // synchronize coeffs
+  {
+    parCor1[s] = (parCor1[s] + parCor2[s] + 1) >> 1;
+  }
+  tnsData1.coeffResLow[n] = false; // optimize synchronized coeffs
+  tnsData1.filterOrder[n] = predictor.calcOptTnsCoeffs (parCor1, tnsData1.coeff[n], &tnsData1.coeffResLow[n],
+                                                        maxTnsOrder, UCHAR_MAX /*max pred gain*/, 0, LP_DEPTH);
+  tnsData1.numFilters[n] = (tnsData1.filterOrder[n] > 0 ? 1 : 0);
+  memcpy (&tnsData2, &tnsData1, sizeof (TnsData));  // synchronize
+
+  if (commonFlag != nullptr) *commonFlag &= (true);
+}
+
+static inline void applyTnsCoeffPreProcessing (LinearPredictor& predictor, TnsData& tnsData1, TnsData& tnsData2,
+                                               const uint16_t maxTnsOrder, const unsigned  n, bool* const commonFlag, const int16_t fact)
+{
+  const int32_t  weightI = __min (64, fact); // crosstalk constant
+  const int32_t  weightD = 128 - weightI; // (1 - crosstalk) * 128
+  int16_t* const parCor1 = tnsData1.coeffParCor[n];
+  int16_t* const parCor2 = tnsData2.coeffParCor[n];
+
+  for (uint16_t s = 0; s < maxTnsOrder; s++) // apply crosstalking
+  {
+    const int16_t coeff1 = parCor1[s];
+
+    parCor1[s] = int16_t ((coeff1 * weightD + parCor2[s] * weightI + 64) >> 7);
+    parCor2[s] = int16_t ((coeff1 * weightI + parCor2[s] * weightD + 64) >> 7);
+  }
+  tnsData1.coeffResLow[n] = false; // optimize coeffs of channel 1
+  tnsData1.filterOrder[n] = predictor.calcOptTnsCoeffs (parCor1, tnsData1.coeff[n], &tnsData1.coeffResLow[n],
+                                                        maxTnsOrder, UCHAR_MAX /*max pred gain*/, 0, LP_DEPTH);
+  tnsData1.numFilters[n] = (tnsData1.filterOrder[n] > 0 ? 1 : 0);
+
+  tnsData2.coeffResLow[n] = false; // optimize coeffs of channel 2
+  tnsData2.filterOrder[n] = predictor.calcOptTnsCoeffs (parCor2, tnsData2.coeff[n], &tnsData2.coeffResLow[n],
+                                                        maxTnsOrder, UCHAR_MAX /*max pred gain*/, 0, LP_DEPTH);
+  tnsData2.numFilters[n] = (tnsData2.filterOrder[n] > 0 ? 1 : 0);
+
+  if (commonFlag != nullptr) *commonFlag &= (tnsData1.coeffResLow[n] == tnsData2.coeffResLow[n] && tnsData1.filterOrder[n] == tnsData2.filterOrder[n]);
+  if (commonFlag != nullptr && *commonFlag)
+  {
+    const int32_t* coeff1 = (int32_t*) tnsData1.coeff[n];  // fast
+    const int32_t* coeff2 = (int32_t*) tnsData2.coeff[n];  // comp
+
+    *commonFlag &= (*coeff1 == *coeff2); // might not be portable!
+  }
+}
+
 static inline uint8_t brModeAndFsToMaxSfbLong (const unsigned bitRateMode, const unsigned samplingRate)
 {
   // max. for fs of 44 kHz: band 47 (19.3 kHz), 48 kHz: 45 (19.5 kHz), 64 kHz: 39 (22.0 kHz)
@@ -427,14 +481,15 @@ static const USAC_WSEQ windowSequenceSynch[5][5] = {  // 1st: chan index 0, 2nd:
 };
 
 // private helper functions
-unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpData, const bool eightShorts, const uint8_t maxSfb,
-                                            const unsigned channelIndex, const bool realOnlyCalc)
+unsigned ExhaleEncoder::applyTnsToWinGroup (SfbGroupData& grpData, const uint8_t grpIndex, const uint8_t maxSfb, TnsData& tnsData,
+                                            const unsigned channelIndex, const unsigned n, const bool realOnlyCalc)
 {
-  const uint16_t filtOrder = tnsData.filterOrder[0];
-  const uint16_t*    grpSO = &grpData.sfbOffsets[m_numSwbShort * tnsData.filteredWindow];
+  const uint16_t filtOrder = tnsData.filterOrder[n];
+  const uint16_t*    grpSO = &grpData.sfbOffsets[m_numSwbShort * grpIndex];
+  const bool   eightShorts = (grpData.numWindowGroups > 1);
   unsigned errorValue = 0; // no error
 
-  if ((maxSfb > (eightShorts ? MAX_NUM_SWB_SHORT : MAX_NUM_SWB_LONG)) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
+  if ((grpIndex >= NUM_WINDOW_GROUPS) || (maxSfb > (eightShorts ? MAX_NUM_SWB_SHORT : MAX_NUM_SWB_LONG)) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
   {
     return 1; // invalid arguments error
   }
@@ -458,20 +513,20 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
     }
     if ((tnsMaxBands = __min (tnsMaxBands, maxSfb)) <= tnsStartSfb) tnsStartSfb = numSwbWin;
 
-    if ((tnsData.filterLength[0] = __max (0, numSwbWin - tnsStartSfb)) > 0)
+    if ((tnsData.filterLength[n] = __max (0, numSwbWin - tnsStartSfb)) > 0)
     {
-      int32_t* const mdctSignal = m_mdctSignals[channelIndex];
+      int32_t* const signal = m_mdctSignals[channelIndex];
       const short offs = grpSO[tnsStartSfb];
       uint16_t       s = grpSO[tnsMaxBands] - offs;
       short filterC[MAX_PREDICTION_ORDER] = {0, 0, 0, 0};
-      int32_t* predSig = &mdctSignal[grpSO[tnsMaxBands]]; // end of spectrum to be predicted
+      int32_t* predSig = &signal[grpSO[tnsMaxBands]]; // end of signal region to be filtered
 
-      errorValue |= m_linPredictor.quantTnsToLpCoeffs (tnsData.coeff[0], filtOrder, tnsData.coeffResLow, tnsData.coeffParCor, filterC);
+      errorValue |= m_linPredictor.quantTnsToLpCoeffs (tnsData.coeff[n], filtOrder, tnsData.coeffResLow[n], tnsData.coeffParCor[n], filterC);
 
       // back up the leading MDCT samples
-      memcpy (m_tempIntBuf, &mdctSignal[offs - MAX_PREDICTION_ORDER], MAX_PREDICTION_ORDER * sizeof (int32_t));
+      memcpy (m_tempIntBuf, &signal[offs - MAX_PREDICTION_ORDER], MAX_PREDICTION_ORDER * sizeof (int32_t));
       // TNS compliance: set them to zero
-      memset (&mdctSignal[offs - MAX_PREDICTION_ORDER], 0, MAX_PREDICTION_ORDER * sizeof (int32_t));
+      memset (&signal[offs - MAX_PREDICTION_ORDER], 0, MAX_PREDICTION_ORDER * sizeof (int32_t));
 
       if (filtOrder >= 4) // max. order 4
       {
@@ -501,25 +556,25 @@ unsigned ExhaleEncoder::applyTnsToWinGroup (TnsData& tnsData, SfbGroupData& grpD
         }
       }
       // restore the leading MDCT samples
-      memcpy (&mdctSignal[offs - MAX_PREDICTION_ORDER], m_tempIntBuf, MAX_PREDICTION_ORDER * sizeof (int32_t));
+      memcpy (&signal[offs - MAX_PREDICTION_ORDER], m_tempIntBuf, MAX_PREDICTION_ORDER * sizeof (int32_t));
 
       // compute RMS data after filtering
-      errorValue |= m_specAnalyzer.getMeanAbsValues (mdctSignal, realOnlyCalc ? nullptr : m_mdstSignals[channelIndex],
+      errorValue |= m_specAnalyzer.getMeanAbsValues (signal, realOnlyCalc ? nullptr : m_mdstSignals[channelIndex],
                                                      grpSO[grpData.sfbsPerGroup], (eightShorts ? USAC_MAX_NUM_CHANNELS : channelIndex),
                                                      grpSO /*below TNS*/, __min ((int) grpData.sfbsPerGroup, tnsStartSfb),
-                                                     &grpData.sfbRmsValues[m_numSwbShort * tnsData.filteredWindow]);
-      errorValue |= m_specAnalyzer.getMeanAbsValues (mdctSignal, nullptr /*no TNS on MDST*/, grpSO[grpData.sfbsPerGroup], channelIndex,
+                                                     &grpData.sfbRmsValues[m_numSwbShort * grpIndex]);
+      errorValue |= m_specAnalyzer.getMeanAbsValues (signal, nullptr /*no TNS on MDST*/, grpSO[grpData.sfbsPerGroup], channelIndex,
                                                      &grpSO[tnsStartSfb], __max (0, grpData.sfbsPerGroup - tnsStartSfb),
-                                                     &grpData.sfbRmsValues[m_numSwbShort * tnsData.filteredWindow + tnsStartSfb]);
+                                                     &grpData.sfbRmsValues[m_numSwbShort * grpIndex + tnsStartSfb]);
     }
-    else tnsData.filterOrder[0] = tnsData.numFilters = 0; // disable zero-length TNS filters
+    else tnsData.filterOrder[n] = tnsData.numFilters[n] = 0; // disable length-0 TNS filters
   } // if order > 0
 
   return errorValue;
 }
 
-unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets, int32_t* const mdctSignal,
-                                            int32_t* const mdstSignal /*= nullptr*/)
+unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* const grpOffsets,
+                                            int32_t* const mdctSignal, int32_t* const mdstSignal)
 {
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   const unsigned nSamplesInShort = nSamplesInFrame >> 3;
@@ -567,35 +622,33 @@ unsigned ExhaleEncoder::eightShortGrouping (SfbGroupData& grpData, uint16_t* con
   return 0; // no error
 }
 
-unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, const SfbGroupData& grpData, const uint8_t maxSfb,
-                                            const unsigned channelIndex, TnsData& tnsData, const uint8_t firstGroupIndexToTest /*= 0*/)
+unsigned ExhaleEncoder::getOptParCorCoeffs (const SfbGroupData& grpData, const uint8_t maxSfb, TnsData& tnsData,
+                                            const unsigned channelIndex, const uint8_t firstGroupIndexToTest /*= 0*/)
 {
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   const unsigned tnsStartSfb = 3 + 32000 / toSamplingRate (m_frequencyIdx); // 8-short start
-  unsigned bestOrder = MAX_PREDICTION_ORDER, predGainCurr, predGainPrev, temp = 0;
-  int16_t parCorBuffer[MAX_PREDICTION_ORDER];
+  uint32_t temp, predGainMax = 0;
 
-  tnsData.filterOrder[0] = tnsData.filteredWindow = tnsData.numFilters = 0; // zero TNS data
-  tnsData.filterLength[0] = 0;
-  tnsData.filterDownward[0] = false;   // enforce direction = 0 for now, detection difficult
-
-  if ((mdctSignal == nullptr) || (maxSfb <= tnsStartSfb) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
+  if ((maxSfb <= tnsStartSfb) || (channelIndex >= USAC_MAX_NUM_CHANNELS))
   {
     return 0; // invalid arguments error
   }
 
   if (grpData.numWindowGroups == 1) // LONG window: use ParCor coeffs from spectral analyzer
   {
-    tnsData.filterOrder[0] = (uint8_t) m_specAnalyzer.getLinPredCoeffs (tnsData.coeffParCor, channelIndex);
+    tnsData.coeffResLow[0] = false;
+    tnsData.filterDownward[0] = false; // enforce direction = 0 for now, detection difficult
+    tnsData.filterOrder[0] = (uint8_t) m_specAnalyzer.getLinPredCoeffs (tnsData.coeffParCor[0], channelIndex);
+    tnsData.firstTnsWindow = 0;
 
     if (tnsData.filterOrder[0] > 0) // try to reduce TNS start band as long as SNR increases
     {
       const uint16_t filtOrder = tnsData.filterOrder[0];
-      uint16_t b = __min ((m_specAnaCurr[channelIndex] & 31) + 2, (nSamplesInFrame - filtOrder) >> SA_BW_SHIFT);
+      uint16_t s = 0,b = __min ((m_specAnaCurr[channelIndex] & 31) + 2, (nSamplesInFrame - filtOrder) >> SA_BW_SHIFT);
       short filterC[MAX_PREDICTION_ORDER] = {0, 0, 0, 0};
       int32_t* predSig = &m_mdctSignals[channelIndex][b << SA_BW_SHIFT]; // TNS start offset
 
-      m_linPredictor.parCorToLpCoeffs (tnsData.coeffParCor, filtOrder, filterC);
+      m_linPredictor.parCorToLpCoeffs (tnsData.coeffParCor[0], filtOrder, filterC);
 
       for (b--, predSig--; b > 0; b--) // start a bit higher; b is in spectr. analysis units
       {
@@ -603,7 +656,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
 
         if (filtOrder >= 4) // max. order 4
         {
-          for (uint16_t s = 1 << SA_BW_SHIFT; s > 0; s--) // produce the TNS filter residual
+          for (s = SA_BW; s > 0; s--) // get 4th-order TNS residual
           {
             const int64_t predSample = *(predSig - 1) * (int64_t) filterC[0] + *(predSig - 2) * (int64_t) filterC[1] +
                                        *(predSig - 3) * (int64_t) filterC[2] + *(predSig - 4) * (int64_t) filterC[3];
@@ -615,7 +668,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
         }
         else if (filtOrder == 3) // order 3
         {
-          for (uint16_t s = 1 << SA_BW_SHIFT; s > 0; s--) // produce the TNS filter residual
+          for (s = SA_BW; s > 0; s--) // get 3rd-order TNS residual
           {
             const int64_t predSample = *(predSig - 1) * (int64_t) filterC[0] + *(predSig - 2) * (int64_t) filterC[1] +
                                        *(predSig - 3) * (int64_t) filterC[2];
@@ -627,7 +680,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
         }
         else // save 1-2 MACs, order 2 or 1
         {
-          for (uint16_t s = 1 << SA_BW_SHIFT; s > 0; s--) // produce the TNS filter residual
+          for (s = SA_BW; s > 0; s--) // get 2nd-order TNS residual
           {
             const int64_t predSample = *(predSig - 1) * (int64_t) filterC[0] + *(predSig - 2) * (int64_t) filterC[1];
             const int64_t mdctSample = *(predSig--);
@@ -643,35 +696,46 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const int32_t* const mdctSignal, con
 
     return (m_specAnaCurr[channelIndex] >> 24) & UCHAR_MAX; // spectral analyzer's pred gain
   }
-  // SHORT window: find short group with maximum pred gain, then determine best filter order
-  for (uint8_t gr = firstGroupIndexToTest; gr < grpData.numWindowGroups; gr++)
+
+  // SHORT window: for each length-1 group, get TNS filter, then determine best filter order
+  tnsData.firstTnsWindow = UCHAR_MAX;
+  for (uint8_t n = 0, gr = 0; gr < grpData.numWindowGroups; gr++)
   {
     if (grpData.windowGroupLength[gr] == 1)
     {
-      const uint16_t* grpSO = &grpData.sfbOffsets[m_numSwbShort * gr];
+      tnsData.coeffResLow[n] = false;
+      tnsData.filterDownward[n] = false; // force direction = 0 for now, detection difficult
+      tnsData.filterOrder[n] = 0;
+      if (tnsData.firstTnsWindow == UCHAR_MAX) tnsData.firstTnsWindow = gr;
 
-      predGainCurr = m_linPredictor.calcParCorCoeffs (&mdctSignal[grpSO[tnsStartSfb]], grpSO[maxSfb] - grpSO[tnsStartSfb], bestOrder, parCorBuffer);
-
-      if (temp < predGainCurr)  // current pred gain set is "better" than best pred gain set
+      if (gr < firstGroupIndexToTest)
       {
-        temp = predGainCurr;
-        tnsData.filteredWindow = gr; // changed later
-        memcpy (tnsData.coeffParCor, parCorBuffer, bestOrder * sizeof (int16_t));
+        memset (tnsData.coeffParCor[n], 0, MAX_PREDICTION_ORDER * sizeof (int16_t));
       }
+      else // first length-one group tested
+      {
+        const int32_t* signal = m_mdctSignals[channelIndex];
+        const uint16_t* grpSO = &grpData.sfbOffsets[m_numSwbShort * gr];
+        uint32_t predGainCurr, predGainPrev, bestOrder = MAX_PREDICTION_ORDER;
+
+        temp = m_linPredictor.calcParCorCoeffs (&signal[grpSO[tnsStartSfb]], grpSO[maxSfb] - grpSO[tnsStartSfb], bestOrder, tnsData.coeffParCor[n]);
+        if (predGainMax < temp) predGainMax = temp;  // maximum pred gain of filtered groups
+
+        predGainCurr = (temp >> 24) & UCHAR_MAX;
+        predGainPrev = (temp >> 16) & UCHAR_MAX;
+        while ((bestOrder > 1) && (predGainPrev >= predGainCurr))  // lowest-order gain max.
+        {
+          bestOrder--;
+          predGainCurr = predGainPrev;
+          predGainPrev = (temp >> (8 * bestOrder - 16)) & UCHAR_MAX;
+        }
+        tnsData.filterOrder[n] = uint8_t ((bestOrder == 1) && (tnsData.coeffParCor[n] == 0) ? 0 : bestOrder);
+      }
+      n++;
     }
   } // for gr
 
-  predGainCurr = (temp >> 24) & UCHAR_MAX;
-  predGainPrev = (temp >> 16) & UCHAR_MAX;
-  while ((bestOrder > 1) && (predGainPrev >= predGainCurr)) // get lowest-order gain maximum
-  {
-    bestOrder--;
-    predGainCurr = predGainPrev;
-    predGainPrev = (temp >> (8 * bestOrder - 16)) & UCHAR_MAX;
-  }
-  tnsData.filterOrder[0] = ((bestOrder == 1) && (tnsData.coeffParCor[0] == 0) ? 0 : bestOrder);
-
-  return predGainCurr;  // maximum pred gain of all filter orders and length-1 window groups
+  return (predGainMax >> 24) & UCHAR_MAX; // max pred gain of all orders and length-1 groups
 }
 
 unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via scale factors
@@ -745,7 +809,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         const int64_t steppWeightI = __min (64, m_perCorrHCurr[el] - 128) >> (eightShorts0 || coreConfig.tnsActive ? 1 : 0);
         const int64_t steppWeightD = 128 - steppWeightI; // decrement, (1 - crosstalk) * 128
 
-        for (uint16_t gr = 0; gr < coreConfig.groupingData[0].numWindowGroups; gr++)
+        for (uint16_t n = 0, gr = 0; gr < coreConfig.groupingData[0].numWindowGroups; gr++)
         {
           const uint8_t grpLength = coreConfig.groupingData[0].windowGroupLength[gr];
           const uint16_t*  grpOff = &coreConfig.groupingData[0].sfbOffsets[m_numSwbShort * gr];
@@ -754,7 +818,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           int32_t* sigR1 = &m_mdctSignals[ci + 1][grpStart];
           int64_t xTalkI = 0, xTalkD = 0; // weights for crosstalk
 
-          if ((tnsData0.numFilters > 0 && gr == tnsData0.filteredWindow) || (tnsData1.numFilters > 0 && gr == tnsData1.filteredWindow))
+          if ((grpLength == 1) && (tnsData0.numFilters[n] > 0 || tnsData1.numFilters[n] > 0))
           {
             const uint16_t maxLen = (eightShorts0 ? grpOff[m_numSwbShort] - 1 : __min (nSamplesInFrame - 1u, nSamplesMax)) - grpStart;
             int32_t prevR0 = 0; // NOTE: functions also on grouped
@@ -804,7 +868,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             {
               applyStereoPreProcessingCplx (sigR0, sigR1, sigI0, sigI1, xTalkI, xTalkD, chanCorrSign);
             }
-          } // if coreConfig.tnsActive
+          }
+          if (grpLength == 1) n++;
         }
       } // if m_perCorrHCurr[el] > 128
 
@@ -903,15 +968,20 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_bitRateMode <= 3 || !eightShorts))
         {
           const uint8_t numSwbFrame = __min (numSwbCh, (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode > 3 || samplingRate < 37566 ? 0 : 1));
+#ifndef NO_DTX_MODE
+          const bool prvEightShorts = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT);
 
+          if ((maxSfbCh < numSwbFrame) || (m_bitRateMode <= 2)) // increase coding bandwidth
+#else
           if (maxSfbCh < numSwbFrame) // increase coding bandwidth
+#endif
           {
             for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
             {
 #ifndef NO_DTX_MODE
               if ((m_bitRateMode <= 4) && (meanSpecFlat[ci] <= (SCHAR_MAX >> 1))) // low-RMS
               {
-                for (s = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT ? 24 : m_specGapFiller.getFirstGapFillSfb ()); s < maxSfbCh; s++)
+                for (s = (prvEightShorts ? (samplingRate < 27713 ? 24 : 22) : m_specGapFiller.getFirstGapFillSfb ()); s < maxSfbCh; s++)
                 {
                   if (grpData.sfbRmsValues[s + m_numSwbShort * gr] < ((3 * TA_EPS) >> 1)) grpData.scaleFactors[s + m_numSwbShort * gr] = 0;
                 }
@@ -923,7 +993,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           }
           if (ch > 0) coreConfig.commonMaxSfb = (coreConfig.icsInfoCurr[0].maxSfb == coreConfig.icsInfoCurr[1].maxSfb);
         }
-#endif
+#endif // !RESTRICT_TO_AAC
         ci++;
       } // for ch
 
@@ -932,17 +1002,12 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         SfbGroupData& grpData = coreConfig.groupingData[ch];
         TnsData&      tnsData = coreConfig.tnsData[ch];
 
-        if (tnsData.numFilters > 0) // convert TNS group index to window index for write-out
+        if (tnsData.numFilters[0] + tnsData.numFilters[1] + tnsData.numFilters[2] > 0)
         {
-          s = 0;
-          for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
+          s = tnsData.firstTnsWindow = 0; // store length-1 group map for bit-stream writing
+          for (uint16_t gr = 0; gr < grpData.numWindowGroups; s += grpData.windowGroupLength[gr++])
           {
-            if (gr == tnsData.filteredWindow)
-            {
-              tnsData.filteredWindow = (uint8_t) s;
-              break;
-            }
-            s += grpData.windowGroupLength[gr];
+            if (grpData.windowGroupLength[gr] == 1) tnsData.firstTnsWindow |= (1u << s);
           }
         }
       } // for ch
@@ -1243,8 +1308,6 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
     }
     else // SCE or CPE: bandwidth-to-max_sfb mapping, short-window grouping for each channel
     {
-      const bool prevStereoAllSfbs = (coreConfig.stereoMode == 2 || coreConfig.stereoMode == 4);
-
       coreConfig.stereoConfig = coreConfig.stereoMode = 0;
 
       if (coreConfig.commonWindow && (m_bitRateMode <= 4)) // stereo pre-processing analysis
@@ -1342,11 +1405,22 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         } // if EIGHT_SHORT
 
         // compute and quantize optimal TNS coefficients, then find optimal TNS filter order
-        s /*linear pred gain*/ = getOptParCorCoeffs (m_mdctSignals[ci], grpData, icsCurr.maxSfb, ci, tnsData,
-                                                     ch > 0 && coreConfig.commonWindow ? coreConfig.tnsData[0].filteredWindow : 0);
-        tnsData.filterOrder[0] = m_linPredictor.calcOptTnsCoeffs (tnsData.coeffParCor, tnsData.coeff[0], &tnsData.coeffResLow,
-                                                                  tnsData.filterOrder[0], s, (m_specAnaCurr[ci] >> 16) & UCHAR_MAX);
-        tnsData.numFilters = (tnsData.filterOrder[0] > 0 ? 1 : 0);
+        s /*max. pred gain*/ = getOptParCorCoeffs (grpData, icsCurr.maxSfb, tnsData, ci,
+                                                   ch > 0 && coreConfig.commonWindow ? coreConfig.tnsData[0].firstTnsWindow : 0);
+        for (uint16_t n = 0, gr = 0; gr < grpData.numWindowGroups; gr++)
+        {
+          if (grpData.windowGroupLength[gr] == 1)
+          {
+            tnsData.filterOrder[n] = m_linPredictor.calcOptTnsCoeffs (tnsData.coeffParCor[n], tnsData.coeff[n], &tnsData.coeffResLow[n],
+                                                                      tnsData.filterOrder[n], s, (m_specAnaCurr[ci] >> 16) & UCHAR_MAX);
+            tnsData.numFilters[n] = (tnsData.filterOrder[n] > 0 ? 1 : 0);
+            if ((ch == 0) && (icsCurr.windowSequence == EIGHT_SHORT) && (tnsData.numFilters[n] == 0) && (tnsData.firstTnsWindow == gr))
+            {
+              tnsData.firstTnsWindow++; // simplify TNS stereo synching in eight-short frame
+            }
+            n++;
+          }
+        }
         ci++;
       } // for ch
 
@@ -1358,46 +1432,38 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
         if ((maxSfb0 > 0) && (maxSfb1 > 0) && (maxSfbSte - __min (maxSfb0, maxSfb1) <= 1 || coreConfig.stereoMode > 0))
         {
-          uint32_t& sa0 = m_specAnaCurr[ci-2];
-          uint32_t& sa1 = m_specAnaCurr[ci-1];
-          const int specFlat[2] = {int (sa0 >> 16) & UCHAR_MAX, int (sa1 >> 16) & UCHAR_MAX};
-          const int tnsStart[2] = {int (sa0 & 31), int (sa1 & 31)}; // long TNS start offset
+          uint32_t& sac0 = m_specAnaCurr[ci-2];
+          uint32_t& sac1 = m_specAnaCurr[ci-1];
+          TnsData&  tnsData0 = coreConfig.tnsData[0];
+          TnsData&  tnsData1 = coreConfig.tnsData[1];
+          const int specFlat[2] = {int (sac0 >> 16) & UCHAR_MAX, int (sac1 >> 16) & UCHAR_MAX};
+          const int tnsStart[2] = {int (sac0 & 31), int (sac1 & 31)}; // long TNS start band
 
-          if ((coreConfig.tnsData[0].filteredWindow == coreConfig.tnsData[1].filteredWindow) &&
-              (abs (specFlat[0] - specFlat[1]) <= (UCHAR_MAX >> 3)) &&
+          if ((abs (specFlat[0] - specFlat[1]) <= (UCHAR_MAX >> 3)) &&
               (abs (tnsStart[0] - tnsStart[1]) <= (UCHAR_MAX >> 4)))  // TNS synchronization
           {
-            const uint16_t maxTnsOrder = __max (coreConfig.tnsData[0].filterOrder[0], coreConfig.tnsData[1].filterOrder[0]);
-            TnsData& tnsData0 = coreConfig.tnsData[0];
-            TnsData& tnsData1 = coreConfig.tnsData[1];
-
-            if ((maxTnsOrder > 0) && (coreConfig.stereoMode > 0 || (prevStereoAllSfbs && m_perCorrHCurr[el] > (UCHAR_MAX * 11) / 16) ||
-                m_linPredictor.similarParCorCoeffs (tnsData0.coeffParCor, tnsData1.coeffParCor, maxTnsOrder, LP_DEPTH)))
+            coreConfig.commonTnsData = true;
+            for (uint16_t n = 0; n < 3; n++)
             {
-              coreConfig.commonTnsData = true; // synch tns_data
-              for (s = 0; s < maxTnsOrder; s++)
+              if ((s = __max (tnsData0.filterOrder[n], tnsData1.filterOrder[n])) == 0) continue;
+
+              if ((coreConfig.stereoMode > 0) || m_linPredictor.similarParCorCoeffs (tnsData0.coeffParCor[n], tnsData1.coeffParCor[n], s, LP_DEPTH))
               {
-                tnsData0.coeffParCor[s] = (tnsData0.coeffParCor[s] + tnsData1.coeffParCor[s] + 1) >> 1;
+                applyTnsCoeff2ChannelSynch (m_linPredictor, tnsData0, tnsData1, s, n, &coreConfig.commonTnsData);
               }
-              tnsData0.coeffResLow = false; // reoptimize coeffs
-              tnsData0.filterOrder[0] = m_linPredictor.calcOptTnsCoeffs (tnsData0.coeffParCor, tnsData0.coeff[0], &tnsData0.coeffResLow,
-                                                                         maxTnsOrder, UCHAR_MAX /*maximum pred gain*/, 0, LP_DEPTH);
-              tnsData0.numFilters = (tnsData0.filterOrder[0] > 0 ? 1 : 0);
-              memcpy (&tnsData1, &tnsData0, sizeof (TnsData));
+              else if ((m_bitRateMode <= 4) && (m_perCorrHCurr[el] > 128))
+              {
+                applyTnsCoeffPreProcessing (m_linPredictor, tnsData0, tnsData1, s, n, &coreConfig.commonTnsData, m_perCorrHCurr[el] - 128);
+              }
+              else coreConfig.commonTnsData = false;
             }
-            else if ((maxTnsOrder > 0) && (tnsData0.coeffResLow == tnsData1.coeffResLow) && (tnsData0.filterOrder[0] == tnsData1.filterOrder[0]))
-            {
-              const int32_t* coeff0 = (int32_t*) tnsData0.coeff[0]; // fast comparison code,
-              const int32_t* coeff1 = (int32_t*) tnsData1.coeff[0]; // might not be portable
 
-              coreConfig.commonTnsData = (*coeff0 == *coeff1); // first four coeffs the same
-            }
             if (coreConfig.commonTnsData || (abs (tnsStart[0] - tnsStart[1]) <= (UCHAR_MAX >> 5)))
             {
               const uint32_t avgTnsStart = (tnsStart[0] + tnsStart[1]) >> 1;  // synch start
 
-              sa0 = (sa0 & (UINT_MAX - 31)) | avgTnsStart;  // is used by applyTnsToWinGroup
-              sa1 = (sa1 & (UINT_MAX - 31)) | avgTnsStart;
+              sac0 = (sac0 & (UINT_MAX - 31)) | avgTnsStart; // used by applyTnsToWinGroup()
+              sac1 = (sac1 & (UINT_MAX - 31)) | avgTnsStart;
             }
           }
           maxSfb0 = maxSfb1 = maxSfbSte;
@@ -1440,14 +1506,17 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
       if (icsCurr.maxSfb > 0)
       {
         // use MCLTs for LONG but only MDCTs for SHORT windows when the MDSTs aren't grouped
+        const uint8_t* nFilters = coreConfig.tnsData[ch].numFilters;
         const bool realOnlyCalc = (eightShorts && nChannels < 2);
-        const TnsData&  tnsData = coreConfig.tnsData[ch];
 
-        errorValue |= applyTnsToWinGroup (coreConfig.tnsData[ch], grpData, eightShorts, grpData.sfbsPerGroup, ci, realOnlyCalc);
-
-        for (uint16_t gr = 0; gr < grpData.numWindowGroups; gr++)
+        for (uint8_t n = 0, gr = 0; gr < grpData.numWindowGroups; gr++)
         {
-          if ((tnsData.numFilters == 0) || (gr != tnsData.filteredWindow))
+          if (grpData.windowGroupLength[gr] == 1)
+          {
+            errorValue |= applyTnsToWinGroup (grpData, gr, grpData.sfbsPerGroup, coreConfig.tnsData[ch], ci, n, realOnlyCalc);
+            coreConfig.tnsActive |= (nFilters[n++] > 0); // set tns_data_present, tns_active
+          }
+          if ((grpData.windowGroupLength[gr] > 1) || (nFilters[n - 1] == 0))
           {
             s = m_numSwbShort * gr;
             errorValue |= m_specAnalyzer.getMeanAbsValues (m_mdctSignals[ci], realOnlyCalc ? nullptr : m_mdstSignals[ci],
@@ -1455,7 +1524,6 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
                                                            &grpSO[s], grpData.sfbsPerGroup, &grpData.sfbRmsValues[s]);
           }
         }
-        coreConfig.tnsActive |= (tnsData.numFilters > 0); // tns_active and tns_data_present
       }
 
       grpData.sfbsPerGroup = icsCurr.maxSfb; // change num_swb to max_sfb for coding process

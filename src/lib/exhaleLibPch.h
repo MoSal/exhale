@@ -96,14 +96,14 @@ struct IcsInfo
 // tns_data(): channel data struct
 struct TnsData
 {
-  int8_t    coeff[3][MAX_PREDICTION_ORDER];
-  int16_t   coeffParCor[MAX_PREDICTION_ORDER];
-  bool      coeffResLow;  // means coef_res[w]=0
-  uint8_t   filteredWindow; // filtered window w
+  int8_t    coeff[3][MAX_PREDICTION_ORDER]; // f
+  int16_t   coeffParCor[3][MAX_PREDICTION_ORDER];
+  bool      coeffResLow[3];  // 1: coef_res[w]=0
   bool      filterDownward[3]; // direction[f]=1
   uint8_t   filterLength[3]; // filter length[f]
   uint8_t   filterOrder[3];   // filter order[f]
-  uint8_t   numFilters;   // n_filt for window w
+  uint8_t   firstTnsWindow; // filtered window w
+  uint8_t   numFilters[3]; // n_filt[w]={0 or 1}
 };
 
 // scale factor group. data struct

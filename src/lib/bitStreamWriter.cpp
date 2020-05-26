@@ -118,35 +118,37 @@ unsigned BitStreamWriter::writeChannelWiseTnsData (const TnsData& tnsData, const
   const unsigned offsetBits = (eightShorts ? 1 : 2);
   unsigned bitCount = 0, i;
 
-  for (unsigned w = 0; w < numWindows; w++)
+  for (unsigned n = 0, w = 0; w < numWindows; w++)
   {
     bitCount += offsetBits;
-    if (w != tnsData.filteredWindow)
+    if ((n >= 3) || ((tnsData.firstTnsWindow & (1u << w)) == 0))
     {
       m_auBitStream.write (0/*n_filt[w] = 0*/, offsetBits);
     }
-    else
+    else // first, second or third length-1 window group in frame and channel
     {
-      m_auBitStream.write (tnsData.numFilters, offsetBits);
-      if (tnsData.numFilters > 0)
-      {
-        m_auBitStream.write (tnsData.coeffResLow ? 0 : 1, 1);  // coef_res[w]
-        bitCount++;
-        for (unsigned f = 0; f < tnsData.numFilters; f++)
-        {
-          const unsigned order = tnsData.filterOrder[f];
+      const unsigned numFiltersInWindow = tnsData.numFilters[n];
 
-          m_auBitStream.write (tnsData.filterLength[f], 2 + offsetBits * 2);
+      m_auBitStream.write (numFiltersInWindow, offsetBits);
+      if (numFiltersInWindow > 0)
+      {
+        m_auBitStream.write (tnsData.coeffResLow[n] ? 0 : 1, 1);  // coef_res
+        bitCount++;
+        for (unsigned f = 0; f < numFiltersInWindow; f++)
+        {
+          const unsigned order = tnsData.filterOrder[n + f];
+
+          m_auBitStream.write (tnsData.filterLength[n + f], 2 + offsetBits * 2);
           m_auBitStream.write (order, 2 + offsetBits);
           bitCount += 4 + offsetBits * 3;
           if (order > 0)
           {
-            const int8_t* coeff = tnsData.coeff[f];
-            unsigned   coefBits = (tnsData.coeffResLow ? 3 : 4);
-            char   coefMaxValue = (tnsData.coeffResLow ? 2 : 4);
+            const int8_t* coeff = tnsData.coeff[n + f];
+            unsigned   coefBits = (tnsData.coeffResLow[n] ? 3 : 4);
+            char   coefMaxValue = (tnsData.coeffResLow[n] ? 2 : 4);
             bool   dontCompress = false;
 
-            m_auBitStream.write (tnsData.filterDownward[f] ? 1 : 0, 1);
+            m_auBitStream.write (tnsData.filterDownward[n + f] ? 1 : 0, 1);
             for (i = 0; i < order; i++) // get coef_compress, then write coef
             {
               dontCompress |= ((coeff[i] < -coefMaxValue) || (coeff[i] >= coefMaxValue));
@@ -162,6 +164,7 @@ unsigned BitStreamWriter::writeChannelWiseTnsData (const TnsData& tnsData, const
           }
         }
       } // if n_filt[w] > 0
+      n++;
     }
   } // for w
 
@@ -243,7 +246,7 @@ unsigned BitStreamWriter::writeFDChannelStream (const CoreCoderData& elData, Ent
     }
   } // for g
 
-  if (!elData.commonTnsData && (tnsData.numFilters > 0))
+  if (!elData.commonTnsData && (tnsData.numFilters[0] + tnsData.numFilters[1] + tnsData.numFilters[2] > 0))
   {
     bitCount += writeChannelWiseTnsData (tnsData, eightShorts);
   }
@@ -476,13 +479,13 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
     }
     else  // tns_present_both and tns_data_present[1]
     {
-      const bool tnsPresentBoth = (tnsData0.numFilters > 0) && (tnsData1.numFilters > 0);
-
+      const bool tnsPresentBoth = (tnsData0.numFilters[0] + tnsData0.numFilters[1] + tnsData0.numFilters[2] > 0) &&
+                                  (tnsData1.numFilters[0] + tnsData1.numFilters[1] + tnsData1.numFilters[2] > 0);
       m_auBitStream.write (tnsPresentBoth ? 1 : 0, 1);
       bitCount++;
       if (!tnsPresentBoth)
       {
-        m_auBitStream.write (tnsData1.numFilters > 0 ? 1 : 0, 1);
+        m_auBitStream.write (tnsData1.numFilters[0] + tnsData1.numFilters[1] + tnsData1.numFilters[2] > 0 ? 1 : 0, 1);
         bitCount++;
       }
     }
