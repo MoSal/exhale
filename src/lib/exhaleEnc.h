@@ -91,6 +91,9 @@ private:
   uint8_t         m_perCorrHCurr[USAC_MAX_NUM_ELEMENTS];
   uint8_t         m_perCorrLCurr[USAC_MAX_NUM_ELEMENTS];
   SfbGroupData*   m_scaleFacData[USAC_MAX_NUM_CHANNELS];
+#ifndef NO_DTX_MODE
+  uint16_t        m_sfbLoudMem[2][26][32]; // loudness mem
+#endif
   SfbQuantizer    m_sfbQuantizer; // powerlaw quantization
   SpecAnalyzer    m_specAnalyzer; // for spectral analysis
   uint32_t        m_specAnaCurr[USAC_MAX_NUM_CHANNELS];
@@ -121,6 +124,9 @@ private:
                                int32_t* const mdctSignal, int32_t* const mdstSignal);
   unsigned getOptParCorCoeffs (const SfbGroupData& grpData, const uint8_t maxSfb, TnsData& tnsData,
                                const unsigned channelIndex, const uint8_t firstGroupIndexToTest = 0);
+#ifndef NO_DTX_MODE
+  uint32_t getThr             (const unsigned channelIndex, const unsigned sfbIndex);
+#endif
   unsigned psychBitAllocation ();
   unsigned quantizationCoding ();
   unsigned spectralProcessing ();

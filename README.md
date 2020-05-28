@@ -34,7 +34,7 @@ exhale is being made available under an open-source license which is
 similar to the 3-clause BSD license but modified to address specific
 aspects dictated by the nature and the output of this application.
 
-The license text and release notes for the current version 1.0.3 can
+The license text and release notes for the current version 1.0.4 can
 be found in the `include` subdirectory of the exhale distribution.
 
 
@@ -45,6 +45,9 @@ This section describes how to compile the exhale source code into an
 executable application under Linux and Microsoft Windows. The binary
 application files will show up in a newly created `bin` subdirectory
 of the exhale distribution directory and/or a subdirectory thereof.
+
+Note that, for advanced use cases, cmake files are provided as well.
+See https://gitlab.com/ecodis/exhale/-/merge_requests/2 for details.
 
 ### Linux and MacOS (GNU Compiler Collection, gcc):
 

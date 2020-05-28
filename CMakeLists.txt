@@ -8,7 +8,7 @@
 # Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
 #
 
-cmake_minimum_required(VERSION 3.5) # Default version of cmake on ubuntu 16.04
+cmake_minimum_required(VERSION 3.5) # Default version of cmake on Ubuntu 16.04
 
 if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
     message(FATAL_ERROR "Building in the source tree is not supported.\n"
@@ -16,7 +16,7 @@ if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
 
 
-project(exhale VERSION 1.0.3 LANGUAGES CXX)
+project(exhale VERSION 1.0.4 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release
