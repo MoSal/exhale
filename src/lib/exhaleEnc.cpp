@@ -1986,7 +1986,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   {
     errorValue |=  64;
   }
-  if ((m_frequencyIdx < 0) || (m_bitRateMode > (toSamplingRate (m_frequencyIdx) >> 12) + 1))
+  if ((m_frequencyIdx < 0) || (m_bitRateMode > (toSamplingRate (m_frequencyIdx) >> 12) + 2))
   {
     errorValue |=  32;
   }

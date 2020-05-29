@@ -529,7 +529,7 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 #if EC_TRELLIS_OPT_CODING
   const uint8_t numTrellisStates = (samplingRate < 44100 ? 8 - samplingRate / 16000 : 5) - __min (2, (bitRateMode + 2) >> 2); // states per SFB
   const uint8_t numSquaredStates = numTrellisStates * numTrellisStates;
-  const uint16_t quantRateLength = (samplingRate < 28800 ? 512 : 256); // quantizeMagnRDOC()
+  const uint16_t quantRateLength = (samplingRate < 28800 || samplingRate >= 57600 ? 512 : 256); // quantizeMagnRDOC()
 #endif
   unsigned x;
 
@@ -542,7 +542,7 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 
   if ((m_coeffMagn = (unsigned*) malloc (maxTransfLength * sizeof (unsigned))) == nullptr ||
 #if EC_TRELLIS_OPT_CODING
-      (m_coeffTemp = (uint8_t* ) malloc (maxTransfLength + quantRateLength*2)) == nullptr ||
+      (m_coeffTemp = (uint8_t* ) malloc (maxTransfLength + quantRateLength  )) == nullptr ||
 #endif
       (m_lut2ExpX4 = (double*  ) malloc (numScaleFactors * sizeof (double  ))) == nullptr ||
       (m_lutSfNorm = (double*  ) malloc (numScaleFactors * sizeof (double  ))) == nullptr ||
