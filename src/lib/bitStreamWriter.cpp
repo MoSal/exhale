@@ -346,7 +346,7 @@ unsigned BitStreamWriter::writeFDChannelStream (const CoreCoderData& elData, Ent
 
 unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, EntropyCoder& entrCoder,
 #if !RESTRICT_TO_AAC
-                                                   const bool timeWarping,
+                                                   const bool timeWarping, bool* const commonTnsFlag,
 #endif
                                                    const bool indepFlag /*= false*/)
 {
@@ -466,14 +466,27 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
 #endif
   if (elData.tnsActive)
   {
+    bool commonTns = elData.commonTnsData;
+
     if (elData.commonWindow)
     {
-      m_auBitStream.write (elData.commonTnsData ? 1 : 0, 1);
+#if !RESTRICT_TO_AAC
+      if ((commonTnsFlag != nullptr) && !commonTns)  // common_tns
+      {
+        const uint8_t* data1 = (uint8_t*) &tnsData0; // fast comp.
+        const uint8_t* data2 = (uint8_t*) &tnsData1; // portable??
+
+        commonTns = true;
+        for (b = 0; b < sizeof (TnsData); b++) commonTns &= (data1[b] == data2[b]);
+        *commonTnsFlag = commonTns;
+      }
+#endif
+      m_auBitStream.write (/*optim.*/commonTns ? 1 : 0, 1);
       bitCount++;
     }
     m_auBitStream.write (elData.tnsOnLeftRight ? 1 : 0, 1);
     bitCount++;
-    if (elData.commonTnsData)
+    if (commonTns)
     {
       bitCount += writeChannelWiseTnsData (tnsData0, icsInfo0.windowSequence == EIGHT_SHORT);
     }
@@ -641,7 +654,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
         bitCount += 2;
         bitCount += writeStereoCoreToolInfo (*elData, entropyCoder[ci], // L
 #if !RESTRICT_TO_AAC
-                                             tw_mdct[el],
+                                             tw_mdct[el], &elementData[el]->commonTnsData,
 #endif
                                              usacIndependencyFlag);
         bitCount += writeFDChannelStream (*elData, entropyCoder[ci], 0, // L

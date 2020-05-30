@@ -43,7 +43,7 @@ private:
                                     const bool indepFlag = false);
   unsigned writeStereoCoreToolInfo (const CoreCoderData& elData, EntropyCoder& entrCoder,
 #if !RESTRICT_TO_AAC
-                                    const bool timeWarping,
+                                    const bool timeWarping, bool* const commonTnsFlag,
 #endif
                                     const bool indepFlag = false);
 
