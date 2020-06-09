@@ -286,10 +286,8 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
         {
           tempCodState[is] = tempCodState[0];
           tempCtxState[is] = tempCtxState[0];
-          for (ds = numStates - 1; ds >= 0; ds--)
-          {
-            currRate[ds] = UCHAR_MAX;
-          }
+          memset (currRate, UCHAR_MAX, numStates);
+
           continue;
         }
         tempQuant[0] = (coeffQuantA -= redA);
@@ -309,12 +307,8 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
 
         tempBitCount += (entropyCoder.arithGetCtxState () >> 17) & 31;  // +new-old m_acBits
         tempBitCount -= __min ((ctxStart >> 17) & 31, tempBitCount);
-        tempBitCount += numQ; // add sign bits to finish estimate
 
-        for (ds = numStates - 1; ds >= 0; ds--)
-        {
-          currRate[ds] = (uint8_t) __min (UCHAR_MAX, tempBitCount);
-        }
+        memset (currRate, tempBitCount + numQ, numStates);
       }
       else // tuple > 0, rate depends on decisions for last tuple
       {
@@ -333,9 +327,8 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
 
           tempBitCount += (entropyCoder.arithGetCtxState () >> 17) & 31;// +new-old m_acBits
           tempBitCount -= __min ((prevCtxState[ds] >> 17) & 31, tempBitCount);
-          tempBitCount += numQ; // + sign bits to finish estimate
 
-          currRate[ds] = (uint8_t) __min (UCHAR_MAX, tempBitCount);
+          currRate[ds] = uint8_t (tempBitCount + numQ);
         }
       }
       // statistically best place to save states is after ds == 0
@@ -785,8 +778,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
                                          const unsigned numSfb, uint8_t* const quantCoeffs)  // returns RD optimization bit count
 {
   // numSfb: number of trellis stages. Based on: A. Aggarwal, S. L. Regunathan, and K. Rose,
-  // "Trellis-Based Optimization of MPEG-4 Advanced Audio Coding," in Proc. IEEE Workshop on
-  // Speech Coding, pp. 142-144, Sep. 2000. Modified for arithmetic instead of Huffman coder
+  // "Trellis-Based Optimization of MPEG-4 Advanced Audio Coding," see also quantizeMagnRDOC
   const uint32_t codStart = USHRT_MAX << 16;
   const uint32_t ctxStart = m_quantRate[0][0]; // start context before call to quantizeSfb()
   const uint32_t codFinal = entropyCoder.arithGetCodState ();

@@ -253,24 +253,29 @@ static const uint16_t arithCumFreqR[3][4] = { // arith_cf_r
   {10827,  6884, 2929, 0}
 };
 
+static const uint8_t arithFastPkIndex[32] = {
+  1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58, 0, 58, 3, 0, 49, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62
+};
+
 // static helper functions
 static inline unsigned arithGetPkIndex (const unsigned ctx) // cumul. frequency table index pki = arith_get_pk(c)
 {
-  int iMax = ARITH_SIZE - 1;
-  int iMin = -1;
-  int i    = iMin;
-  uint32_t j, k;
+  if ((ctx & 0xEEEEE) == 0) return arithFastPkIndex[((ctx >> 12) & 16) | ((ctx >> 9) & 8) | ((ctx >> 6) & 4) | ((ctx >> 3) & 2) | (ctx & 1)];
 
-  while (iMax > iMin + 1)
+  int32_t iMax = ARITH_SIZE - 1;
+  int32_t iMin = -1;
+
+  do
   {
-    i = iMin + ((iMax - iMin) >> 1);
-    j = arithHashM[i];
-    k = j >> 8;
+    const int32_t  i = iMin + ((iMax - iMin) >> 1);
+    const uint32_t j = arithHashM[i];
+    const uint32_t k = j >> 8;
 
     if (ctx < k)      iMax = i;
     else if (ctx > k) iMin = i;
     else return  j & UCHAR_MAX;
   }
+  while (iMax > iMin + 1);
 
   return arithLookupM[iMax]; // pki
 }
@@ -415,10 +420,9 @@ void EntropyCoder::arithSetContext (const unsigned newCtxState, const uint16_t s
 {
   m_csCurr = newCtxState;
   m_acBits = (m_csCurr >> 17) & 31;
-  for (uint16_t s = 1; s < 4; s++)
-  {
-    if (sigEnd >= s) m_qcCurr[sigEnd - s] = (m_csCurr >> (18 + 4 * s)) & 0xF;
-  }
+  if (sigEnd > 0) m_qcCurr[sigEnd - 1] = (m_csCurr >> 22) & 0xF;
+  if (sigEnd > 1) m_qcCurr[sigEnd - 2] = (m_csCurr >> 26) & 0xF;
+  if (sigEnd > 2) m_qcCurr[sigEnd - 3] = (m_csCurr >> 30);
 }
 #endif
 
@@ -466,7 +470,7 @@ unsigned EntropyCoder::arithCodeSigMagn (const uint8_t* const magn, const uint16
     while ((i >= 0) && ((a[i] | b[i]) == 0)) i -= 2;
     i = (sigOffset + i + 2) >> 1;
 
-    if (i + 28 < (int) sigEnd) sigEnd = (uint16_t) i;
+    if (i + 26 < (int) sigEnd) sigEnd = (uint16_t) i;
   }
 
   for (uint16_t s = sigOffset >> 1; s < sigEnd; s++)
@@ -523,11 +527,9 @@ unsigned EntropyCoder::arithCodeSigMagn (const uint8_t* const magn, const uint16
   else
   {
     m_csCurr = 0;
-
-    for (uint16_t s = 1; s < 4; s++)
-    {
-      if (sigEnd >= s) m_csCurr |= __min (255u >> (2 * s), m_qcCurr[sigEnd - s]) << (18 + 4 * s);
-    }
+    if (sigEnd > 0) m_csCurr |= m_qcCurr[sigEnd - 1] << 22;
+    if (sigEnd > 1) m_csCurr |= m_qcCurr[sigEnd - 2] << 26;
+    if (sigEnd > 2) m_csCurr |= __min (3, m_qcCurr[sigEnd - 3]) << 30;
   }
   m_csCurr |= ((unsigned) m_acBits << 17) | c;
 

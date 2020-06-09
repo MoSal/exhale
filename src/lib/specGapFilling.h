@@ -38,7 +38,7 @@ public:
   uint16_t  getFirstGapFillSfb () const { return m_1stGapFillSfb; }
   uint8_t   getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, const uint8_t* const quantMagn,
                                   const uint8_t numSwbShort, SfbGroupData& grpData /*modified*/,
-                                  const unsigned nSamplesInFrame = 1024, const uint8_t specFlat = 0);
+                                  const unsigned nSamplesInFrame, const bool saveRate, const uint8_t specFlat);
 }; // SpecGapFiller
 
 #endif // _SPEC_GAP_FILLING_H_

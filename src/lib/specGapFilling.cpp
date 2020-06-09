@@ -24,7 +24,7 @@ SpecGapFiller::SpecGapFiller ()
 // public functions
 uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, const uint8_t* const quantMagn,
                                              const uint8_t numSwbShort, SfbGroupData& grpData /*modified*/,
-                                             const unsigned nSamplesInFrame /*= 1024*/, const uint8_t specFlat /*= 0*/)
+                                             const unsigned nSamplesInFrame, const bool saveRate, const uint8_t specFlat)
 {
   const unsigned* const coeffMagn = sfbQuantizer.getCoeffMagnPtr ();
   const double* const  sfNormFacs = sfbQuantizer.getSfNormTabPtr ();
@@ -180,7 +180,9 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
     const uint16_t*   grpOff = &grpData.sfbOffsets[numSwbShort * gr];
     const uint32_t*   grpRms = &grpData.sfbRmsValues[numSwbShort * gr]; // quant/coder stats
     uint8_t* const grpScFacs = &grpData.scaleFactors[numSwbShort * gr];
-
+#if SGF_SF_PEAK_SMOOTHING
+    uint16_t  lastNonZeroSfb = 0;
+#endif
     for (uint16_t b = m_1stGapFillSfb; b < sfbsPerGrp; b++)  // get noise-fill scale factors
     {
       if ((grpRms[b] >> 16) == 0)  // the SFB is all-zero quantized
@@ -204,20 +206,52 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
         }
 #if SGF_SF_PEAK_SMOOTHING
         // save delta-code bits by smoothing scale factor peaks in zero quantized SFB ranges
-        if ((b >  m_1stGapFillSfb) && ((grpRms[b - 1] >> 16) == 0) && ((grpRms[b - 2] >> 16) == 0) &&
-            (grpScFacs[b - 1] > grpScFacs[b]) && (grpScFacs[b - 1] > grpScFacs[b - 2]))
+        if ((b > m_1stGapFillSfb) && ((grpRms[b - 1] >> 16) == 0) && ((grpRms[b - 2] >> 16) == 0))
         {
-          grpScFacs[b - 1] = (grpScFacs[b - 1] + __max (grpScFacs[b], grpScFacs[b - 2])) >> 1;
+          const uint16_t next = grpScFacs[b];
+          const uint16_t prev = grpScFacs[b - 2];
+          uint8_t&       curr = grpScFacs[b - 1];
+
+          if ((next | prev) && (curr > next) && (curr > prev)) curr = (curr + __max (next, prev)) >> 1;
+          else if (saveRate && (curr < next) && (curr < prev)) curr = (curr + __min (next, prev) + 1) >> 1;
         }
 #endif
       }
-
+#if SGF_SF_PEAK_SMOOTHING
+      else if (saveRate) lastNonZeroSfb = b;
+#endif
       if ((b > m_1stGapFillSfb) && (((grpRms[b - 1] >> 16) > 0) ^ ((grpRms[b - 2] >> 16) > 0)))
       {
         diff += (int) grpScFacs[b - 1] - (int) grpScFacs[b - 2]; // sum up transition deltas
         s++;
       }
     } // for b
+#if SGF_SF_PEAK_SMOOTHING
+    if ((lastNonZeroSfb > 0) && (lastNonZeroSfb + 4 < sfbsPerGrp)) // HF factor line-fitting
+    {
+      const int32_t start = lastNonZeroSfb + 1;
+      const int32_t size  = sfbsPerGrp - start - 1;
+      const int32_t xSum  = (size * (size + 1)) >> 1;
+      int32_t ySum = 0, a = 0, b = 0;
+      uint16_t x;
+
+      for (x = start + 1; x < sfbsPerGrp; x++) ySum += grpScFacs[x]; // size * (mean factor)
+
+      for (x = start + 1; x < sfbsPerGrp; x++)
+      {
+        const int32_t xZ = size * (x - start) - xSum; // zero-mean
+        a += xZ * xZ;
+        b += xZ * (size * grpScFacs[x] - ySum);
+      }
+      if (a > 0) // complete line and adjust gap-fill scale factors
+      {
+        b = CLIP_PM (((b << 8) + (a >> 1)) / a, SHRT_MAX);
+        a = ((ySum << 8) - b * xSum + (size >> 1)) / size;
+
+        for (x = start + 1; x < sfbsPerGrp; x++) grpScFacs[x] = CLIP_UCHAR ((a + b * (x - start) - SCHAR_MIN) >> 8);
+      }
+    }
+#endif
   } // for gr
 
   if (s > 0)

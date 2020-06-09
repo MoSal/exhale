@@ -982,7 +982,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #if !RESTRICT_TO_AAC
         if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_bitRateMode <= 3 || !eightShorts))
         {
-          const uint8_t numSwbFrame = __min (numSwbCh, (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode > 3 || samplingRate < 37566 ? 0 : 1));
+          const uint8_t numSwbFrame = __min (numSwbCh, (eightShorts ? maxSfbCh : maxSfbLong) +
+                                      (m_bitRateMode < 2 || m_bitRateMode > 3 || samplingRate < 37566 ? 0 : 1));
 #ifndef NO_DTX_MODE
           const bool prvEightShorts = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT);
 
@@ -1287,9 +1288,9 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
       memcpy (arithTuples, m_tempIntBuf, (nSamplesInFrame >> 1) * sizeof (char));
       entrCoder.setIsShortWindow (shortWinPrev);
 #if !RESTRICT_TO_AAC
-      // obtain channel-wise noise_level and noise_offset for USAC
-      coreConfig.specFillData[ch] = (!m_noiseFilling[el] ? 0 : m_specGapFiller.getSpecGapFillParams (m_sfbQuantizer, m_mdctQuantMag[ci],
-                                                                                                     m_numSwbShort, grpData, nSamplesInFrame,
+      s = 22050 + 7350 * m_bitRateMode; // compute channel-wise noise_level and noise_offset
+      coreConfig.specFillData[ch] = (!m_noiseFilling[el] ? 0 : m_specGapFiller.getSpecGapFillParams (m_sfbQuantizer, m_mdctQuantMag[ci], m_numSwbShort,
+                                                                                                     grpData, nSamplesInFrame, samplingRate >= s,
                                                                                                      shortWinCurr ? 0 : meanSpecFlat[ci]));
       // NOTE: gap-filling SFB bit count might be inaccurate now since scale factors changed
       if (coreConfig.specFillData[ch] == 1) errorValue |= 1;
