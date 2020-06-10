@@ -21,6 +21,16 @@ SpecGapFiller::SpecGapFiller ()
   memset (m_1stNonZeroSfb, 0, sizeof (m_1stNonZeroSfb));
 }
 
+#if SGF_SF_PEAK_SMOOTHING
+static const unsigned smallDeltaHuffBitCount[15] = {8, 7, 6, 6, 5, 4, 3, 1, 4, 4, 5, 6, 6, 7, 7};
+
+static inline unsigned huffBitCountEstimate (const int scaleFactorDelta)
+{
+  if (abs (scaleFactorDelta) < 8) return smallDeltaHuffBitCount[scaleFactorDelta + 7];
+  return (abs (scaleFactorDelta) >> 1) + 4;
+}
+#endif
+
 // public functions
 uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, const uint8_t* const quantMagn,
                                              const uint8_t numSwbShort, SfbGroupData& grpData /*modified*/,
@@ -239,16 +249,31 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
 
       for (x = start + 1; x < sfbsPerGrp; x++)
       {
-        const int32_t xZ = size * (x - start) - xSum; // zero-mean
+        const int32_t xZ  = size * (x - start) - xSum; // zero-mean
+
         a += xZ * xZ;
         b += xZ * (size * grpScFacs[x] - ySum);
       }
       if (a > 0) // complete line and adjust gap-fill scale factors
       {
+        unsigned countOld = 0, countNew = 0;
+
         b = CLIP_PM (((b << 8) + (a >> 1)) / a, SHRT_MAX);
         a = ((ySum << 8) - b * xSum + (size >> 1)) / size;
 
-        for (x = start + 1; x < sfbsPerGrp; x++) grpScFacs[x] = CLIP_UCHAR ((a + b * (x - start) - SCHAR_MIN) >> 8);
+        ySum = grpScFacs[start];
+        for (x = start + 1; x < sfbsPerGrp; x++)
+        {
+          const int32_t y = CLIP_UCHAR ((a + b * (x - start) - SCHAR_MIN) >> 8);
+
+          countOld += huffBitCountEstimate ((int) grpScFacs[x] - grpScFacs[x - 1]);
+          countNew += huffBitCountEstimate (y - ySum);
+          ySum = y;
+        }
+        if (countNew < countOld)
+        {
+          for (x = start + 1; x < sfbsPerGrp; x++) grpScFacs[x] = CLIP_UCHAR ((a + b * (x - start) - SCHAR_MIN) >> 8);
+        }
       }
     }
 #endif
