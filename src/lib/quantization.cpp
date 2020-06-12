@@ -520,7 +520,7 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 {
   const unsigned numScaleFactors = (unsigned) maxScaleFacIndex + 1;
 #if EC_TRELLIS_OPT_CODING
-  const uint8_t numTrellisStates = (samplingRate < 44100 ? 8 - samplingRate / 16000 : 5) - __min (2, (bitRateMode + 2) >> 2); // states per SFB
+  const uint8_t numTrellisStates = (samplingRate < 28800 ? 8 - samplingRate / 16000 : 5) - __min (2, (bitRateMode + 2) >> 2); // states per SFB
   const uint8_t numSquaredStates = numTrellisStates * numTrellisStates;
   const uint16_t quantRateLength = (samplingRate < 28800 || samplingRate >= 57600 ? 512 : 256); // quantizeMagnRDOC()
 #endif

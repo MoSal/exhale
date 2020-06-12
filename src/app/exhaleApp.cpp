@@ -30,6 +30,12 @@
 #include <share.h>
 #endif
 
+#define EXHALE_APP_WCHAR  (defined (_MSC_VER) || defined (__MINGW32__))
+#if EXHALE_APP_WCHAR
+#define _SOPENS _wsopen_s
+#else
+#define _SOPENS  _sopen_s
+#endif
 #define EXHALE_TEXT_BLUE  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN)
 #define EXHALE_TEXT_PINK  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED)
 #else // Linux, MacOS, Unix
@@ -47,7 +53,11 @@
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 
 // main routine
+#if EXHALE_APP_WCHAR
+int wmain (const int argc, wchar_t* argv[])
+#else
 int main (const int argc, char* argv[])
+#endif
 {
   if (argc <= 0) return argc; // for safety
 
@@ -74,8 +84,11 @@ int main (const int argc, char* argv[])
     if (argv[0][i] == '/' ) exePathEnd = i + 1;
 #endif
   }
+#if EXHALE_APP_WCHAR
+  const wchar_t* const exeFileName = argv[0] + exePathEnd;
+#else
   const char* const exeFileName = argv[0] + exePathEnd;
-
+#endif
   if ((exeFileName[0] == 0) || (i == USHRT_MAX))
   {
     fprintf_s (stderr, " ERROR reading executable name or path: the string is invalid!\n\n");
@@ -84,14 +97,33 @@ int main (const int argc, char* argv[])
   }
 
   // print program header with compile info in plain text if we pass -V
+#if EXHALE_APP_WCHAR
+  if ((argc > 1) && (wcscmp (argv[1], L"-V") == 0 || wcscmp (argv[1], L"-v") == 0))
+#else
   if ((argc > 1) && (strcmp (argv[1], "-V") == 0 || strcmp (argv[1], "-v") == 0))
+#endif
   {
 #if defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
-    fprintf_s (stdout, "exhale %s.%s%s (x64)\n",
+    fprintf_s (stdout, "exhale %s.%s%s (x64",
 #else // 32-bit OS
-    fprintf_s (stdout, "exhale %s.%s%s (x86)\n",
+    fprintf_s (stdout, "exhale %s.%s%s (x86",
 #endif
                EXHALELIB_VERSION_MAJOR, EXHALELIB_VERSION_MINOR, EXHALELIB_VERSION_BUGFIX);
+#if EXHALE_APP_WCHAR
+    if (wcscmp (argv[1], L"-V") == 0)
+#else
+    if (strcmp (argv[1], "-V") == 0)
+#endif
+    {
+      char fts[] = __TIMESTAMP__; // append month and year of file time
+      fts[7] = 0;
+#if EXHALE_APP_WCHAR
+      fprintf_s (stdout, ", Unicode");
+#endif
+      fprintf_s (stdout, ", %s %s)\n", &fts[4], &fts[sizeof (fts) - 5]);
+    }
+    else fprintf_s (stdout, ")\n");
+
     return 0;
   }
 
@@ -232,7 +264,11 @@ int main (const int argc, char* argv[])
   }
   else // argc = 4, open input file
   {
+#if EXHALE_APP_WCHAR
+    const wchar_t* inFileName = argv[2];
+#else
     const char* inFileName = argv[2];
+#endif
     uint16_t    inPathEnd  = 0;
 
     for (i = 0; (inFileName[i] != 0) && (i < USHRT_MAX); i++)
@@ -252,13 +288,19 @@ int main (const int argc, char* argv[])
 
     if (inPathEnd == 0) // name has no path
     {
+#if EXHALE_APP_WCHAR
+      inFileName = (const wchar_t*) malloc ((exePathEnd + i + 1) * sizeof (wchar_t));  // 0-terminated
+      memcpy ((void*) inFileName, argv[0], exePathEnd * sizeof (wchar_t));  // prepend executable path
+      memcpy ((void*)(inFileName + exePathEnd), argv[2], (i + 1) * sizeof (wchar_t));  // to file name
+#else
       inFileName = (const char*) malloc ((exePathEnd + i + 1) * sizeof (char)); // 0-terminated string
       memcpy ((void*) inFileName, argv[0], exePathEnd * sizeof (char)); // prepend executable path ...
       memcpy ((void*)(inFileName + exePathEnd), argv[2], (i + 1) * sizeof (char)); // ... to file name
+#endif
     }
 
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-    if (_sopen_s (&inFileHandle, inFileName, _O_RDONLY | _O_SEQUENTIAL | _O_BINARY, _SH_DENYWR, _S_IREAD) != 0)
+    if (_SOPENS (&inFileHandle, inFileName, _O_RDONLY | _O_SEQUENTIAL | _O_BINARY, _SH_DENYWR, _S_IREAD) != 0)
 #else // Linux, MacOS, Unix
     if ((inFileHandle = ::open (inFileName, O_RDONLY, 0666)) == -1)
 #endif
@@ -286,7 +328,11 @@ int main (const int argc, char* argv[])
   }
   else // WAVE OK, open output file
   {
+#if EXHALE_APP_WCHAR
+    const wchar_t* outFileName = argv[argc - 1];
+#else
     const char* outFileName = argv[argc - 1];
+#endif
     uint16_t    outPathEnd  = readStdin ? 1 : 0; // no path prepends when the input is read from stdin
 
     for (i = 0; (outFileName[i] != 0) && (i < USHRT_MAX); i++)
@@ -315,14 +361,20 @@ int main (const int argc, char* argv[])
 
     if (outPathEnd == 0) // name has no path
     {
+#if EXHALE_APP_WCHAR
+      outFileName = (const wchar_t*) malloc ((exePathEnd + i + 1) * sizeof (wchar_t));  // 0-terminated
+      memcpy ((void*) outFileName, argv[0], exePathEnd * sizeof (wchar_t));  // prepend executable path
+      memcpy ((void*)(outFileName + exePathEnd), argv[argc - 1], (i + 1) * sizeof (wchar_t));// to name
+#else
       outFileName = (const char*) malloc ((exePathEnd + i + 1) * sizeof (char)); // 0-terminated string
       memcpy ((void*) outFileName, argv[0], exePathEnd * sizeof (char)); // prepend executable path ...
       memcpy ((void*)(outFileName + exePathEnd), argv[argc - 1], (i + 1) * sizeof (char)); //...to name
+#endif
     }
 
     i = (readStdin ? O_RDWR : O_WRONLY);
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-    if (_sopen_s (&outFileHandle, outFileName, i | _O_SEQUENTIAL | _O_CREAT | _O_EXCL | _O_BINARY, _SH_DENYRD, _S_IWRITE) != 0)
+    if (_SOPENS (&outFileHandle, outFileName, i | _O_SEQUENTIAL | _O_CREAT | _O_EXCL | _O_BINARY, _SH_DENYRD, _S_IWRITE) != 0)
 #else // Linux, MacOS, Unix
     if ((outFileHandle = ::open (outFileName, i | O_CREAT | O_EXCL, 0666)) == -1)
 #endif
