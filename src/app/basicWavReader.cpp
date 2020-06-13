@@ -1,5 +1,5 @@
 /* basicWavReader.cpp - source file for class with basic WAVE file reading capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -112,19 +112,26 @@ unsigned BasicWavReader::readDataFloat16 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
-  const int16_t* fBuf = (const int16_t*) tempBuf; // words
-  const int bytesRead = _READ (fileHandle, tempBuf, frameCount * chanCount * 2);
-  unsigned framesRead = __max (0, bytesRead / (chanCount * 2));
+  unsigned framesRead = 0;
 
-  for (unsigned i = framesRead * chanCount; i > 0; i--)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
   {
-    const int16_t i16 = *(fBuf++);
-    const int32_t e = ((i16 & 0x7C00) >> 10) - 18; // exp.
-    // an exponent e <= -12 will lead to zero-quantization
-    *frameBuf = int32_t (e < 0 ? (1024 + (i16 & 0x03FF) + (1 << (-1 - e)) /*rounding offset*/) >> -e
-                               : (e > 12 ? MAX_VALUE_AUDIO24 /*inf*/ : (1024 + (i16 & 0x03FF)) << e));
-    if ((i16 & 0x8000) != 0) *frameBuf *= -1; // neg. sign
-    frameBuf++;
+    const int16_t* fBuf = (const int16_t*) tempBuf; // words
+    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
+    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 2);
+    const unsigned read = __max (0, bytesRead / (chanCount * 2));
+
+    for (unsigned i = read * chanCount; i > 0; i--)
+    {
+      const int16_t i16 = *(fBuf++);
+      const int32_t e = ((i16 & 0x7C00) >> 10) - 18; // exp.
+      // an exponent e <= -12 will lead to zero-quantization
+      *frameBuf = int32_t (e < 0 ? (1024 + (i16 & 0x03FF) + (1 << (-1 - e)) /*rounding offset*/) >> -e
+                                 : (e > 12 ? MAX_VALUE_AUDIO24 /*inf*/ : (1024 + (i16 & 0x03FF)) << e));
+      if ((i16 & 0x8000) != 0) *frameBuf *= -1; // neg. sign
+      frameBuf++;
+    }
+    framesRead += read;
   }
   if (framesRead < frameCount) // zero out missing samples
   {
@@ -155,19 +162,26 @@ unsigned BasicWavReader::readDataFloat32 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
-  const float*   fBuf = (const float*) tempBuf; // 4 bytes
-  const int bytesRead = _READ (fileHandle, tempBuf, frameCount * chanCount * 4);
-  unsigned framesRead = __max (0, bytesRead / (chanCount * 4));
+  unsigned framesRead = 0;
 
-  for (unsigned i = framesRead * chanCount; i > 0; i--)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
   {
-    const float   f32 = *fBuf * float (1 << 23); // * 2^23
-    fBuf++;
-    *frameBuf = int32_t (f32 + (f32 < 0.0 ? -0.5 : 0.5)); // rounding
-    if (*frameBuf < MIN_VALUE_AUDIO24) *frameBuf = MIN_VALUE_AUDIO24;
-    else
-    if (*frameBuf > MAX_VALUE_AUDIO24) *frameBuf = MAX_VALUE_AUDIO24;
-    frameBuf++;
+    const float*   fBuf = (const float*) tempBuf; // 4 bytes
+    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
+    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 4);
+    const unsigned read = __max (0, bytesRead / (chanCount * 4));
+
+    for (unsigned i = read * chanCount; i > 0; i--)
+    {
+      const float   f32 = *fBuf * float (1 << 23); // * 2^23
+      fBuf++;
+      *frameBuf = int32_t (f32 + (f32 < 0.0 ? -0.5 : 0.5)); // rounding
+      if (*frameBuf < MIN_VALUE_AUDIO24) *frameBuf = MIN_VALUE_AUDIO24;
+      else
+      if (*frameBuf > MAX_VALUE_AUDIO24) *frameBuf = MAX_VALUE_AUDIO24;
+      frameBuf++;
+    }
+    framesRead += read;
   }
   if (framesRead < frameCount) // zero out missing samples
   {
@@ -196,13 +210,20 @@ unsigned BasicWavReader::readDataLnPcm08 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
-  const uint8_t* iBuf = (uint8_t*) tempBuf;
-  const int bytesRead = _READ (fileHandle, tempBuf, frameCount * chanCount);
-  unsigned framesRead = __max (0, bytesRead / chanCount);
+  unsigned framesRead = 0;
 
-  for (unsigned i = framesRead * chanCount; i > 0; i--)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
   {
-    *(frameBuf++) = ((int32_t) *(iBuf++) - 128) << 16; // * 2^16
+    const uint8_t* iBuf = (const uint8_t*) tempBuf; // 1b
+    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
+    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount);
+    const unsigned read = __max (0, bytesRead / chanCount);
+
+    for (unsigned i = read * chanCount; i > 0; i--)
+    {
+      *(frameBuf++) = ((int32_t) *(iBuf++) - 128) << 16; // * 2^16
+    }
+    framesRead += read;
   }
   if (framesRead < frameCount) // zero out missing samples
   {
@@ -227,13 +248,20 @@ unsigned BasicWavReader::readDataLnPcm16 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
-  const int16_t* iBuf = (const int16_t*) tempBuf; // words
-  const int bytesRead = _READ (fileHandle, tempBuf, frameCount * chanCount * 2);
-  unsigned framesRead = __max (0, bytesRead / (chanCount * 2));
+  unsigned framesRead = 0;
 
-  for (unsigned i = framesRead * chanCount; i > 0; i--)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
   {
-    *(frameBuf++) = (int32_t) *(iBuf++) << 8; // * 2^8
+    const int16_t* iBuf = (const int16_t*) tempBuf; // words
+    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
+    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 2);
+    const unsigned read = __max (0, bytesRead / (chanCount * 2));
+
+    for (unsigned i = read * chanCount; i > 0; i--)
+    {
+      *(frameBuf++) = (int32_t) *(iBuf++) << 8; // * 2^8
+    }
+    framesRead += read;
   }
   if (framesRead < frameCount) // zero out missing samples
   {
@@ -258,15 +286,22 @@ unsigned BasicWavReader::readDataLnPcm24 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
-  const uint8_t* iBuf = (uint8_t*) tempBuf;
-  const int bytesRead = _READ (fileHandle, tempBuf, frameCount * chanCount * 3);
-  unsigned framesRead = __max (0, bytesRead / (chanCount * 3));
+  unsigned framesRead = 0;
 
-  for (unsigned i = framesRead * chanCount; i > 0; i--)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
   {
-    const int32_t i24 = (int32_t) iBuf[0] | ((int32_t) iBuf[1] << 8) | ((int32_t) iBuf[2] << 16);
-    iBuf += 3;
-    *(frameBuf++) = (i24 > MAX_VALUE_AUDIO24 ? i24 + 2 * MIN_VALUE_AUDIO24 : i24);
+    const uint8_t* iBuf = (const uint8_t*) tempBuf; // 3b
+    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
+    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 3);
+    const unsigned read = __max (0, bytesRead / (chanCount * 3));
+
+    for (unsigned i = read * chanCount; i > 0; i--)
+    {
+      const int32_t i24 = (int32_t) iBuf[0] | ((int32_t) iBuf[1] << 8) | ((int32_t) iBuf[2] << 16);
+      iBuf += 3;
+      *(frameBuf++) = (i24 > MAX_VALUE_AUDIO24 ? i24 + 2 * MIN_VALUE_AUDIO24 : i24);
+    }
+    framesRead += read;
   }
   if (framesRead < frameCount) // zero out missing samples
   {
@@ -291,15 +326,22 @@ unsigned BasicWavReader::readDataLnPcm32 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
-  const int32_t* iBuf = (const int32_t*) tempBuf; // dword
-  const int bytesRead = _READ (fileHandle, tempBuf, frameCount * chanCount * 4);
-  unsigned framesRead = __max (0, bytesRead / (chanCount * 4));
+  unsigned framesRead = 0;
 
-  for (unsigned i = framesRead * chanCount; i > 0; i--)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
   {
-    const int32_t i24 = ((*iBuf >> 1) + (1 << 6)) >> 7; // * 2^-8 with rounding, overflow-safe
-    iBuf++;
-    *(frameBuf++) = __min (MAX_VALUE_AUDIO24, i24);
+    const int32_t* iBuf = (const int32_t*) tempBuf; // dword
+    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
+    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 4);
+    const unsigned read = __max (0, bytesRead / (chanCount * 4));
+
+    for (unsigned i = read * chanCount; i > 0; i--)
+    {
+      const int32_t i24 = ((*iBuf >> 1) + (1 << 6)) >> 7; // * 2^-8 with rounding, overflow-safe
+      iBuf++;
+      *(frameBuf++) = __min (MAX_VALUE_AUDIO24, i24);
+    }
+    framesRead += read;
   }
   if (framesRead < frameCount) // zero out missing samples
   {
@@ -350,7 +392,7 @@ unsigned BasicWavReader::open (const int wavFileHandle, const uint16_t maxFrameR
   {
     return 4; // WAVE data part invalid or unsupported
   }
-  if ((m_byteBuffer = (char*) malloc (m_waveFrameSize * maxFrameRead)) == nullptr)
+  if ((m_byteBuffer = (char*) malloc (m_waveFrameSize * ((maxFrameRead + (1 << (BWR_READ_FRACT - 1))) >> BWR_READ_FRACT))) == nullptr)
   {
     return 5; // read-in byte buffer allocation failed
   }

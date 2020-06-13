@@ -1,5 +1,5 @@
 /* basicWavReader.h - header file for class with basic WAVE file reading capability
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under a Modified BSD-Style License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -15,6 +15,7 @@
 
 // constant data sizes & limits
 #define BWR_BUFFERED_READ        1 // faster reader
+#define BWR_READ_FRACT           5 // 2^-READ_FRACT
 #define CHUNK_FORMAT_MAX        20
 #define CHUNK_FORMAT_SIZE       16
 #define CHUNK_HEADER_SIZE        8
