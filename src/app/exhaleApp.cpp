@@ -30,8 +30,8 @@
 #include <share.h>
 #endif
 
-#define EXHALE_APP_WCHAR  defined (_MSC_VER) || defined (__INTEL_COMPILER) || defined (__MINGW32__)
-#if EXHALE_APP_WCHAR
+#if defined (_MSC_VER) || defined (__INTEL_COMPILER) || defined (__MINGW32__)
+#define EXHALE_APP_WCHAR
 #define _SOPENS _wsopen_s
 #else
 #define _SOPENS  _sopen_s
@@ -53,7 +53,7 @@
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 
 // main routine
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
 int wmain (const int argc, wchar_t* argv[])
 #else
 int main (const int argc, char* argv[])
@@ -84,7 +84,7 @@ int main (const int argc, char* argv[])
     if (argv[0][i] == '/' ) exePathEnd = i + 1;
 #endif
   }
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
   const wchar_t* const exeFileName = argv[0] + exePathEnd;
 #else
   const char* const exeFileName = argv[0] + exePathEnd;
@@ -97,7 +97,7 @@ int main (const int argc, char* argv[])
   }
 
   // print program header with compile info in plain text if we pass -V
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
   if ((argc > 1) && (wcscmp (argv[1], L"-V") == 0 || wcscmp (argv[1], L"-v") == 0))
 #else
   if ((argc > 1) && (strcmp (argv[1], "-V") == 0 || strcmp (argv[1], "-v") == 0))
@@ -109,7 +109,7 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, "exhale %s.%s%s (x86",
 #endif
                EXHALELIB_VERSION_MAJOR, EXHALELIB_VERSION_MINOR, EXHALELIB_VERSION_BUGFIX);
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
     if (wcscmp (argv[1], L"-V") == 0)
 #else
     if (strcmp (argv[1], "-V") == 0)
@@ -117,7 +117,7 @@ int main (const int argc, char* argv[])
     {
       char fts[] = __TIMESTAMP__; // append month and year of file time
       fts[7] = 0;
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
       fprintf_s (stdout, ", Unicode");
 #endif
       fprintf_s (stdout, ", %s %s)\n", &fts[4], &fts[sizeof (fts) - 5]);
@@ -264,7 +264,7 @@ int main (const int argc, char* argv[])
   }
   else // argc = 4, open input file
   {
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
     const wchar_t* inFileName = argv[2];
 #else
     const char* inFileName = argv[2];
@@ -288,7 +288,7 @@ int main (const int argc, char* argv[])
 
     if (inPathEnd == 0) // name has no path
     {
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
       inFileName = (const wchar_t*) malloc ((exePathEnd + i + 1) * sizeof (wchar_t));  // 0-terminated
       memcpy ((void*) inFileName, argv[0], exePathEnd * sizeof (wchar_t));  // prepend executable path
       memcpy ((void*)(inFileName + exePathEnd), argv[2], (i + 1) * sizeof (wchar_t));  // to file name
@@ -328,7 +328,7 @@ int main (const int argc, char* argv[])
   }
   else // WAVE OK, open output file
   {
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
     const wchar_t* outFileName = argv[argc - 1];
 #else
     const char* outFileName = argv[argc - 1];
@@ -361,7 +361,7 @@ int main (const int argc, char* argv[])
 
     if (outPathEnd == 0) // name has no path
     {
-#if EXHALE_APP_WCHAR
+#ifdef EXHALE_APP_WCHAR
       outFileName = (const wchar_t*) malloc ((exePathEnd + i + 1) * sizeof (wchar_t));  // 0-terminated
       memcpy ((void*) outFileName, argv[0], exePathEnd * sizeof (wchar_t));  // prepend executable path
       memcpy ((void*)(outFileName + exePathEnd), argv[argc - 1], (i + 1) * sizeof (wchar_t));// to name
