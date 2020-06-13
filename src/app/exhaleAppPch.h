@@ -42,6 +42,9 @@
 #if !defined (fprintf_s) && !defined (__MINGW32__)
 # define fprintf_s             fprintf
 #endif
+#if !defined (fwprintf_s) && !defined (__MINGW32__)
+# define fwprintf_s            fwprintf
+#endif
 
 // public sampling rate function
 bool isSamplingRateSupported (const unsigned samplingRate);

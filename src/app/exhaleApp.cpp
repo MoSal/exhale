@@ -185,7 +185,11 @@ int main (const int argc, char* argv[])
 #else
     fprintf_s (stdout, EXHALE_TEXT_BLUE " Usage:\t" EXHALE_TEXT_INIT);
 #endif
+#ifdef EXHALE_APP_WCHAR
+    fwprintf_s (stdout, L"%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
+#else
     fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
+#endif
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     fprintf_s (stdout, " preset\t=  # (1-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
 # if XHE_AAC_LOW_DELAY
@@ -211,7 +215,11 @@ int main (const int argc, char* argv[])
     if (exePathEnd > 0)
     {
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+# ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stdout, L" \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", argv[0]);
+# else
       fprintf_s (stdout, " \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", argv[0]);
+# endif
 #else // Linux, MacOS, Unix
       fprintf_s (stdout, " \tUse filename prefix ./ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", argv[0]);
 #endif
@@ -238,9 +246,17 @@ int main (const int argc, char* argv[])
   else
   {
 #if XHE_AAC_LOW_DELAY
-    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 1-9 or A-I.\n\n", argv[1]);
+# ifdef EXHALE_APP_WCHAR
+    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Use 1-9 or A-I.\n\n", argv[1]);
 #else
+    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 1-9 or A-I.\n\n", argv[1]);
+# endif
+#else
+# ifdef EXHALE_APP_WCHAR
+    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Please use 1-9.\n\n", argv[1]);
+# else
     fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Please use 1-9.\n\n", argv[1]);
+# endif
 #endif
     return 16384; // preset isn't supported
   }
@@ -305,7 +321,11 @@ int main (const int argc, char* argv[])
     if ((inFileHandle = ::open (inFileName, O_RDONLY, 0666)) == -1)
 #endif
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR while trying to open input file %s! Does it already exist?\n\n", inFileName);
+#else
       fprintf_s (stderr, " ERROR while trying to open input file %s! Does it already exist?\n\n", inFileName);
+#endif
       inFileHandle = -1;
       if (inPathEnd == 0) free ((void*) inFileName);
 
@@ -350,9 +370,9 @@ int main (const int argc, char* argv[])
       goto mainFinish;  // bad output string
     }
 
-    if (wavReader.getSampleRate () > 24000 + (unsigned) variableCoreBitRateMode * 12000)
+    if (wavReader.getSampleRate () > 32100 + (unsigned) variableCoreBitRateMode * 12000 + (variableCoreBitRateMode >> 2) * 3900)
     {
-      i = 24 + variableCoreBitRateMode * 12;
+      i = (variableCoreBitRateMode > 4 ? 96 : __min (64, 32 + variableCoreBitRateMode * 12));
       fprintf_s (stderr, " ERROR during encoding! Input sample rate must be <=%d kHz for preset mode %d!\n\n", i, variableCoreBitRateMode);
       i = 4096; // return value
 
@@ -379,7 +399,11 @@ int main (const int argc, char* argv[])
     if ((outFileHandle = ::open (outFileName, i | O_CREAT | O_EXCL, 0666)) == -1)
 #endif
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR while trying to open output file %s! Does it already exist?\n\n", outFileName);
+#else
       fprintf_s (stderr, " ERROR while trying to open output file %s! Does it already exist?\n\n", outFileName);
+#endif
       outFileHandle = -1;
       if (outPathEnd == 0) free ((void*) outFileName);
 
@@ -690,7 +714,11 @@ mainFinish:
       }
       else  // argc = 4, file
       {
+#ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L" ERROR while trying to close input file %s! Does it still exist?\n\n", argv[2]);
+#else
         fprintf_s (stderr, " ERROR while trying to close input file %s! Does it still exist?\n\n", argv[2]);
+#endif
       }
     }
     inFileHandle = 0;
@@ -700,7 +728,11 @@ mainFinish:
   {
     if (_CLOSE (outFileHandle) != 0)
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR while trying to close output file %s! Does it still exist?\n\n", argv[argc - 1]);
+#else
       fprintf_s (stderr, " ERROR while trying to close output file %s! Does it still exist?\n\n", argv[argc - 1]);
+#endif
     }
     outFileHandle = 0;
   }
