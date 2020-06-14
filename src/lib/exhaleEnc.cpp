@@ -758,7 +758,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 24000 ? 32 : 34) - m_bitRateMode : 37) - (nChannels >> 1);
+  const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 24000 ? 32 : 34) - __min (3, m_bitRateMode) : 37) - (nChannels >> 1);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (38, 3 + (samplingRate >> 10) + (samplingRate >> 13)) - (nChannels >> 1)
                                    : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
@@ -916,6 +916,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       {
         SfbGroupData&  grpData = coreConfig.groupingData[ch];
         const bool eightShorts = (coreConfig.icsInfoCurr[ch].windowSequence == EIGHT_SHORT);
+        const bool saveBitRate = (meanSpecFlat[ci] > (SCHAR_MAX >> 1) && samplingRate >= 32000 + (unsigned) m_bitRateMode * 12000);
         const uint8_t maxSfbCh = grpData.sfbsPerGroup;
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
         const uint16_t mSfmFac = UCHAR_MAX - ((9u * meanSpecFlat[ci]) >> 4);
@@ -968,7 +969,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           for (b = 0; b < maxSfbCh; b++)
           {
             const unsigned lfConst = (samplingRate < 27713 && !eightShorts ? 1 : 2); // LF SNR boost, cf my M.Sc. thesis
-            const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
+            const unsigned lfAtten = (saveBitRate || b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
             const uint64_t rateFac = mSfmFac * s * __min (32, lfAtten * grpData.numWindowGroups); // rate control part 1
             const uint64_t sScaled = ((1u << 24) + __max (grpRmsMin, grpStepSizes[b]) * scaleBr * rateFac) >> 25;
@@ -1291,7 +1292,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #if !RESTRICT_TO_AAC
       s = 22050 + 7350 * m_bitRateMode; // compute channel-wise noise_level and noise_offset
       coreConfig.specFillData[ch] = (!m_noiseFilling[el] ? 0 : m_specGapFiller.getSpecGapFillParams (m_sfbQuantizer, m_mdctQuantMag[ci], m_numSwbShort,
-                                                                                                     grpData, nSamplesInFrame, samplingRate >= s,
+                                                                                                     grpData, nSamplesInFrame, samplingRate, s,
                                                                                                      shortWinCurr ? 0 : meanSpecFlat[ci]));
       // NOTE: gap-filling SFB bit count might be inaccurate now since scale factors changed
       if (coreConfig.specFillData[ch] == 1) errorValue |= 1;

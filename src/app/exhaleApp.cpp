@@ -30,7 +30,7 @@
 #include <share.h>
 #endif
 
-#if defined (_MSC_VER) || defined (__INTEL_COMPILER) || defined (__MINGW32__)
+#if defined (_MSC_VER) || defined (__INTEL_COMPILER) // || defined (__GNUC__) || defined (__MINGW32__)
 #define EXHALE_APP_WCHAR
 #define _SOPENS _wsopen_s
 #else
