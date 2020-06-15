@@ -42,7 +42,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
   const uint16_t       sfbsPerGrp = grpData.sfbsPerGroup;
   const uint16_t       windowNfso = noiseFillingStartOffset[grpData.numWindowGroups == 1 ? 0 : 1][nSamplesInFrame >> 10];
   const bool saveRate = (samplingRate >= sampRateBitSave);
-  uint8_t scaleFacLim = 0; // limit range of scale factors
+  uint8_t scaleFacLim = 0; // limit range
   uint16_t u = 0;
   short diff = 0, s = 0;
   double    magnSum = 0.0;
@@ -216,7 +216,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
 
           if ((samplingRate <= 32000) && (b < m_1stGapFillSfb + 4)) // lower mid-freq. noise
           {
-            grpScFacs[b] = __max (1, grpScFacs[b] - int ((m_1stGapFillSfb + 4 - b) << 1));
+            grpScFacs[b] = __max (0, grpScFacs[b] - int ((m_1stGapFillSfb + 4 - b) * (grpScFacs[b] >> 6)));
           }
           if (grpScFacs[b] > scaleFacLim) grpScFacs[b] = scaleFacLim;
         }

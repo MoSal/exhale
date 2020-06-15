@@ -30,7 +30,7 @@
 #include <share.h>
 #endif
 
-#if defined (_MSC_VER) || defined (__INTEL_COMPILER) // || defined (__GNUC__) || defined (__MINGW32__)
+#if defined (_MSC_VER) || defined (__INTEL_COMPILER) || defined (__MINGW32__) // || defined (__GNUC__)
 #define EXHALE_APP_WCHAR
 #define _SOPENS _wsopen_s
 #else
@@ -54,6 +54,9 @@
 
 // main routine
 #ifdef EXHALE_APP_WCHAR
+# ifdef __MINGW32__
+extern "C"
+# endif
 int wmain (const int argc, wchar_t* argv[])
 #else
 int main (const int argc, char* argv[])

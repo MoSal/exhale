@@ -57,6 +57,9 @@ RELEASE_CPPFLAGS  = -O3 -Wuninitialized
 
 ## specification of linker flags
 ALL_LDFLAGS       = -Wall $(ADDITIONAL_LDFLAGS)
+ifeq ($(OS), Windows_NT)
+  ALL_LDFLAGS+=-municode
+endif
 
 # setting of 32-bit linker flags
 ifeq ($(MM32), 1)
