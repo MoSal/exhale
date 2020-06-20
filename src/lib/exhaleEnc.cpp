@@ -916,7 +916,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       {
         SfbGroupData&  grpData = coreConfig.groupingData[ch];
         const bool eightShorts = (coreConfig.icsInfoCurr[ch].windowSequence == EIGHT_SHORT);
-        const bool saveBitRate = (meanSpecFlat[ci] > (SCHAR_MAX >> 1) && samplingRate >= 32000 + (unsigned) m_bitRateMode * 12000);
+        const bool saveBitRate = (meanSpecFlat[ci] > SCHAR_MAX && samplingRate >= 32000 + (unsigned) m_bitRateMode * 12000);
         const uint8_t maxSfbCh = grpData.sfbsPerGroup;
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
         const uint16_t mSfmFac = UCHAR_MAX - ((9u * meanSpecFlat[ci]) >> 4);
