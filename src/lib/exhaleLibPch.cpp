@@ -53,11 +53,11 @@ static const unsigned allowedSamplingRates[USAC_NUM_SAMPLE_RATES] = {
 };
 
 // public sampling rate functions
-char toSamplingFrequencyIndex (const unsigned samplingRate)
+int8_t toSamplingFrequencyIndex (const unsigned samplingRate)
 {
-  for (char i = 0; i < AAC_NUM_SAMPLE_RATES; i++)
+  for (int8_t i = 0; i < AAC_NUM_SAMPLE_RATES; i++)
   {
-    if (samplingRate == allowedSamplingRates[(int) i]) // AAC rate
+    if (samplingRate == allowedSamplingRates[i])  // (HE-)AAC rate
     {
       return i;
     }
@@ -71,7 +71,7 @@ char toSamplingFrequencyIndex (const unsigned samplingRate)
   return -1; // no index found
 }
 
-unsigned toSamplingRate (const char samplingFrequencyIndex)
+unsigned toSamplingRate (const int8_t samplingFrequencyIndex)
 {
 #if RESTRICT_TO_AAC
   if ((samplingFrequencyIndex < 0) || (samplingFrequencyIndex >= AAC_NUM_SAMPLE_RATES))

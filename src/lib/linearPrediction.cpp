@@ -24,7 +24,7 @@ static const short tnsQuantCoeff4[17/*2^4+1*/] = { // = round (2^11 * sin (x * p
 static const short* tnsQuantCoeff[2/*coefRes*/] = {tnsQuantCoeff3, tnsQuantCoeff4};
 
 // ISO/IEC 14496-3, Sec. 4.6.9.3, 3-bit
-static const char tnsQuantIndex3[SCHAR_MAX + 1] = { // = round (asin (x / 64) * (x < 0 ? 9 : 7) / pi)
+static const int8_t tnsQuantIndex3[SCHAR_MAX + 1] = { // = round (asin (x / 64) * (x < 0 ? 9 : 7) / pi)
   -4, -4, -4, -3, -3, -3, -3, -3, -3, -3, -3, -3, -3, -3, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2,
   -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
@@ -32,31 +32,31 @@ static const char tnsQuantIndex3[SCHAR_MAX + 1] = { // = round (asin (x / 64) * 
 };
 
 // ISO/IEC 14496-3, Sec. 4.6.9.3, 4-bit
-static const char tnsQuantIndex4[SCHAR_MAX + 1] = { // = round (asin (x / 64) * (x < 0 ? 17 : 15) / pi)
+static const int8_t tnsQuantIndex4[SCHAR_MAX + 1] = { // = round (asin (x / 64) * (x < 0 ? 17 : 15) / pi)
   -8, -7, -7, -7, -6, -6, -6, -6, -6, -5, -5, -5, -5, -5, -5, -5, -4, -4, -4, -4, -4, -4, -4, -4, -4, -3, -3, -3, -3, -3, -3, -3,
   -3, -3, -3, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  0,  0,  0,  0,  0,
    0,  0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,
    3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  4,  4,  4,  4,  5,  5,  5,  5,  5,  5,  5,  6,  6,  6,  6,  7,  7
 };
 
-static const char* tnsQuantIndex[2/*coefRes*/] = {tnsQuantIndex3, tnsQuantIndex4};
+static const int8_t* tnsQuantIndex[2/*coefRes*/] = {tnsQuantIndex3, tnsQuantIndex4};
 
 // static helper functions
 static int quantizeParCorCoeffs (const short* const parCorCoeffs, const uint16_t nCoeffs, const short bitDepth, int8_t* const quantCoeffs,
                                  const bool lowRes)
 {
-  const short  bitShift = bitDepth - 7;
-  const unsigned tabIdx = (lowRes ? 0 : 1);
-  const char  tabOffset = 4 << tabIdx;
-  const short* coeffTab = tnsQuantCoeff[tabIdx];
-  const char*  indexTab = tnsQuantIndex[tabIdx];
+  const short   bitShift = bitDepth - 7;
+  const unsigned  tabIdx = (lowRes ? 0 : 1);
+  const int8_t tabOffset = 4 << tabIdx;
+  const short*  coeffTab = tnsQuantCoeff[tabIdx];
+  const int8_t* indexTab = tnsQuantIndex[tabIdx];
   int dist0, dist1, distTotal = 0;
 
   for (uint16_t s = 0; s < nCoeffs; s++)
   {
-    const short coeff = (bitShift < 0 ? parCorCoeffs[s] << -bitShift : parCorCoeffs[s] >> bitShift);
-    const char coeff1 = indexTab[coeff + 1 + (SCHAR_MAX >> 1)];
-    const char coeff0 = (coeff1 <= -tabOffset ? coeff1 : coeff1 - 1);
+    const short   coeff = (bitShift < 0 ? parCorCoeffs[s] << -bitShift : parCorCoeffs[s] >> bitShift);
+    const int8_t coeff1 = indexTab[coeff + 1 + (SCHAR_MAX >> 1)];
+    const int8_t coeff0 = (coeff1 <= -tabOffset ? coeff1 : coeff1 - 1);
 
     dist0 = (int) coeffTab[coeff0 + tabOffset] - parCorCoeffs[s];
     dist0 *= dist0;
@@ -249,7 +249,7 @@ uint8_t LinearPredictor::calcOptTnsCoeffs (short* const parCorCoeffs, int8_t* co
 
   if ((parCorCoeffs == nullptr) || (quantCoeffs == nullptr) || (maxOrder == 0) || (maxOrder > MAX_PREDICTION_ORDER) || (parCorCoeffBitDepth < 2) || (bitShift < 0))
   {
-    if (quantCoeffs) memset (quantCoeffs, 0, order * sizeof (char));
+    if (quantCoeffs) memset (quantCoeffs, 0, order * sizeof (int8_t));
 
     return 0;   // invalid input arguments error
   }
@@ -269,7 +269,7 @@ uint8_t LinearPredictor::calcOptTnsCoeffs (short* const parCorCoeffs, int8_t* co
 
   if (predGain < 41 + (tonality >> 3)) // 1.5 dB
   {
-    memset (quantCoeffs, 0, order * sizeof (char));
+    memset (quantCoeffs, 0, order * sizeof (int8_t));
 
     return 0;  // LPC prediction gain is too low
   }
@@ -307,7 +307,7 @@ uint8_t LinearPredictor::calcOptTnsCoeffs (short* const parCorCoeffs, int8_t* co
   {
     // low-res quantizer yields lower distortion
     *lowCoeffRes = true;
-    memcpy (quantCoeffs, m_tempBuf, order * sizeof (char));
+    memcpy (quantCoeffs, m_tempBuf, order * sizeof (int8_t));
   }
 
   for (; order > 0; order--) // return opt order
@@ -385,9 +385,9 @@ unsigned LinearPredictor::parCorToLpCoeffs (const short* const parCorCoeffs, con
 unsigned LinearPredictor::quantTnsToLpCoeffs (const int8_t* const quantTnsCoeffs, const uint16_t nCoeffs, const bool lowCoeffRes,
                                               short* const parCorCoeffs, short* const lpCoeffs)
 {
-  const unsigned tabIdx = (lowCoeffRes ? 0 : 1);
-  const char  tabOffset = 4 << tabIdx;
-  const short* coeffTab = tnsQuantCoeff[tabIdx];
+  const unsigned  tabIdx = (lowCoeffRes ? 0 : 1);
+  const int8_t tabOffset = 4 << tabIdx;
+  const short*  coeffTab = tnsQuantCoeff[tabIdx];
 
   if ((quantTnsCoeffs == nullptr) || (parCorCoeffs == nullptr) || (lpCoeffs == nullptr) || (nCoeffs == 0) || (nCoeffs > MAX_PREDICTION_ORDER))
   {

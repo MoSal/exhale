@@ -94,17 +94,17 @@ to exhale's standard input pipe (stdin), such as foobar2000.
 
 In a terminal, change to exhale's `bin` subdirectory and then enter
 
-`./exhale` (on Linux and MacOS) or `exhaleApp.exe` (on Windows)
+`./exhale` (on Linux and MacOS) or `exhale.exe` (on Windows)
 
 to print out usage information. As an example, the following command
 
-`exhaleApp.exe 5 C:\Music\Input.wav C:\Music\Output.m4a`
+`exhale.exe 5 C:\Music\Input.wav C:\Music\Output.m4a`
 
 converts file Input.wav to file Output.m4a at roughly 128 kbit/s (if
 the input signal is two-channel stereo) and in xHE-AAC audio format.
 Note that, when calling the exhale application with a path (such as,
-e.g., `bin/exhale` or `bin\exhaleApp.exe`), but specifying the input
-or output file without any path (e.g., `Input.wav`), those files are
+e.g., `bin/exhale` or `bin\exhale.exe`), but specifying the input or
+output file without a file path (e.g., `Input.wav`), those files are
 assumed to be located in the application path (here, `bin`). Use the
 "dot prefix" to indicate files in the *current* directory instead of
 the application directory (here, `./Input.wav` or `.\Input.wav`).
@@ -119,9 +119,9 @@ to be converted, rightclick on one of them, and select `Convert` ->
 the window content changed, on `Add New`. Then select `Custom` under
 "Encoder" and enter the following information:
 
-- *Encoder file:* exhaleApp.exe (possibly including path to it)
+- *Encoder file:* exhale.exe (including path to the executable)
 - *Extension:* m4a
-- *Parameters:* # %d (where number is the bit-rate mode, 1...9)
+- *Parameters:* # %d (where # is the bit-rate mode, i.e. 1...9)
 - *Format is:* lossy
 - *Highest BPS mode supported:* 24 (or 32, doesn't matter much)
 - *Encoder name:* xHE-AAC (exhale)
@@ -129,7 +129,8 @@ the window content changed, on `Add New`. Then select `Custom` under
 - *Settings:* CVBR mode # (where # equals that in *Parameters*)
 
 Then click on `OK` and on `Back` and, in the first "Converter Setup"
-window, on `Other` and ensure all "Transfer..." boxes are unchecked.
+window, on `Other` and ensure the "Transfer..." box for the class of
+input metadata that you wish to copy to the output files is checked.
 Now set the destination settings as desired and click on `Convert`.
 
 

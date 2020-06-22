@@ -172,7 +172,7 @@ const uint8_t eightTimesSqrt256Minus[256] = {
 const uint8_t oneTwentyEightOver[14] = {0, 128, 64, 43, 32, 26, 22, 19, 16, 15, 13, 12, 11, 10};
 
 // public sampling rate functions
-char toSamplingFrequencyIndex (const unsigned samplingRate);
-unsigned toSamplingRate (const char samplingFrequencyIndex);
+int8_t toSamplingFrequencyIndex (const unsigned samplingRate);
+unsigned toSamplingRate (const int8_t samplingFrequencyIndex);
 
 #endif // _EXHALE_LIB_PCH_H_

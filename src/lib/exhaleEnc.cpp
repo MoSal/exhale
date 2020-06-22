@@ -340,7 +340,7 @@ static const uint8_t numberOfChannels[USAC_MAX_NUM_ELCONFIGS] = {0, 1, 2, 3, 4, 
 
 static inline unsigned toNumChannels (const USAC_CCI chConfigurationIndex)
 {
-  return numberOfChannels[__max (0, (char) chConfigurationIndex)];
+  return numberOfChannels[__max (0, (signed char) chConfigurationIndex)];
 }
 
 // ISO/IEC 23003-3, Table 68
@@ -918,7 +918,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         const bool eightShorts = (coreConfig.icsInfoCurr[ch].windowSequence == EIGHT_SHORT);
         const bool saveBitRate = (meanSpecFlat[ci] > SCHAR_MAX && samplingRate >= 32000 + (unsigned) m_bitRateMode * 12000);
         const uint8_t maxSfbCh = grpData.sfbsPerGroup;
+#if !RESTRICT_TO_AAC
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
+#endif
         const uint16_t mSfmFac = UCHAR_MAX - ((9u * meanSpecFlat[ci]) >> 4);
         uint32_t*    stepSizes = &sfbStepSizes[ci * m_numSwbShort * NUM_WINDOW_GROUPS];
 

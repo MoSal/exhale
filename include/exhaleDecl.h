@@ -11,7 +11,7 @@
 #ifndef _EXHALE_DECL_H_
 #define _EXHALE_DECL_H_
 
-#include <stdint.h> // for (u)int8_t, (u)int16_t, (u)int32_t, (u)int64_t
+#include <stdint.h> /* for (u)int8_t, (u)int16_t, (u)int32_t, (u)int64_t */
 
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
 # ifdef EXHALE_DYN_LINK
@@ -23,31 +23,43 @@
 # define EXHALE_DECL
 #endif
 
+#ifdef __cplusplus
 struct ExhaleEncAPI
 {
-  // initializer
+  /* initializer */
   virtual unsigned initEncoder (unsigned char* const audioConfigBuffer, uint32_t* const audioConfigBytes = nullptr) = 0;
-  // lookahead encoder
+  /* lookahead encoder */
   virtual unsigned encodeLookahead () = 0;
-  // frame encoder
+  /* frame encoder */
   virtual unsigned encodeFrame () = 0;
-  // destructor
+  /* destructor */
   virtual ~ExhaleEncAPI () { }
 };
 
-// C constructor
-extern "C" EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const, unsigned char* const, const unsigned, const unsigned,
-                                                   const unsigned, const unsigned, const unsigned, const bool, const bool);
-// C destructor
-extern "C" EXHALE_DECL unsigned exhaleDelete (ExhaleEncAPI*);
+extern "C"
+{
+#else /* C, not C++ */
+struct ExhaleEncAPI; /* opaque type */
+typedef struct ExhaleEncAPI ExhaleEncAPI;
+#endif
 
-// C initializer
-extern "C" EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncAPI*, unsigned char* const, uint32_t* const);
+/* C constructor */
+EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const, unsigned char* const, const unsigned, const unsigned,
+                                        const unsigned, const unsigned, const unsigned, const bool, const bool);
+/* C destructor */
+EXHALE_DECL unsigned exhaleDelete (ExhaleEncAPI*);
 
-// C lookahead encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncAPI*);
+/* C initializer */
+EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncAPI*, unsigned char* const, uint32_t* const);
 
-// C frame encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI*);
+/* C lookahead encoder */
+EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncAPI*);
 
-#endif // _EXHALE_DECL_H_
+/* C frame encoder */
+EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI*);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
+#endif /* _EXHALE_DECL_H_ */

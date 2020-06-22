@@ -28,7 +28,7 @@
 #define WIN_SCALE double (1 << 23)
 
 // channelConfigurationIndex setup
-typedef enum USAC_CCI : char
+typedef enum USAC_CCI : signed char
 {
   CCI_UNDEF = -1,
   CCI_CONF  = 0,  // channel-to-speaker mapping defined in UsacChannelConfig() (not to be used here!)
@@ -71,7 +71,7 @@ private:
   EntropyCoder    m_entropyCoder[USAC_MAX_NUM_CHANNELS];
   uint32_t        m_frameCount;
   USAC_CCFL       m_frameLength;
-  char            m_frequencyIdx;
+  int8_t          m_frequencyIdx;
   bool            m_indepFlag; // usacIndependencyFlag bit
   uint32_t        m_indepPeriod;
   LinearPredictor m_linPredictor; // for pre-roll est, TNS
@@ -153,52 +153,56 @@ public:
 }; // ExhaleEncoder
 
 #ifdef EXHALE_DYN_LINK
-// C constructor
-extern "C" EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const inputPcmData,       unsigned char* const outputAuData,
-                                                   const unsigned sampleRate = 44100, const unsigned numChannels = 2,
-                                                   const unsigned frameLength = 1024, const unsigned indepPeriod = 45,
-                                                   const unsigned varBitRateMode = 3, const bool useNoiseFilling = true,
-                                                   const bool useEcodisExt = false)
+extern "C"
 {
-  return new ExhaleEncoder (inputPcmData, outputAuData, sampleRate, numChannels, frameLength, indepPeriod, varBitRateMode
+// C constructor
+EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const inputPcmData,       unsigned char* const outputAuData,
+                                        const unsigned sampleRate = 44100, const unsigned numChannels = 2,
+                                        const unsigned frameLength = 1024, const unsigned indepPeriod = 45,
+                                        const unsigned varBitRateMode = 3, const bool useNoiseFilling = true,
+                                        const bool useEcodisExt = false)
+{
+  return reinterpret_cast<ExhaleEncAPI*> (new ExhaleEncoder (inputPcmData, outputAuData, sampleRate, numChannels, frameLength, indepPeriod, varBitRateMode
 #if !RESTRICT_TO_AAC
-                          , useNoiseFilling, useEcodisExt
+                                        , useNoiseFilling, useEcodisExt
 #endif
-                            );
+                                          ));
 }
 
 // C destructor
-extern "C" EXHALE_DECL unsigned exhaleDelete (ExhaleEncAPI* exhaleEnc)
+EXHALE_DECL unsigned exhaleDelete (ExhaleEncAPI* exhaleEnc)
 {
-  if (exhaleEnc != NULL) { delete exhaleEnc;  return 0; }
+  if (exhaleEnc != NULL) { delete reinterpret_cast<ExhaleEncoder*> (exhaleEnc); return 0; }
 
   return USHRT_MAX; // error
 }
 
 // C initializer
-extern "C" EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncAPI* exhaleEnc, unsigned char* const audioConfigBuffer,
-                                                   uint32_t* const audioConfigBytes = nullptr)
+EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncAPI* exhaleEnc, unsigned char* const audioConfigBuffer,
+                                        uint32_t* const audioConfigBytes = nullptr)
 {
-  if (exhaleEnc != NULL) return exhaleEnc->initEncoder (audioConfigBuffer, audioConfigBytes);
+  if (exhaleEnc != NULL) return reinterpret_cast<ExhaleEncoder*> (exhaleEnc)->initEncoder (audioConfigBuffer, audioConfigBytes);
 
   return USHRT_MAX; // error
 }
 
 // C lookahead encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncAPI* exhaleEnc)
+EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncAPI* exhaleEnc)
 {
-  if (exhaleEnc != NULL) return exhaleEnc->encodeLookahead ();
+  if (exhaleEnc != NULL) return reinterpret_cast<ExhaleEncoder*> (exhaleEnc)->encodeLookahead ();
 
   return USHRT_MAX; // error
 }
 
 // C frame encoder
-extern "C" EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI* exhaleEnc)
+EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI* exhaleEnc)
 {
-  if (exhaleEnc != NULL) return exhaleEnc->encodeFrame ();
+  if (exhaleEnc != NULL) return reinterpret_cast<ExhaleEncoder*> (exhaleEnc)->encodeFrame ();
 
   return USHRT_MAX; // error
 }
+
+} // extern "C"
 #endif // EXHALE_DYN_LINK
 
 #endif // _EXHALE_ENC_H_

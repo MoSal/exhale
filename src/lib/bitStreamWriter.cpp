@@ -145,7 +145,7 @@ unsigned BitStreamWriter::writeChannelWiseTnsData (const TnsData& tnsData, const
           {
             const int8_t* coeff = tnsData.coeff[n + f];
             unsigned   coefBits = (tnsData.coeffResLow[n] ? 3 : 4);
-            char   coefMaxValue = (tnsData.coeffResLow[n] ? 2 : 4);
+            int8_t coefMaxValue = (tnsData.coeffResLow[n] ? 2 : 4);
             bool   dontCompress = false;
 
             m_auBitStream.write (tnsData.filterDownward[n + f] ? 1 : 0, 1);
