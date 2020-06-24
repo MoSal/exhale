@@ -55,7 +55,7 @@
 
 #if ENABLE_RESAMPLING
 static const int16_t usfc2x[32] = { // 2x upsampling filter coefficients
-  0, -13785, 8142, -5681, 4281, -3367, 2716, -2225, 1840, -1530, 1275, -1062, 883, -732,
+  8913, -13785, 8142, -5681, 4281, -3367, 2716, -2225, 1840, -1530, 1275, -1062, 883, -732,
   604, -495, 402, -325, 260, -205, 160, -124, 94, -70, 51, -36, 25, -16, 11, -6, 3, -1
 };
 
@@ -89,7 +89,7 @@ static void eaApplyUpsampler2x (int32_t* const pcmBuffer, int32_t* const upsampl
   {
     int32_t* chPcmBuf = &pcmBuffer[ch];
     int32_t* chUpsBuf = &upsampleBuffer[chLength * ch];
-# if 0
+# if 1
     if (firstFrame) // construct leading sample values via extrapolation
     {
       for (int8_t i = 0; i < 32; i++) chUpsBuf[i] = (*chPcmBuf * i + (32 >> 1)) >> 5;
@@ -112,7 +112,7 @@ static void eaApplyUpsampler2x (int32_t* const pcmBuffer, int32_t* const upsampl
 
     for (uint16_t i = (frameSize >> 1); i > 0; i--, chPcmBuf += numChannels, chUpsBuf++)
     {
-      int64_t r = (chUpsBuf[0] + (int64_t) chUpsBuf[1]) * 41681;
+      int64_t r = (chUpsBuf[0] + (int64_t) chUpsBuf[1]) * (usfc2x[0] - SHRT_MIN);
 
       for (int16_t c = 32 - 1; c > 0; c--) r += (chUpsBuf[-c] + (int64_t) chUpsBuf[c + 1]) * usfc2x[c];
       *chPcmBuf = *chUpsBuf;  chPcmBuf += numChannels; // 1-to-1 mapping
@@ -510,7 +510,7 @@ int main (const int argc, char* argv[])
 #if ENABLE_RESAMPLING
     const bool enableUpsampler = eaInitUpsampler2x (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels);
     const uint16_t firstLength = uint16_t (enableUpsampler ? (frameLength >> 1) + 32 : frameLength); // upsampler look-ahead
-    const int64_t expectLength = wavReader.getDataBytesLeft () / int64_t ((numChannels * inSampDepth) >> (enableUpsampler ? 4 : 3));
+    const int64_t expectLength = (wavReader.getDataBytesLeft () << (enableUpsampler ? 1 : 0)) / int64_t ((numChannels * inSampDepth) >> 3);
 #else
     const int64_t expectLength = wavReader.getDataBytesLeft () / int64_t ((numChannels * inSampDepth) >> 3);
 #endif
@@ -703,7 +703,7 @@ int main (const int argc, char* argv[])
       byteCount += bw;
 
 #if ENABLE_RESAMPLING
-      const int64_t actualLength = wavReader.getDataBytesRead () / int64_t ((numChannels * inSampDepth) >> (enableUpsampler ? 4 : 3));
+      const int64_t actualLength = (wavReader.getDataBytesRead () << (enableUpsampler ? 1 : 0)) / int64_t ((numChannels * inSampDepth) >> 3);
 #else
       const int64_t actualLength = wavReader.getDataBytesRead () / int64_t ((numChannels * inSampDepth) >> 3);
 #endif

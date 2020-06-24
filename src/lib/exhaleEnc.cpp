@@ -293,6 +293,41 @@ static inline uint8_t brModeAndFsToMaxSfbShort(const unsigned bitRateMode, const
   return (samplingRate > 51200 ? 11 : 13) - 2 + (bitRateMode >> 2);
 }
 
+static inline void findActualBandwidthShort (uint8_t* const maxSfbShort, const uint16_t* sfbOffsets,
+                                             const int32_t* mdctSignals, const int32_t* mdstSignals, const unsigned nSamplesInShort)
+{
+  const uint16_t b = sfbOffsets[1];  // beginning of search region
+  uint8_t   maxSfb = __max (1, *maxSfbShort);
+  uint16_t sfbOffs = sfbOffsets[maxSfb - 1];
+
+  for (uint16_t e = sfbOffsets[maxSfb] - 1; e >= b; e--) // search
+  {
+    int32_t maxAbs = abs (mdctSignals[e]);
+
+    if (mdstSignals != nullptr)
+    {
+      maxAbs = __max (maxAbs, abs (mdstSignals[e]));
+      for (uint16_t w = 7; w > 0; w--)
+      {
+        maxAbs = __max (maxAbs, abs (mdctSignals[e + w * nSamplesInShort]));
+        maxAbs = __max (maxAbs, abs (mdstSignals[e + w * nSamplesInShort]));
+      }
+    }
+    else
+    {
+      for (uint16_t w = 7; w > 0; w--)
+      {
+        maxAbs = __max (maxAbs, abs (mdctSignals[e + w * nSamplesInShort]));
+      }
+    }
+    if (maxAbs > maxSfb * (SA_EPS >> 1)) break;
+
+    if (e == sfbOffs) sfbOffs = sfbOffsets[(--maxSfb) - 1];
+  }
+
+  if (*maxSfbShort > maxSfb) *maxSfbShort = maxSfb;
+}
+
 static inline uint32_t squareMeanRoot (const uint32_t value1, const uint32_t value2)
 {
   const double meanRoot = (sqrt ((double) value1) + sqrt ((double) value2)) * 0.5;
@@ -986,8 +1021,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #if !RESTRICT_TO_AAC
         if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_bitRateMode <= 3 || !eightShorts))
         {
-          const uint8_t numSwbFrame = __min (numSwbCh, (eightShorts ? maxSfbCh : maxSfbLong) +
-                                      (m_bitRateMode < 2 || m_bitRateMode > 3 || samplingRate < 37566 ? 0 : 1));
+          const uint32_t maxSfbCurr = (eightShorts ? (samplingRate < 37566 ? 14 : brModeAndFsToMaxSfbShort (m_bitRateMode, samplingRate)) : maxSfbLong);
+          const uint8_t numSwbFrame = __min ((numSwbCh * ((maxSfbCh == maxSfbCurr) || (m_bitRateMode <= 2) ? 4u : 3u)) >> 2,
+                                      (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || samplingRate < 37566 ? 0 : 1));
 #ifndef NO_DTX_MODE
           const bool prvEightShorts = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT);
 
@@ -1033,7 +1069,17 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             }
             grpData.sfbsPerGroup = coreConfig.icsInfoCurr[ch].maxSfb = numSwbFrame;
           }
-          if (ch > 0) coreConfig.commonMaxSfb = (coreConfig.icsInfoCurr[0].maxSfb == coreConfig.icsInfoCurr[1].maxSfb);
+          if (ch > 0 && coreConfig.commonWindow) // resynchronize the two max_sfb for stereo
+          {
+            uint8_t& maxSfb0 = coreConfig.icsInfoCurr[0].maxSfb;
+            uint8_t& maxSfb1 = coreConfig.icsInfoCurr[1].maxSfb;
+
+            if (coreConfig.stereoMode > 0)
+            {
+              maxSfb0 = maxSfb1 = coreConfig.groupingData[0].sfbsPerGroup = grpData.sfbsPerGroup = __max (maxSfb0, maxSfb1);
+            }
+            coreConfig.commonMaxSfb = (maxSfb0 == maxSfb1);
+          }
         }
 #ifndef NO_DTX_MODE
         else if (m_noiseFilling[el] && (m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate <= 24000))
@@ -1447,7 +1493,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           }
           memcpy (grpData.windowGroupLength, windowGroupingTable[icsCurr.windowGrouping], NUM_WINDOW_GROUPS * sizeof (uint8_t));
 #endif
-          while (grpSO[icsCurr.maxSfb] > __max (m_bandwidCurr[ci], m_bandwidPrev[ci])) icsCurr.maxSfb--; // not a bug!!
+          findActualBandwidthShort (&icsCurr.maxSfb, grpSO, m_mdctSignals[ci], nChannels < 2 ? nullptr : m_mdstSignals[ci], nSamplesInShort);
 
           errorValue |= eightShortGrouping (grpData, grpSO, m_mdctSignals[ci], nChannels < 2 ? nullptr : m_mdstSignals[ci]);
         } // if EIGHT_SHORT
