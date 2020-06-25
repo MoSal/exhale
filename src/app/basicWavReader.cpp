@@ -87,13 +87,10 @@ bool BasicWavReader::seekToChunkTag (uint8_t* const buf, const uint32_t tagID)
   while ((*((uint32_t* const) buf) != tagID) &&
          (m_bytesRemaining > 0)) // seek until tagID found
   {
-    if ((m_readOffset = _SEEK (m_fileHandle, m_chunkLength, 1 /*SEEK_CUR*/)) == -1)
+    if ((m_bytesRemaining > LLONG_MAX - USHRT_MAX) || (m_readOffset = _SEEK (m_fileHandle, m_chunkLength, 1 /*SEEK_CUR*/)) == -1)
     {
       // for stdin compatibility, don't abort, try reading
-      for (int64_t i = m_chunkLength >> 1; i > 0; i--)
-      {
-        m_bytesRead = _READ (m_fileHandle, buf, 2);  // this works as the chunk length is even
-      }
+      for (int64_t i = m_chunkLength >> 1; i > 0; i--) m_bytesRead = _READ (m_fileHandle, buf, 2); // TODO: byte-wise?
     }
     m_bytesRemaining -= m_chunkLength;
     if (m_bytesRemaining <= 0)
