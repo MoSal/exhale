@@ -90,13 +90,12 @@ bool BasicWavReader::seekToChunkTag (uint8_t* const buf, const uint32_t tagID)
     if ((m_bytesRemaining > LLONG_MAX - USHRT_MAX) || (m_readOffset = _SEEK (m_fileHandle, m_chunkLength, 1 /*SEEK_CUR*/)) == -1)
     {
       // for stdin compatibility, don't abort, try reading
-      for (int64_t i = m_chunkLength >> 1; i > 0; i--) m_bytesRead = _READ (m_fileHandle, buf, 2); // TODO: byte-wise?
+      for (int64_t i = m_chunkLength >> 1; i > 0; i--) m_bytesRead = _READ (m_fileHandle, buf, 2);
     }
     m_bytesRemaining -= m_chunkLength;
-    if (m_bytesRemaining <= 0)
-    {
-      return false; // an error which should never happen!
-    }
+
+    if (m_bytesRemaining <= 0) return false;  // unlikely!
+
     if ((m_bytesRead = _READ (m_fileHandle, buf, CHUNK_HEADER_SIZE)) != CHUNK_HEADER_SIZE) return false; // error
     m_bytesRemaining -= m_bytesRead;
     m_chunkLength = fourBytesToLength (&buf[4], m_bytesRemaining);
@@ -142,7 +141,7 @@ unsigned BasicWavReader::readDataFloat16 (const int fileHandle, int32_t* frameBu
   {
     int16_t i16 = 0;
 
-    bytesRead += _READ (fileHandle, &i16, 2); // two bytes
+    bytesRead += _READ (fileHandle, &i16, 2);
 
     const int32_t e = ((i16 & 0x7C00) >> 10) - 18; // exp.
     // an exponent e <= -12 will lead to zero-quantization
@@ -190,9 +189,9 @@ unsigned BasicWavReader::readDataFloat32 (const int fileHandle, int32_t* frameBu
 
   for (unsigned i = frameCount * chanCount; i > 0; i--)
   {
-    float f32 = 0.0; // IEEE-754 normalized floating point
+    float f32 = 0.0;
 
-    bytesRead += _READ (fileHandle, &f32, 4);   // 4 bytes
+    bytesRead += _READ (fileHandle, &f32, 4);
     *frameBuf = int32_t (f32 * (1 << 23) + (f32 < 0.0 ? -0.5 : 0.5)); // * 2^23 with rounding
     if (*frameBuf < MIN_VALUE_AUDIO24) *frameBuf = MIN_VALUE_AUDIO24;
     else
@@ -234,7 +233,7 @@ unsigned BasicWavReader::readDataLnPcm08 (const int fileHandle, int32_t* frameBu
   {
     uint8_t ui8 = 128;
 
-    bytesRead += _READ (fileHandle, &ui8, 1);  // one byte
+    bytesRead += _READ (fileHandle, &ui8, 1);
     *(frameBuf++) = ((int32_t) ui8 - 128) << 16; // * 2^16
   }
   return bytesRead / chanCount;
@@ -272,7 +271,7 @@ unsigned BasicWavReader::readDataLnPcm16 (const int fileHandle, int32_t* frameBu
   {
     int16_t i16 = 0;
 
-    bytesRead += _READ (fileHandle, &i16, 2); // two bytes
+    bytesRead += _READ (fileHandle, &i16, 2);
     *(frameBuf++) = (int32_t) i16 << 8; // * 2^8
   }
   return bytesRead / (chanCount * 2);
@@ -312,7 +311,7 @@ unsigned BasicWavReader::readDataLnPcm24 (const int fileHandle, int32_t* frameBu
   {
     int32_t i24 = 0;
 
-    bytesRead += _READ (fileHandle, &i24, 3);   // 3 bytes
+    bytesRead += _READ (fileHandle, &i24, 3);
     *(frameBuf++) = (i24 > MAX_VALUE_AUDIO24 ? i24 + 2 * MIN_VALUE_AUDIO24 : i24);
   }
   return bytesRead / (chanCount * 3);
@@ -351,7 +350,7 @@ unsigned BasicWavReader::readDataLnPcm32 (const int fileHandle, int32_t* frameBu
   for (unsigned i = frameCount * chanCount; i > 0; i--)
   {
     int32_t i24 = 0;
-    bytesRead += _READ (fileHandle, &i24, 4);   // 4 bytes
+    bytesRead += _READ (fileHandle, &i24, 4);
     i24 = ((i24 >> 1) + (1 << 6)) >> 7; // * 2^-8 with rounding, overflow-safe
     *(frameBuf++) = __min (MAX_VALUE_AUDIO24, i24);
   }
@@ -423,19 +422,21 @@ unsigned BasicWavReader::open (const int wavFileHandle, const uint16_t maxFrameR
 
 unsigned BasicWavReader::read (int32_t* const frameBuf, const uint16_t frameCount)
 {
+  const unsigned framesTotal = __min (m_frameLimit, frameCount);
   unsigned framesRead;
 
-  if ((frameBuf == nullptr) || (m_fileHandle == -1) || (__min (m_frameLimit, frameCount) == 0) || (m_byteBuffer == nullptr) ||
+  if ((frameBuf == nullptr) || (m_fileHandle == -1) || (framesTotal == 0) || (m_byteBuffer == nullptr) ||
       (m_bytesRemaining <= 0)) // end of chunk reached
   {
     return 0; // invalid args or class not initialized
   }
-  framesRead  = m_readDataFunc (m_fileHandle, frameBuf, __min (m_frameLimit, frameCount), m_waveChannels, m_byteBuffer);
+  framesRead  = m_readDataFunc (m_fileHandle, frameBuf, framesTotal, m_waveChannels, m_byteBuffer);
   m_bytesRead = m_waveFrameSize * framesRead;
   if ((m_bytesRemaining -= m_bytesRead) < 0)
   {
     m_bytesRead = unsigned (m_bytesRead + m_bytesRemaining);
     framesRead  = m_bytesRead / m_waveFrameSize;
+    if (framesRead < framesTotal) memset (&frameBuf[framesRead * m_waveChannels], 0, (framesTotal - framesRead) * m_waveChannels * sizeof (int32_t));
   }
   m_chunkLength += m_bytesRead;
 
