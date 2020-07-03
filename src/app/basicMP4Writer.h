@@ -35,8 +35,8 @@ private:
   int      m_fileHandle;
   unsigned m_frameCount;
   unsigned m_frameLength;
-  unsigned m_m4aMediaSize;
-  unsigned m_m4aMediaOffset; // offset of first frame serialized to file
+  uint32_t m_mediaOffset;  // offset of first mdat payload
+  uint32_t m_mediaSize; // number of bytes of mdat content
   unsigned m_pregapLength; // encoder look-ahead, pre-roll
   unsigned m_rndAccPeriod;  // random-access (RA) interval
   unsigned m_sampleRate;
