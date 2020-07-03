@@ -35,7 +35,8 @@ private:
   int      m_fileHandle;
   unsigned m_frameCount;
   unsigned m_frameLength;
-  unsigned m_m4aMdatSize;
+  unsigned m_m4aMediaSize;
+  unsigned m_m4aMediaOffset; // offset of first frame serialized to file
   unsigned m_pregapLength; // encoder look-ahead, pre-roll
   unsigned m_rndAccPeriod;  // random-access (RA) interval
   unsigned m_sampleRate;

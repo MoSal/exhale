@@ -73,7 +73,7 @@ static uint16_t toUShortValue (const uint8_t hiByte, const uint8_t loByte)
 // public functions
 int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteCount)
 {
-  if ((m_fileHandle == -1) || (m_m4aMdatSize > 0xFFFFFFF0u - byteCount))
+  if ((m_fileHandle == -1) || (m_m4aMediaSize > 0xFFFFFFF0u - byteCount))
   {
     return 1; // invalid file handle or file getting too big
   }
@@ -86,9 +86,9 @@ int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteCount
 
   if (((m_frameCount++) % m_rndAccPeriod) == 0) // add RAP to list (stco)
   {
-    m_rndAccOffsets.push_back (m_m4aMdatSize);
+    m_rndAccOffsets.push_back (m_m4aMediaSize);
   }
-  m_m4aMdatSize += byteCount;
+  m_m4aMediaSize += byteCount;
 
   return _WRITE (m_fileHandle, byteBuf, byteCount);  // write access unit
 }
@@ -104,11 +104,44 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const uint32_t stcoAtomSize = STSX_BSIZE + (uint32_t) m_rndAccOffsets.size () * 4;
 #ifndef NO_FIX_FOR_ISSUE_1
   const uint32_t stssAtomSize = STSX_BSIZE;
-  const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize + stssAtomSize;
-  const uint32_t  headerBytes = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + stscAtomSize + stcoAtomSize + stssAtomSize;
+  // The following code creates a 'prol' sample group with a repeating pattern of membership,
+  // indicating that the first sample in each increment of m_rndAccPeriod samples is a member and therefore an IF,
+  // and the remainder are not.
+  // If the encoder is changed to signal the locations of IFs by some other means or in some other arrangement,
+  // either the code that creates the 'csgp' atom below must also be altered accordingly
+  // or new code that creates an 'sbgp' atom instead must be substituted.
+  const uint32_t sgpdAtomSize = STSX_BSIZE + 4 /* defaultLength == 2 */ + 4 /* entryCount == 1 */ + 2 /* rollDistance */;
+  uint32_t patternLengthSize = 0;
+  if (m_rndAccPeriod > UINT16_MAX)
+  {
+    patternLengthSize = 4;
+  }
+  else if (m_rndAccPeriod > UINT8_MAX)
+  {
+    patternLengthSize = 2;
+  }
+  else
+  {
+    patternLengthSize = 1;
+  }
+  const uint32_t compactPatternLength = (m_rndAccPeriod + 1) >> 1; // 4 bits per index, padded for byte alignment
+  uint32_t sampleCountSize = 0;
+  if (m_frameCount > UINT16_MAX)
+  {
+    sampleCountSize = 4;
+  }
+  else if (m_frameCount > UINT8_MAX)
+  {
+    sampleCountSize = 2;
+  }
+  else
+  {
+    sampleCountSize = 1;
+  }
+  const uint32_t csgpAtomSize = STSX_BSIZE + 4 /* patternCount == 1 */ + patternLengthSize /* patternLength */ + sampleCountSize /* sampleCount */ + compactPatternLength;
+  const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize + stssAtomSize + sgpdAtomSize + csgpAtomSize;
 #else
   const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize;
-  const uint32_t  headerBytes = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + stscAtomSize + stcoAtomSize;
 #endif
   const uint32_t moovAtomSize = toBigEndian (toUShortValue (MOOV_BSIZE) + stblIncrSize);
   const uint32_t trakAtomSize = toBigEndian (toUShortValue (TRAK_BSIZE) + stblIncrSize);
@@ -120,7 +153,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   uint32_t* const header4Byte = (uint32_t* const) m_staticHeader;
   int bytesWritten = 0;
 
-  if ((m_fileHandle == -1) || (m_m4aMdatSize > 0xFFFFFFF0u - headerBytes))
+  if ((m_fileHandle == -1) || (m_m4aMediaSize > 0xFFFFFFF0u - m_m4aMediaOffset))
   {
     return 1; // invalid file handle or file getting too big
   }
@@ -217,7 +250,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   // add header size corrected random-access offsets to file
   for (uint32_t i = 0; i < (uint32_t) m_rndAccOffsets.size (); i++)
   {
-    const uint32_t rndAccOffset = m_rndAccOffsets.at (i) + headerBytes;
+    const uint32_t rndAccOffset = m_rndAccOffsets.at (i) + m_m4aMediaOffset;
 
     m_dynamicHeader.push_back ((rndAccOffset >> 24) & UCHAR_MAX);
     m_dynamicHeader.push_back ((rndAccOffset >> 16) & UCHAR_MAX);
@@ -235,12 +268,97 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back ((sgpdAtomSize >> 24) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((sgpdAtomSize >> 16) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((sgpdAtomSize >>  8) & UCHAR_MAX);
+  m_dynamicHeader.push_back ( sgpdAtomSize        & UCHAR_MAX);
+  m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x67);
+  m_dynamicHeader.push_back (0x70); m_dynamicHeader.push_back (0x64); // sgpd
+  m_dynamicHeader.push_back (0x01); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x70); m_dynamicHeader.push_back (0x72);
+  m_dynamicHeader.push_back (0x6F); m_dynamicHeader.push_back (0x6C); // prol
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x02);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
+  m_dynamicHeader.push_back ((csgpAtomSize >> 24) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((csgpAtomSize >> 16) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((csgpAtomSize >>  8) & UCHAR_MAX);
+  m_dynamicHeader.push_back ( csgpAtomSize        & UCHAR_MAX);
+  m_dynamicHeader.push_back (0x63); m_dynamicHeader.push_back (0x73);
+  m_dynamicHeader.push_back (0x67); m_dynamicHeader.push_back (0x70); // csgp
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back ((patternLengthSize > 2 ? (patternLengthSize - 1) : patternLengthSize) << 4 | (sampleCountSize > 2 ? (sampleCountSize - 1) : sampleCountSize) << 2);
+  m_dynamicHeader.push_back (0x70); m_dynamicHeader.push_back (0x72);
+  m_dynamicHeader.push_back (0x6F); m_dynamicHeader.push_back (0x6C); // prol
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
+  if (patternLengthSize > 2)
+  {
+    m_dynamicHeader.push_back ((m_rndAccPeriod >> 24) & UCHAR_MAX);
+    m_dynamicHeader.push_back ((m_rndAccPeriod >> 16) & UCHAR_MAX);
+  }
+  if (patternLengthSize > 1)
+  {
+    m_dynamicHeader.push_back ((m_rndAccPeriod >>  8) & UCHAR_MAX);
+  }
+  m_dynamicHeader.push_back ( m_rndAccPeriod        & UCHAR_MAX);
+  if (sampleCountSize > 2)
+  {
+    m_dynamicHeader.push_back ((m_frameCount >> 24) & UCHAR_MAX);
+    m_dynamicHeader.push_back ((m_frameCount >> 16) & UCHAR_MAX);
+  }
+  if (sampleCountSize > 1)
+  {
+    m_dynamicHeader.push_back ((m_frameCount >>  8) & UCHAR_MAX);
+  }
+  m_dynamicHeader.push_back ( m_frameCount        & UCHAR_MAX);
+  m_dynamicHeader.push_back ( (0x01 << 4) | 0x00 );  // the first frame is a member of the 'prol' group and the remainder are not
+  for (uint32_t pNdx = 1; pNdx < compactPatternLength; ++pNdx)
+  {
+    // remaining pairs of non-members
+    m_dynamicHeader.push_back (0x00);
+  }
 #endif
 
-  m_dynamicHeader.push_back ((m_m4aMdatSize >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((m_m4aMdatSize >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((m_m4aMdatSize >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( m_m4aMdatSize        & UCHAR_MAX);
+  uint32_t moovAndMdatOverhead = STAT_HEADER_SIZE + m_dynamicHeader.size() + 8;
+  if (moovAndMdatOverhead > m_m4aMediaOffset)
+  {
+    return 1; // header has grown to encroach upon the media data. Fatal error.
+    // Time to reconsider the calculation of estimHeaderSize in BasicMP4Writer::initHeader.
+  }
+  if (moovAndMdatOverhead < m_m4aMediaOffset)
+  {
+    const uint32_t freeSize = m_m4aMediaOffset - moovAndMdatOverhead;
+    if (freeSize >= 8)
+    {
+      // insert a 'free' atom between the 'moov' and 'mdat' atoms
+      m_dynamicHeader.push_back ((freeSize >> 24) & UCHAR_MAX);
+      m_dynamicHeader.push_back ((freeSize >> 16) & UCHAR_MAX);
+      m_dynamicHeader.push_back ((freeSize >>  8) & UCHAR_MAX);
+      m_dynamicHeader.push_back ( freeSize        & UCHAR_MAX);
+      m_dynamicHeader.push_back (0x66); m_dynamicHeader.push_back (0x72);
+      m_dynamicHeader.push_back (0x65); m_dynamicHeader.push_back (0x65); // free
+      for (uint32_t fNdx = 8; fNdx < freeSize; ++fNdx)
+      {
+        m_dynamicHeader.push_back (0x00);
+      }
+    }
+    else
+    {
+      // start the 'mdat' atom early with a small amount of unused data before the first frame
+      m_m4aMediaSize += freeSize;
+    }
+  }
+
+  uint32_t mdatSize = m_m4aMediaSize + 8;
+  m_dynamicHeader.push_back ((mdatSize >> 24) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((mdatSize >> 16) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((mdatSize >>  8) & UCHAR_MAX);
+  m_dynamicHeader.push_back ( mdatSize        & UCHAR_MAX);
   m_dynamicHeader.push_back (0x6D); m_dynamicHeader.push_back (0x64);
   m_dynamicHeader.push_back (0x61); m_dynamicHeader.push_back (0x74); // mdat
 
@@ -275,7 +393,7 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
   const unsigned finalChunk = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
 #ifndef NO_FIX_FOR_ISSUE_1
-  const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6+4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 4 +
+  const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6+4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 10 +
 #else
   const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6+4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 3 +
 #endif
@@ -286,6 +404,7 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
   {
     bytesWritten += _WRITE (m_fileHandle, m_staticHeader, __min (i, STAT_HEADER_SIZE));
   }
+  m_m4aMediaOffset = bytesWritten;  // first frame will be written at this offset
   return bytesWritten;
 #endif
 }
@@ -380,7 +499,8 @@ void BasicMP4Writer::reset (const unsigned frameLength /*= 0*/, const unsigned p
   m_ascSizeM5    = 0;
   m_frameCount   = 0;
   m_frameLength  = frameLength;
-  m_m4aMdatSize  = 8; // bytes for mdat header
+  m_m4aMediaSize  = 0; // bytes of media data (i.e. audio frames)
+  m_m4aMediaOffset = 0; // offset of first byte of media data
   m_pregapLength = pregapLength;
   m_rndAccPeriod = raPeriod;
   m_sampleRate   = 0;
