@@ -31,7 +31,8 @@ bool BasicWavReader::readRiffHeader ()
 {
   uint8_t b[FILE_HEADER_SIZE] = {0};  // temp. byte buffer
 
-  if ((m_bytesRead = _READ (m_fileHandle, b, FILE_HEADER_SIZE)) != FILE_HEADER_SIZE) return false; // error
+  m_bytesRead = _READ (m_fileHandle, b, 8);
+  if ((m_bytesRead += _READ (m_fileHandle, &b[8], FILE_HEADER_SIZE - 8)) != FILE_HEADER_SIZE) return false; // error
   m_bytesRemaining -= m_bytesRead;
   m_chunkLength = fourBytesToLength (&b[4], m_bytesRemaining) - 4; // minus 4 bytes for WAVE tag
 
@@ -48,9 +49,18 @@ bool BasicWavReader::readFormatChunk ()
   {
     return false; // fmt_ chunk invalid or read incomplete
   }
-  if ((m_bytesRead = _READ (m_fileHandle, b, (unsigned) m_chunkLength)) != m_chunkLength) return false; // error
+  m_bytesRead = _READ (m_fileHandle, b, 8);
+  for (int64_t i = 8; i < m_chunkLength; i += 2) m_bytesRead += _READ (m_fileHandle, &b[i], 2);
+  if (m_bytesRead != m_chunkLength) return false; // error
   m_bytesRemaining -= m_bytesRead;
 
+  if ((b[0] == 0xFE) && (b[1] == 0xFF) && (m_chunkLength == CHUNK_FORMAT_MAX) && (b[16] == CHUNK_FORMAT_MAX - CHUNK_FORMAT_SIZE - 2) &&
+      (b[17] == 0) && (b[18] == b[14]) && (b[19] == 0) && ((b[25] | b[26] | b[27] | b[28] | b[29] | b[31] | b[33] | b[34] | b[36]) == 0))
+  {
+    m_waveDataType = WAV_TYPE (b[24]-1); // extensible WAV
+    b[1] = 0;
+  }
+  else
   m_waveDataType  = WAV_TYPE (b[0]-1); // 1: PCM, 3: float
   m_waveChannels  = b[2];  // only 1, 2, ..., 63 supported
   m_waveFrameRate = reverseFourBytes (&b[4]);  // frames/s

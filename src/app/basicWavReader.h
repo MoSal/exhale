@@ -16,7 +16,7 @@
 // constant data sizes & limits
 #define BWR_BUFFERED_READ        1 // faster reader
 #define BWR_READ_FRACT           5 // 2^-READ_FRACT
-#define CHUNK_FORMAT_MAX        20
+#define CHUNK_FORMAT_MAX        40
 #define CHUNK_FORMAT_SIZE       16
 #define CHUNK_HEADER_SIZE        8
 #define FILE_HEADER_SIZE        12

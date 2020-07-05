@@ -272,11 +272,6 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back (0x6F); m_dynamicHeader.push_back (0x6C); // prol
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
-  if (patternLengthSize > 2)
-  {
-    m_dynamicHeader.push_back ((m_rndAccPeriod >> 24) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((m_rndAccPeriod >> 16) & UCHAR_MAX);
-  }
   if (patternLengthSize > 1)
   {
     m_dynamicHeader.push_back ((m_rndAccPeriod >>  8) & UCHAR_MAX);
