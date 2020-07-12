@@ -55,8 +55,17 @@
 
 #if ENABLE_RESAMPLING
 static const int16_t usfc2x[32] = { // 2x upsampling filter coefficients
-  8913, -13785, 8142, -5681, 4281, -3367, 2716, -2225, 1840, -1530, 1275, -1062, 883, -732,
-  604, -495, 402, -325, 260, -205, 160, -124, 94, -70, 51, -36, 25, -16, 11, -6, 3, -1
+  (83359-65536), -27563, 16273, -11344, 8541, -6708, 5403, -4419, 3647, -3025, 2514, -2088, 1730,
+  -1428, 1173, -957, 775, -622, 494, -388, 300, -230, 172, -127, 91, -63, 43, -27, 16, -9, 4, -1
+};
+
+static const int16_t rsfc3x[128] = {// 3x resampling filter coefficients
+  21846, 6711, (36099-32768), 0, -18000, -14370, 0, 10208, 8901, 0, -7062, -6389, 0, 5347, 4934, 0, -4258,
+  -3977, 0, 3499, 3294, 0, -2937, -2780, 0, 2501, 2376, 0, -2151, -2050, 0, 1864, 1779, 0, -1623, -1551,
+  0, 1417, 1355, 0, -1240, -1187, 0, 1086, 1040, 0, -952, -910, 0, 833, 797, 0, -728, -696, 0, 635, 607,
+  0, -553, -528, 0, 480, 457, 0, -415, -395, 0, 358, 340, 0, -307, -291, 0, 262, 248, 0, -223, -211, 0,
+  188, 177, 0, -158, -149, 0, 132, 124, 0, -109, -102, 0, 90, 84, 0, -73, -68, 0, 59, 55, 0, -47, -43,
+  0, 37, 34, 0, -29, -26, 0, 22, 20, 0, -16, -15, 0, 12, 10, 0, -8, -7, 0, 5, 5, 0, -3, -3, 0, 2
 };
 
 static bool eaInitUpsampler2x (int32_t** upsampleBuffer, const uint16_t bitRateMode, const uint16_t sampleRate,
@@ -78,11 +87,31 @@ static bool eaInitUpsampler2x (int32_t** upsampleBuffer, const uint16_t bitRateM
   return useUpsampler;
 }
 
+static bool eaInitDownsampler (int32_t** resampleBuffer, const uint16_t bitRateMode, const uint16_t sampleRate,
+                               const uint16_t frameSize, const uint16_t numChannels)
+{
+  const uint16_t inLength = (frameSize * 3u) >> 1;
+  const uint16_t chLength = inLength + (frameSize >> 3);
+  const bool useResampler = (frameSize >= 512 && bitRateMode == 1 && sampleRate == 48000);
+
+  if (useResampler)
+  {
+    if ((*resampleBuffer = (int32_t*) malloc (chLength * numChannels * sizeof (int32_t))) == nullptr) return false;
+
+    for (uint16_t ch = 0; ch < numChannels; ch++)
+    {
+      memset (*resampleBuffer + inLength + chLength * ch, 0, (chLength - inLength) * sizeof (int32_t));
+    }
+  }
+  return useResampler;
+}
+
 static void eaApplyUpsampler2x (int32_t* const pcmBuffer, int32_t* const upsampleBuffer,
                                 const uint16_t frameSize, const uint16_t numChannels, const bool firstFrame = false)
 {
-  const uint16_t inLength = (frameSize >> 1) + (firstFrame ? 32 : 0);
-  const uint16_t chLength = (frameSize >> 1) + (32 << 1);
+  const int16_t lookahead = 32;
+  const uint16_t inLength = (frameSize >> 1) + (firstFrame ? lookahead : 0);
+  const uint16_t chLength = (frameSize >> 1) + (lookahead << 1);
   uint16_t ch;
 
   for (ch = 0; ch < numChannels; ch++) // step 1: add deinterleaved input samples to resampling buffer
@@ -108,15 +137,87 @@ static void eaApplyUpsampler2x (int32_t* const pcmBuffer, int32_t* const upsampl
   for (ch = 0; ch < numChannels; ch++) // step 2: upsample, reinterleave, and save to PCM input buffer
   {
     /*in*/int32_t* chPcmBuf = &pcmBuffer[ch];
-    const int32_t* chUpsBuf = &upsampleBuffer[chLength * ch + 32];
+    const int32_t* chUpsBuf = &upsampleBuffer[chLength * ch + lookahead];
 
-    for (uint16_t i = (frameSize >> 1); i > 0; i--, chPcmBuf += numChannels, chUpsBuf++)
+    for (uint16_t i = frameSize >> 1; i > 0; i--, chUpsBuf++)
     {
-      int64_t r = (chUpsBuf[0] + (int64_t) chUpsBuf[1]) * (usfc2x[0] - SHRT_MIN);
+      int64_t r = (chUpsBuf[0] + (int64_t) chUpsBuf[1]) * (usfc2x[0] - 2 * SHRT_MIN);
 
-      for (int16_t c = 32 - 1; c > 0; c--) r += (chUpsBuf[-c] + (int64_t) chUpsBuf[c + 1]) * usfc2x[c];
-      *chPcmBuf = *chUpsBuf;  chPcmBuf += numChannels; // 1-to-1 mapping
-      *chPcmBuf = int32_t ((r - SHRT_MIN) >> 16); // interpolated sample
+      for (int16_t c = lookahead - 1; c > 0; c--)
+      {
+        r += (chUpsBuf[-c] + (int64_t) chUpsBuf[c + 1]) * usfc2x[c];
+      }
+      *chPcmBuf = *chUpsBuf; // no filtering necessary, just copy sample
+      if (*chPcmBuf < MIN_VALUE_AUDIO24) *chPcmBuf = MIN_VALUE_AUDIO24;
+      else
+      if (*chPcmBuf > MAX_VALUE_AUDIO24) *chPcmBuf = MAX_VALUE_AUDIO24;
+      chPcmBuf += numChannels;
+
+      *chPcmBuf = int32_t ((r - 2 * SHRT_MIN) >> 17);  // interp. sample
+      if (*chPcmBuf < MIN_VALUE_AUDIO24) *chPcmBuf = MIN_VALUE_AUDIO24;
+      else
+      if (*chPcmBuf > MAX_VALUE_AUDIO24) *chPcmBuf = MAX_VALUE_AUDIO24;
+      chPcmBuf += numChannels;
+    }
+  }
+}
+
+static void eaApplyDownsampler (int32_t* const pcmBuffer, int32_t* const resampleBuffer,
+                                const uint16_t frameSize, const uint16_t numChannels, const bool firstFrame = false)
+{
+  const int16_t lookahead = frameSize >> 4;
+  const uint16_t inLength = ((frameSize * 3u) >> 1) + (firstFrame ? lookahead : 0);
+  const uint16_t chLength = ((frameSize * 3u) >> 1) + (lookahead << 1);
+  uint16_t ch;
+
+  for (ch = 0; ch < numChannels; ch++) // step 1: add deinterleaved input samples to resampling buffer
+  {
+    int32_t* chPcmBuf = &pcmBuffer[ch];
+    int32_t* chResBuf = &resampleBuffer[chLength * ch];
+# if 1
+    if (firstFrame) // construct leading sample values via extrapolation
+    {
+      memset (chResBuf, 0, (lookahead - 32) * sizeof (int32_t));
+      for (int8_t i = 0; i < 32; i++) chResBuf[lookahead - 32 + i] = (*chPcmBuf * i + (32 >> 1)) >> 5;
+    }
+    else
+# endif
+    memcpy (chResBuf, &chResBuf[inLength], (chLength - inLength) * sizeof (int32_t)); // update memory
+    chResBuf += chLength - inLength;
+
+    for (uint16_t i = inLength; i > 0; i--, chPcmBuf += numChannels, chResBuf++)
+    {
+      *chResBuf = *chPcmBuf; // deinterleave, store in resampling buffer
+    }
+  }
+
+  for (ch = 0; ch < numChannels; ch++) // step 2: resample, reinterleave, and save to PCM input buffer
+  {
+    /*in*/int32_t* chPcmBuf = &pcmBuffer[ch];
+    const int32_t* chResBuf = &resampleBuffer[chLength * ch + lookahead];
+
+    for (uint16_t i = frameSize >> 1; i > 0; i--, chResBuf += 3)
+    {
+      int64_t r1 = (int64_t) chResBuf[0] * (rsfc3x[0] - 2 * SHRT_MIN) - (chResBuf[-1] + (int64_t) chResBuf[1]) * SHRT_MIN +
+                   (int64_t) chResBuf[-lookahead] + (int64_t) chResBuf[lookahead];
+      int64_t r2 = (chResBuf[1] + (int64_t) chResBuf[2]) * (rsfc3x[1] - 2 * SHRT_MIN);
+
+      for (int16_t c = lookahead - 1; c > 0; c--)
+      {
+        r1 += (chResBuf[-c] + (int64_t) chResBuf[c]) * rsfc3x[c << 1];
+        r2 += (chResBuf[1 - c] + (int64_t) chResBuf[c + 2]) * rsfc3x[(c << 1) + 1];
+      }
+      *chPcmBuf = int32_t ((r1 - 2 * SHRT_MIN) >> 17); // lowpass sample
+      if (*chPcmBuf < MIN_VALUE_AUDIO24) *chPcmBuf = MIN_VALUE_AUDIO24;
+      else
+      if (*chPcmBuf > MAX_VALUE_AUDIO24) *chPcmBuf = MAX_VALUE_AUDIO24;
+      chPcmBuf += numChannels;
+
+      *chPcmBuf = int32_t ((r2 - 2 * SHRT_MIN) >> 17); // interp. sample
+      if (*chPcmBuf < MIN_VALUE_AUDIO24) *chPcmBuf = MIN_VALUE_AUDIO24;
+      else
+      if (*chPcmBuf > MAX_VALUE_AUDIO24) *chPcmBuf = MAX_VALUE_AUDIO24;
+      chPcmBuf += numChannels;
     }
   }
 }
@@ -338,6 +439,7 @@ int main (const int argc, char* argv[])
   }
 
   const unsigned frameLength = (3 + coreSbrFrameLengthIndex) << 8;
+  const unsigned startLength = (frameLength * 25) >> 4; // encoder PCM look-ahead
 
   if (readStdin) // configure stdin
   {
@@ -411,9 +513,9 @@ int main (const int argc, char* argv[])
   }
 
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-  if ((wavReader.open (inFileHandle, frameLength, readStdin ? LLONG_MAX : _filelengthi64 (inFileHandle)) != 0) ||
+  if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : _filelengthi64 (inFileHandle)) != 0) ||
 #else // Linux, MacOS, Unix
-  if ((wavReader.open (inFileHandle, frameLength, readStdin ? LLONG_MAX : lseek (inFileHandle, 0, 2 /*SEEK_END*/)) != 0) ||
+  if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : lseek (inFileHandle, 0, 2 /*SEEK_END*/)) != 0) ||
 #endif
       (wavReader.getNumChannels () >= 7))
   {
@@ -446,7 +548,11 @@ int main (const int argc, char* argv[])
       goto mainFinish;  // bad output string
     }
 
-    if (wavReader.getSampleRate () > 32100 + (unsigned) variableCoreBitRateMode * 12000 + (variableCoreBitRateMode >> 2) * 3900)
+    if (wavReader.getSampleRate () > 32100 + (unsigned) variableCoreBitRateMode * 12000 + (variableCoreBitRateMode >> 2) * 3900
+#if ENABLE_RESAMPLING
+        && (variableCoreBitRateMode != 1 || wavReader.getSampleRate () != 48000)
+#endif
+        )
     {
       i = (variableCoreBitRateMode > 4 ? 96 : __min (64, 32 + variableCoreBitRateMode * 12));
       fprintf_s (stderr, " ERROR during encoding! Input sample rate must be <=%d kHz for preset mode %d!\n\n", i, variableCoreBitRateMode);
@@ -456,6 +562,13 @@ int main (const int argc, char* argv[])
     }
     if (wavReader.getSampleRate () > 32000 && variableCoreBitRateMode == 1)
     {
+#if ENABLE_RESAMPLING
+      if (wavReader.getSampleRate () == 48000)
+      {
+        fprintf_s (stdout, " NOTE: Downsampling the input audio from 48 kHz to 32 kHz with preset mode %d\n\n", variableCoreBitRateMode);
+      }
+      else
+#endif
       fprintf_s (stderr, " WARNING: The input sampling rate should be 32 kHz or less for preset mode %d!\n\n", variableCoreBitRateMode);
     }
 
@@ -503,15 +616,23 @@ int main (const int argc, char* argv[])
   }
   else
   {
-    const unsigned startLength = (frameLength * 25) >> 4; // encoder PCM look-ahead
     const unsigned numChannels = wavReader.getNumChannels ();
-    const unsigned inFrameSize = frameLength * sizeof (int32_t);
     const unsigned inSampDepth = wavReader.getBitDepth ();
 #if ENABLE_RESAMPLING
     const bool enableUpsampler = eaInitUpsampler2x (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels);
-    const uint16_t firstLength = uint16_t (enableUpsampler ? (frameLength >> 1) + 32 : frameLength); // upsampler look-ahead
-    const int64_t expectLength = (wavReader.getDataBytesLeft () << (enableUpsampler ? 1 : 0)) / int64_t ((numChannels * inSampDepth) >> 3);
+    const bool enableResampler = eaInitDownsampler (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels);
+    const uint16_t firstLength = uint16_t (enableUpsampler ? (frameLength >> 1) + 32 : (enableResampler ? startLength : frameLength));
+    const unsigned inFrameSize = (enableResampler ? startLength : frameLength) * sizeof (int32_t); // max buffer size
+    const unsigned resampRatio = (enableResampler ? 3 : 1); // for resampling ratio
+    const unsigned resampShift = (enableResampler || enableUpsampler ? 1 : 0);
+    const int64_t expectLength = (wavReader.getDataBytesLeft () << resampShift) / int64_t ((numChannels * inSampDepth * resampRatio) >> 3);
+
+    if (enableUpsampler) // notify by printf
+    {
+      fprintf_s (stdout, " NOTE: Upsampling the input audio from %d kHz to %d kHz with preset mode %d\n\n", i / 1000, i / 500, variableCoreBitRateMode);
+    }
 #else
+    const unsigned inFrameSize = frameLength * sizeof (int32_t); // max buffer size
     const int64_t expectLength = wavReader.getDataBytesLeft () / int64_t ((numChannels * inSampDepth) >> 3);
 #endif
     // allocate dynamic frame memory buffers
@@ -539,11 +660,11 @@ int main (const int argc, char* argv[])
     else // start coding loop, show progress
     {
 #if ENABLE_RESAMPLING
-      const unsigned sampleRate  = wavReader.getSampleRate () << (enableUpsampler ? 1 : 0);
+      const unsigned sampleRate  = (wavReader.getSampleRate () << resampShift) / resampRatio;
 #else
       const unsigned sampleRate  = wavReader.getSampleRate ();
 #endif
-      const unsigned indepPeriod = (sampleRate < 48000 ? sampleRate / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
+      const unsigned indepPeriod = (sampleRate < 48000 ? (sampleRate - 320) / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
       const unsigned mod3Percent = unsigned ((expectLength * (3 + coreSbrFrameLengthIndex)) >> 17);
       uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
       uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
@@ -613,8 +734,10 @@ int main (const int argc, char* argv[])
       i = 1; // for progress bar
 
 #if ENABLE_RESAMPLING
-      // upsample initial frame if necessary
+      // resample initial frame if necessary
       if (enableUpsampler) eaApplyUpsampler2x (inPcmData, inPcmRsmp, frameLength, numChannels, true);
+      else
+      if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels, true);
 #endif
       // initial frame, encode look-ahead AU
       if ((bw = exhaleEnc.encodeLookahead ()) < 3)
@@ -638,14 +761,16 @@ int main (const int argc, char* argv[])
       byteCount += bw;
 
 #if ENABLE_RESAMPLING
-      while (wavReader.read (inPcmData, frameLength >> (enableUpsampler ? 1 : 0)) > 0) // read a new audio frame
+      while (wavReader.read (inPcmData, (frameLength * resampRatio) >> resampShift) > 0) // read a new audio frame
 #else
       while (wavReader.read (inPcmData, frameLength) > 0) // read a new audio frame
 #endif
       {
 #if ENABLE_RESAMPLING
-        // upsample audio frame if necessary
+        // resample audio frame if necessary
         if (enableUpsampler) eaApplyUpsampler2x (inPcmData, inPcmRsmp, frameLength, numChannels);
+        else
+        if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels);
 #endif
         // frame coding loop, encode next AU
         if ((bw = exhaleEnc.encodeFrame ()) < 3)
@@ -678,8 +803,10 @@ int main (const int argc, char* argv[])
       } // frame loop
 
 #if ENABLE_RESAMPLING
-      // upsample the last frame if necessary
+      // resample the last frame if necessary
       if (enableUpsampler) eaApplyUpsampler2x (inPcmData, inPcmRsmp, frameLength, numChannels);
+      else
+      if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels);
 #endif
       // end of coding loop, encode final AU
       if ((bw = exhaleEnc.encodeFrame ()) < 3)
@@ -703,16 +830,20 @@ int main (const int argc, char* argv[])
       byteCount += bw;
 
 #if ENABLE_RESAMPLING
-      const int64_t actualLength = (wavReader.getDataBytesRead () << (enableUpsampler ? 1 : 0)) / int64_t ((numChannels * inSampDepth) >> 3);
+      const int64_t actualLength = (wavReader.getDataBytesRead () << resampShift) / int64_t ((numChannels * inSampDepth * resampRatio) >> 3);
 #else
       const int64_t actualLength = wavReader.getDataBytesRead () / int64_t ((numChannels * inSampDepth) >> 3);
 #endif
+   /* NOTE: the following "if" is, as far as I can tell, correct, but some decoders
+      with DRC processing may decode too few samples with it. Hence, I disabled it.
       if (((actualLength + startLength) % frameLength) > 0) // flush trailing audio
-      {
+   */ {
         memset (inPcmData, 0, inFrameSize * numChannels);
 #if ENABLE_RESAMPLING
-        // upsample flush frame if necessary
+        // resample flush frame if necessary
         if (enableUpsampler) eaApplyUpsampler2x (inPcmData, inPcmRsmp, frameLength, numChannels);
+        else
+        if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels);
 #endif
         // flush remaining audio into new AU
         if ((bw = exhaleEnc.encodeFrame ()) < 3)

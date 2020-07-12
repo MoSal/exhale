@@ -55,7 +55,7 @@ bool BasicWavReader::readFormatChunk ()
   m_bytesRemaining -= m_bytesRead;
 
   if ((b[0] == 0xFE) && (b[1] == 0xFF) && (m_chunkLength == CHUNK_FORMAT_MAX) && (b[16] == CHUNK_FORMAT_MAX - CHUNK_FORMAT_SIZE - 2) &&
-      (b[17] == 0) && (b[18] == b[14]) && (b[19] == 0) && ((b[25] | b[26] | b[27] | b[28] | b[29] | b[31] | b[33] | b[34] | b[36]) == 0))
+      (b[17] == 0) && (b[18] == b[14]) && ((b[19] | b[25] | b[26] | b[27] | b[28] | b[29] | b[31] | b[33] | b[34] | b[36]) == 0))
   {
     m_waveDataType = WAV_TYPE (b[24]-1); // extensible WAV
     b[1] = 0;

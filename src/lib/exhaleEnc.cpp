@@ -1022,8 +1022,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_bitRateMode <= 3 || !eightShorts))
         {
           const uint32_t maxSfbCurr = (eightShorts ? (samplingRate < 37566 ? 14 : brModeAndFsToMaxSfbShort (m_bitRateMode, samplingRate)) : maxSfbLong);
+          const bool keepMaxSfbCurr = ((samplingRate < 37566) || (samplingRate >= 46009 && samplingRate < 55426 && eightShorts));
           const uint8_t numSwbFrame = __min ((numSwbCh * ((maxSfbCh == maxSfbCurr) || (m_bitRateMode <= 2) ? 4u : 3u)) >> 2,
-                                      (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || samplingRate < 37566 ? 0 : 1));
+                                      (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || keepMaxSfbCurr ? 0 : 1));
 #ifndef NO_DTX_MODE
           const bool prvEightShorts = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT);
 
