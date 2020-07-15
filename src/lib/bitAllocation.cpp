@@ -496,7 +496,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
 
       for (b = 0; b < maxSfbInCh; b++) // improve step-sizes by limiting and attenuation
       {
-        grpStepSizes[b] = uint32_t ((__max (grpRmsMin, grpStepSizes[b]) * s * (m_tempSfbValue[b] + 1ui64) - (1u << 14)) >> 15);
+        grpStepSizes[b] = uint32_t ((__max (grpRmsMin, grpStepSizes[b]) * s * (m_tempSfbValue[b] + 1u) + (1u << 14)) >> 15);
       }
     } // for gr
   } // for ch
