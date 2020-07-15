@@ -328,13 +328,6 @@ static inline void findActualBandwidthShort (uint8_t* const maxSfbShort, const u
   if (*maxSfbShort > maxSfb) *maxSfbShort = maxSfb;
 }
 
-static inline uint32_t squareMeanRoot (const uint32_t value1, const uint32_t value2)
-{
-  const double meanRoot = (sqrt ((double) value1) + sqrt ((double) value2)) * 0.5;
-
-  return uint32_t (meanRoot * meanRoot + 0.5);
-}
-
 static inline uint8_t stereoCorrGrouping (const SfbGroupData& grpData, const unsigned nSamplesInFrame, uint8_t* stereoCorrData)
 {
   const uint16_t numWinGroup = grpData.numWindowGroups;
@@ -780,7 +773,7 @@ uint32_t ExhaleEncoder::getThr (const unsigned channelIndex, const unsigned sfbI
   uint32_t sumSfbLoud = 0;
 
   for (int16_t s = 31; s >= 0; s--) sumSfbLoud += sfbLoudMem[s];
-  sumSfbLoud = (sumSfbLoud + 16) >> 5;
+  sumSfbLoud = (sumSfbLoud + 32) >> 6; // -6 dB
 
   return sumSfbLoud * (sumSfbLoud >> (toSamplingRate (m_frequencyIdx) >> 13)); // scaled SMR
 }
@@ -792,9 +785,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
-  const uint32_t maxSfbLong      = (samplingRate < 37566 ? 51 /*32 kHz*/ : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+  const uint32_t maxSfbLong      = (samplingRate < 37566 ? MAX_NUM_SWB_LONG : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
   const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 24000 ? 32 : 34) - __min (3, m_bitRateMode) : 37) - (nChannels >> 1);
-  const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (38, 3 + (samplingRate >> 10) + (samplingRate >> 13)) - (nChannels >> 1)
+  const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 3 + (samplingRate >> 10) + (samplingRate >> 13) - (nChannels >> 1))
                                    : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
@@ -828,7 +821,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         const unsigned lfConst = (samplingRate < 27713 ? 1 : 2);
         const unsigned lfAtten = 4 + b * lfConst; // LF SNR boost, cf my M.Sc. thesis, p. 54
         const uint8_t sfbWidth = off[b + 1] - off[b];
-        const uint64_t   scale = scaleBr * __min (32, lfAtten); // rate control part 1
+        const uint64_t   scale = scaleBr * __min (32, lfAtten); // rate control part 1 (SFB)
 
         // scale step-sizes according to VBR mode, then derive scale factors from step-sizes
         stepSizes[b] = uint32_t (__max (BA_EPS, ((1u << 9) + stepSizes[b] * scale) >> 10));
@@ -839,7 +832,6 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
     }
     else // SCE or CPE: bandwidth-to-max_sfb mapping, short-window grouping for each channel
     {
-      const uint32_t redFactor = __max ((samplingRate < 27713 ? 2 : 1), __min (3, m_bitRateMode)) - (coreConfig.stereoConfig >> 3);
       const bool  eightShorts0 = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
       const TnsData&  tnsData0 = coreConfig.tnsData[0];
       const TnsData&  tnsData1 = coreConfig.tnsData[1];
@@ -947,6 +939,10 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       }
       else memset (coreConfig.stereoDataCurr, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
 
+      errorValue |= m_bitAllocator.imprSfbStepSizes (m_scaleFacData, m_numSwbShort, m_mdctSignals, nSamplesInFrame,
+                                                     nrChannels, samplingRate, sfbStepSizes, ci, coreConfig.commonWindow,
+                                                     coreConfig.stereoDataCurr, coreConfig.stereoConfig);
+
       for (unsigned ch = 0; ch < nrChannels; ch++) // channel loop
       {
         SfbGroupData&  grpData = coreConfig.groupingData[ch];
@@ -965,54 +961,18 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         {
           const uint16_t* grpOff = &grpData.sfbOffsets[m_numSwbShort * gr];
           const uint32_t* grpRms = &grpData.sfbRmsValues[m_numSwbShort * gr];
-          const uint32_t* refRms = &coreConfig.groupingData[1 - ch].sfbRmsValues[m_numSwbShort * gr];
           uint8_t*  grpScaleFacs = &grpData.scaleFactors[m_numSwbShort * gr];
           uint32_t* grpStepSizes = &stepSizes[m_numSwbShort * gr];
-          uint8_t* grpStereoData = &coreConfig.stereoDataCurr[m_numSwbShort * gr];
-          uint32_t  b, grpRmsMin = INT_MAX; // min. RMS value, used for overcoding reduction
 
-          // undercoding reduction for case where large number of coefs is quantized to zero
-          s = (eightShorts ? (nSamplesInFrame * grpData.windowGroupLength[gr]) >> 1 : nSamplesInFrame << 2);
-          for (b = 0; b < maxSfbCh; b++)
+          for (unsigned b = 0; b < maxSfbCh; b++)
           {
-            const uint32_t rmsComp = (grpStereoData[b] > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
-            const uint32_t rmsRef9 = (coreConfig.commonWindow ? refRms[b] >> 9 : rmsComp);
-
-            if (grpRms[b] < grpRmsMin) grpRmsMin = grpRms[b];
-#ifndef NO_DTX_MODE
-            if ((m_bitRateMode > 0) || (m_numElements > 1) || (samplingRate > 24000))
-            if ((m_bitRateMode > 3) || (meanSpecFlat[ci] > (SCHAR_MAX >> 1)) || (rmsComp >= TA_EPS))
-#endif
-            if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
-            {
-              s -= ((grpOff[b + 1] - grpOff[b]) * redFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
-            }
-          }
-          if ((samplingRate >= 27713) && (b < maxSfbLong) && !eightShorts)  // uncoded coefs
-          {
-            const uint32_t rmsComp = (grpStereoData[b] > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
-            const uint32_t rmsRef9 = (coreConfig.commonWindow ? refRms[b] >> 9 : rmsComp);
-#ifndef NO_DTX_MODE
-            if ((m_bitRateMode > 0) || (m_numElements > 1) || (samplingRate > 24000))
-            if ((m_bitRateMode > 3) || (meanSpecFlat[ci] > (SCHAR_MAX >> 1)) || (rmsComp >= TA_EPS))
-#endif
-            if (rmsComp >= rmsRef9) // check only first SFB above max_sfb for simplification
-            {
-              s -= ((grpOff[maxSfbLong] - grpOff[b]) * redFactor * __min (2 * SA_EPS, rmsComp) + SA_EPS) >> 11; // / (2 * SA_EPS)
-            }
-          }
-          s = (eightShorts ? s / ((nSamplesInFrame * grpData.windowGroupLength[gr]) >> 8) : s / (nSamplesInFrame >> 5));
-
-          for (b = 0; b < maxSfbCh; b++)
-          {
-            const unsigned lfConst = (samplingRate < 27713 && !eightShorts ? 1 : 2); // LF SNR boost, cf my M.Sc. thesis
+            const unsigned lfConst = (samplingRate < 27713 && !eightShorts ? 1 : 2); // lfAtten: LF SNR boost, as in my M.Sc. thesis
             const unsigned lfAtten = (saveBitRate || b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
-            const uint64_t rateFac = mSfmFac * s * __min (32, lfAtten * grpData.numWindowGroups); // rate control part 1
-            const uint64_t sScaled = ((1u << 24) + __max (grpRmsMin, grpStepSizes[b]) * scaleBr * rateFac) >> 25;
+            const uint64_t   scale = scaleBr * mSfmFac * __min (32, lfAtten * grpData.numWindowGroups); // rate control part 1 (SFB)
 
             // scale step-sizes according to VBR mode & derive scale factors from step-sizes
-            grpStepSizes[b] = uint32_t (__max (BA_EPS, __min (UINT_MAX, sScaled)));
+            grpStepSizes[b] = uint32_t (__max (BA_EPS, ((1u << 17) + grpStepSizes[b] * scale) >> 18));
 
             grpScaleFacs[b] = m_bitAllocator.getScaleFac (grpStepSizes[b], &m_mdctSignals[ci][grpOff[b]], sfbWidth, grpRms[b]);
           }
@@ -1050,7 +1010,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
                 for (s = sfbStart; s < maxSfbCh; s++)
                 {
-                  const double rmsValue = double (grpStereoData[s] > 0 ? squareMeanRoot (refRms[s], grpRms[s]) : grpRms[s]);
+                  const double rmsValue = double (grpStereoData[s] > 0 ? (grpRms[s] + (uint64_t) refRms[s] + 1) >> 1 : grpRms[s]);
                   const unsigned sfbIdx = s - sfbStart;
 
                   m_sfbLoudMem[ch][sfbIdx][m_frameCount & 31] = __max (BA_EPS, uint16_t (sqrt (rmsValue)));
@@ -1506,8 +1466,10 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         {
           if (grpData.windowGroupLength[gr] == 1)
           {
+            const uint8_t tonality = (m_specAnaCurr[ci] >> 16) & UCHAR_MAX;
+
             tnsData.filterOrder[n] = m_linPredictor.calcOptTnsCoeffs (tnsData.coeffParCor[n], tnsData.coeff[n], &tnsData.coeffResLow[n],
-                                                                      tnsData.filterOrder[n], s, (m_specAnaCurr[ci] >> 16) & UCHAR_MAX);
+                                                                      tnsData.filterOrder[n], s, tonality >> (m_tempFlatPrev[ci] >> 5));
             tnsData.numFilters[n] = (tnsData.filterOrder[n] > 0 ? 1 : 0);
             if ((ch == 0) && (icsCurr.windowSequence == EIGHT_SHORT) && (tnsData.numFilters[n] == 0) && (tnsData.firstTnsWindow == gr))
             {
@@ -1516,7 +1478,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
             n++;
           }
         }
-        ci++;
+        m_tempFlatPrev[ci++] = (uint8_t) s;
       } // for ch
 
       if (coreConfig.commonWindow) // synchronization of all StereoCoreToolInfo() components
@@ -1814,8 +1776,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
 
       errorValue |= m_transform.applyMCLT (m_timeSignals[ci], eightShorts, icsPrev.windowShape != WINDOW_SINE, icsCurr.windowShape != WINDOW_SINE,
                                            wsCurr > LONG_START /*lOL*/, (wsCurr % 3) != ONLY_LONG /*lOR*/, m_mdctSignals[ci], m_mdstSignals[ci]);
-      m_scaleFacData[ci] = &grpData;
-      ci++;
+      m_scaleFacData[ci++] = &grpData;
     }
   } // for el
 
@@ -1880,6 +1841,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
     m_specFlatPrev[ch] = 0;
     m_tempAnaCurr[ch]  = 0;
     m_tempAnaNext[ch]  = 0;
+    m_tempFlatPrev[ch] = 0;
     m_timeSignals[ch]  = nullptr;
     m_tranLocCurr[ch]  = -1;
     m_tranLocNext[ch]  = -1;
@@ -2115,10 +2077,11 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 
   // initialize coder class memory
   m_tempIntBuf = m_timeSignals[0];
+  if (m_bitAllocator.initAllocMemory (&m_linPredictor, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode) > 0 ||
 #if EC_TRELLIS_OPT_CODING
-  if (m_sfbQuantizer.initQuantMemory (nSamplesInFrame, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode, toSamplingRate (m_frequencyIdx)) > 0 ||
+      m_sfbQuantizer.initQuantMemory (nSamplesInFrame, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode, toSamplingRate (m_frequencyIdx)) > 0 ||
 #else
-  if (m_sfbQuantizer.initQuantMemory (nSamplesInFrame) > 0 ||
+      m_sfbQuantizer.initQuantMemory (nSamplesInFrame) > 0 ||
 #endif
       m_specAnalyzer.initSigAnaMemory (&m_linPredictor, m_bitRateMode <= 4 ? nChannels : 0, nSamplesInFrame) > 0 ||
       m_transform.initConstants (m_tempIntBuf, m_timeWindowL, m_timeWindowS, nSamplesInFrame) > 0)

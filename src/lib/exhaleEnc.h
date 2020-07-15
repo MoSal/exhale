@@ -106,6 +106,7 @@ private:
   TempAnalyzer    m_tempAnalyzer; // for temporal analysis
   uint32_t        m_tempAnaCurr[USAC_MAX_NUM_CHANNELS];
   uint32_t        m_tempAnaNext[USAC_MAX_NUM_CHANNELS];
+  uint8_t         m_tempFlatPrev[USAC_MAX_NUM_CHANNELS];
   int32_t*        m_tempIntBuf;  // temporary int32 buffer
   int32_t*        m_timeSignals[USAC_MAX_NUM_CHANNELS];
 #if !RESTRICT_TO_AAC

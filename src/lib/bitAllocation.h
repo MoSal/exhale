@@ -12,6 +12,7 @@
 #define _BIT_ALLOCATION_H_
 
 #include "exhaleLibPch.h"
+#include "linearPrediction.h"
 
 // constants, experimental macros
 #define BA_EPS                  1
@@ -26,23 +27,32 @@ private:
   uint32_t m_avgStepSize[USAC_MAX_NUM_CHANNELS];
   uint8_t  m_avgSpecFlat[USAC_MAX_NUM_CHANNELS];
   uint8_t  m_avgTempFlat[USAC_MAX_NUM_CHANNELS];
+  uint8_t  m_rateIndex; // preset
+  uint8_t* m_tempSfbValue;
+  LinearPredictor* m_tnsPredictor;
 
 public:
 
   // constructor
   BitAllocator ();
   // destructor
-  ~BitAllocator () { }
+  ~BitAllocator () { MFREE (m_tempSfbValue); }
   // public functions
   void getChAverageSpecFlat (uint8_t meanSpecFlatInCh[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   void getChAverageTempFlat (uint8_t meanTempFlatInCh[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   uint8_t       getScaleFac (const uint32_t sfbStepSize, const int32_t* const sfbSignal, const uint8_t sfbWidth,
                              const uint32_t sfbRmsValue);
+  unsigned initAllocMemory  (LinearPredictor* const linPredictor, const uint8_t numSwb, const uint8_t bitRateMode);
   unsigned initSfbStepSizes (const SfbGroupData* const groupData[USAC_MAX_NUM_CHANNELS], const uint8_t numSwbShort,
                              const uint32_t specAnaStats[USAC_MAX_NUM_CHANNELS],
                              const uint32_t tempAnaStats[USAC_MAX_NUM_CHANNELS],
                              const unsigned nChannels, const unsigned samplingRate, uint32_t* const sfbStepSizes,
                              const unsigned lfeChannelIndex = USAC_MAX_NUM_CHANNELS, const bool tnsDisabled = false);
+  unsigned imprSfbStepSizes (const SfbGroupData* const groupData[USAC_MAX_NUM_CHANNELS], const uint8_t numSwbShort,
+                             const int32_t* const mdctSpec[USAC_MAX_NUM_CHANNELS], const unsigned nSamplesInFrame,
+                             const unsigned nChannels, const unsigned samplingRate, uint32_t* const sfbStepSizes,
+                             const unsigned firstChannelIndex, const bool commonWindow = false,
+                             const uint8_t* const sfbStereoData = nullptr, const uint8_t stereoConfig = 0);
 }; // BitAllocator
 
 #endif // _BIT_ALLOCATION_H_
