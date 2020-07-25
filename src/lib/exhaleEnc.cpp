@@ -717,7 +717,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const SfbGroupData& grpData, const u
             sumAbsOrg += abs (mdctSample);  sumAbsTns += abs (resiSample);
           }
         }
-        if (sumAbsOrg * 9 <= sumAbsTns * 8) break; // band SNR was reduced by more than 1 dB
+        if (sumAbsOrg * 17 <= sumAbsTns * 16) break; // band SNR reduced by more than 0.5 dB
       }
       m_specAnaCurr[channelIndex] = (m_specAnaCurr[channelIndex] & (UINT_MAX - 31)) | (b + 1);
     } // if order > 0
@@ -786,7 +786,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const uint32_t maxSfbLong      = (samplingRate < 37566 ? MAX_NUM_SWB_LONG : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 24000 ? 32 : 34) - __min (3, m_bitRateMode) : 37) - (nChannels >> 1);
+  const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3, m_bitRateMode)
+                                                         : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 3 + (samplingRate >> 10) + (samplingRate >> 13) - (nChannels >> 1))
                                    : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
@@ -947,12 +948,12 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       {
         SfbGroupData&  grpData = coreConfig.groupingData[ch];
         const bool eightShorts = (coreConfig.icsInfoCurr[ch].windowSequence == EIGHT_SHORT);
-        const bool saveBitRate = (meanSpecFlat[ci] > SCHAR_MAX && samplingRate >= 32000 + (unsigned) m_bitRateMode * 12000);
+        const bool saveBitRate = (meanSpecFlat[ci] > (UCHAR_MAX * 3) / 4 && samplingRate >= 32000 + (unsigned) m_bitRateMode * 12000);
         const uint8_t maxSfbCh = grpData.sfbsPerGroup;
 #if !RESTRICT_TO_AAC
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
 #endif
-        const uint16_t mSfmFac = UCHAR_MAX - ((9u * meanSpecFlat[ci]) >> 4);
+        const uint16_t mSfmFac = UCHAR_MAX - (((16u + (m_bitRateMode >> 1)) * meanSpecFlat[ci]) >> 5);
         uint32_t*    stepSizes = &sfbStepSizes[ci * m_numSwbShort * NUM_WINDOW_GROUPS];
 
         memset (grpData.scaleFactors, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
@@ -988,7 +989,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #ifndef NO_DTX_MODE
           const bool prvEightShorts = (coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT);
 
-          if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate <= 24000) && eightShorts)
+          if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713) && eightShorts)
           {
             for (s = 0; s < 26; s++) m_sfbLoudMem[ch][s][m_frameCount & 31] = uint16_t (sqrt (double (getThr (ch, s) << (samplingRate >> 13))));
           }
@@ -1002,7 +1003,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #ifndef NO_DTX_MODE
               const uint32_t*  grpRms = &grpData.sfbRmsValues[m_numSwbShort * gr];
 
-              if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate <= 24000))
+              if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713))
               {
                 const uint32_t*  refRms = &coreConfig.groupingData[1 - ch].sfbRmsValues[m_numSwbShort * gr];
                 uint8_t*  grpStereoData = &coreConfig.stereoDataCurr[m_numSwbShort * gr];
@@ -1043,7 +1044,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           }
         }
 #ifndef NO_DTX_MODE
-        else if (m_noiseFilling[el] && (m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate <= 24000))
+        else if (m_noiseFilling[el] && (m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713))
         {
           for (s = 0; s < 26; s++) m_sfbLoudMem[ch][s][m_frameCount & 31] = BA_EPS;
         }

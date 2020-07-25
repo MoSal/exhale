@@ -11,6 +11,7 @@
 
 #include "exhaleAppPch.h"
 #include "basicMP4Writer.h"
+#include "version.h"
 
 #if 0 // DEBUG
 static const uint8_t muLawHeader[44] = {
@@ -317,7 +318,24 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back (0x61); m_dynamicHeader.push_back (0x74); // mdat
   for (uint32_t pNdx = 0; pNdx < headerPaddingLength; pNdx++)
   {
-    m_dynamicHeader.push_back (0x00); // add padding bytes. TODO: ver string?
+    if (pNdx == 0)  // add padding byte with library version
+    {
+      const char ver[] = EXHALELIB_VERSION_MAJOR "." EXHALELIB_VERSION_MINOR EXHALELIB_VERSION_BUGFIX;
+      const int verInt = (ver[0] - 0x30) * 100 + (ver[2] - 0x30) * 10 + (ver[4] - 0x30);
+
+      m_dynamicHeader.push_back (__max (0, __min (UCHAR_MAX, verInt)));
+    }
+    else if (pNdx == 1) // add 8-bit cyclic redundancy check
+    {
+      uint8_t crc8 = m_dynamicHeader.back(); // Baicheva '98
+
+      for (uint16_t i = 8; i > 0; i--) if (crc8 & 0x80) crc8 = (crc8 << 1) ^ 0x2F; else crc8 <<= 1;
+      m_dynamicHeader.push_back (crc8); // add padding CRC-8
+    }
+    else
+    {
+      m_dynamicHeader.push_back (0x00); // add padding bytes
+    }
   }
 
   _SEEK (m_fileHandle, 0, 0 /*SEEK_SET*/);  // back to start
@@ -346,7 +364,9 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
 
   return _WRITE (m_fileHandle, m_staticHeader, 44);
 #else
-  const bool flushFrameUsed = ((audioLength + m_pregapLength) % m_frameLength) > 0;
+  /* NOTE: the following condition is, as far as I can tell, correct, but some decoders with DRC processing
+  may decode too few samples with it. Hence, I disabled it. See also corresponding NOTE in exhaleApp.cpp */
+  const bool flushFrameUsed = true; // ((audioLength + m_pregapLength) % m_frameLength) > 0;
   const unsigned frameCount = ((audioLength + m_frameLength - 1) / m_frameLength) + (flushFrameUsed ? 2 : 1);
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
   const unsigned finalChunk = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);

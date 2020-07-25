@@ -51,14 +51,15 @@ static void jndPowerLawAndPeakSmoothing (uint32_t* const  stepSizes, const unsig
   stepSizes[0] = __min (stepSizeM1, stepSizes[0]); // `- becomes --
   for (/*b*/; b < nStepSizes; b++)
   {
+    const uint64_t oneMinusB = 128 - b;
     const uint32_t stepSizeB = jndModel (stepSizes[b], avgStepSize, expTimes512, mulTimes512);
 
     if ((stepSizeM3 <= stepSizeM2) && (stepSizeM3 <= stepSizeM1) && (stepSizeB <= stepSizeM2) && (stepSizeB <= stepSizeM1))
     {
       const uint32_t maxM3M0 = __max (stepSizeM3, stepSizeB); // smoothen local spectral peak of _´`- shape
 
-      stepSizes[b - 2] = __min (maxM3M0, stepSizes[b - 2]); // _-`-
-      stepSizes[b - 1] = __min (maxM3M0, stepSizes[b - 1]); // _---
+      stepSizes[b - 2] = uint32_t ((b * (uint64_t) stepSizes[b - 2] + oneMinusB * __min (maxM3M0, stepSizes[b - 2]) + 64) >> 7); // _-`-
+      stepSizes[b - 1] = uint32_t ((b * (uint64_t) stepSizes[b - 1] + oneMinusB * __min (maxM3M0, stepSizes[b - 1]) + 64) >> 7); // _---
     }
     stepSizeM3 = stepSizeM2;
     stepSizeM2 = stepSizeM1;
@@ -175,9 +176,9 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
   // equal-loudness weighting based on data from: K. Kurakata, T. Mizunami, and K. Matsushita, "Percentiles
   // of Normal Hearing-Threshold Distribution Under Free-Field Listening Conditions in Numerical Form," Ac.
   // Sci. Tech, vol. 26, no. 5, pp. 447-449, Jan. 2005, https://www.researchgate.net/publication/239433096.
-  const unsigned HF/*idx*/= ((123456 - samplingRate) >> 11) + (samplingRate <= 34150 ? 2 : 0); // start SFB
+  const unsigned HF/*idx*/= ((123456 - samplingRate) >> 11) + (samplingRate < 37566 ? 2 : 0);  // start SFB
   const unsigned LF/*idx*/= 9;
-  const unsigned MF/*idx*/= (samplingRate < 28800 ? HF : __min (HF, 30u));
+  const unsigned MF/*idx*/= (samplingRate < 27713 ? HF : __min (HF, 30u));
   const unsigned msShift  = (samplingRate + 36736) >> 15; // TODO: 768 smp
   const unsigned msOffset = 1 << (msShift - 1);
   uint32_t nMeans = 0, sumMeans = 0;
@@ -291,7 +292,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
       maskingSlope = (stepSizes[b - 1] + msOffset) >> msShift;
       stepSizes[b] = __max (rms[b], maskingSlope + BA_EPS);
     }
-    if ((samplingRate >= 28800) && (samplingRate <= 64000))
+    if ((samplingRate >= 27713) && (samplingRate < 75132))
     {
       for (/*b*/; b < __min (HF, maxSfbInCh); b++) // compensate high-frequency slopes for linear SFB width
       {
@@ -346,7 +347,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
 
     jndPowerLawAndPeakSmoothing (stepSizes, maxSfbInCh, m_avgStepSize[ch], m_avgSpecFlat[ch], tnsDisabled ? m_avgTempFlat[ch] : 0);
 
-    if ((samplingRate >= 28800) && (samplingRate <= 64000))
+    if ((samplingRate >= 27713) && (samplingRate < 75132))
     {
       elw = 36; // 36/32 = 9/8
       for (b = HF; b < maxSfbInCh; b++)  // undo above additional high-frequency equal-loudness attenuation
@@ -457,11 +458,11 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
         const uint32_t rmsRef9 = (commonWindow ? refRms[b] >> 9 : rmsComp);
         const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
 
-        if (redWeight > 0 && !eightShorts && sfbWidth > 12) // further reduce step-sizes of transient bands
+        if (redWeight > 0 && !eightShorts && sfbWidth > (samplingRate >= 18783 ? 8 : 12)) // transient SFBs
         {
           const uint32_t gains = m_tnsPredictor->calcParCorCoeffs (&mdctSpec[ch][grpOff[b]], sfbWidth, MAX_PREDICTION_ORDER, tempCoeffs) >> 24;
 
-          m_tempSfbValue[b] = UCHAR_MAX - uint8_t ((512u + gains * gains * redWeight) >> (sfbWidth > 16 ? 10 : 11));
+          m_tempSfbValue[b] = UCHAR_MAX - uint8_t ((512u + gains * gains * redWeight) >> (10 + (sfbWidth > 16 ? 0 : (20 - sfbWidth) >> 2)));
           if ((b >= 2) && (m_tempSfbValue[b - 1] < m_tempSfbValue[b]) && (m_tempSfbValue[b - 1] < m_tempSfbValue[b - 2]))
           {
             m_tempSfbValue[b - 1] = __min (m_tempSfbValue[b], m_tempSfbValue[b - 2]); // remove local peaks
@@ -477,7 +478,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
         }
       }
 
-      if ((samplingRate > 27712) && (b < maxSfbL16k) && !eightShorts) // zeroed HF coefs
+      if ((samplingRate >= 27713) && (b < maxSfbL16k) && !eightShorts) // zeroed HF data
       {
         const uint32_t rmsComp = (grpSte != nullptr && grpSte[b] > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
         const uint32_t rmsRef9 = (commonWindow ? refRms[b] >> 9 : rmsComp);

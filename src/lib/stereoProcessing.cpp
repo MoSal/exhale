@@ -69,7 +69,7 @@ static inline void   setStepSizesMS (const uint32_t* const rmsSfbL, const uint32
     const double rat = __min (1.0, grpStepSizes1[idx] / (sfbRmsL * 2.0)) * __min (1.0, grpStepSizes2[idx] / (sfbRmsR * 2.0)) * sfbFacLR;
 
     grpStepSizes1[idx] = grpStepSizes2[idx] = uint32_t (__max (SP_EPS, (min > rat * sfbMaxMS ? sqrt (rat * sfbMaxMS * min) :
-                                                                        __min (1.0, rat) * sfbMaxMS)) + 0.5);
+                                                                        __max (1.0/2048.0, __min (1.0, rat)) * sfbMaxMS)) + 0.5);
   }
 }
 
