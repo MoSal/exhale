@@ -51,7 +51,7 @@ public:
   unsigned imprSfbStepSizes (const SfbGroupData* const groupData[USAC_MAX_NUM_CHANNELS], const uint8_t numSwbShort,
                              const int32_t* const mdctSpec[USAC_MAX_NUM_CHANNELS], const unsigned nSamplesInFrame,
                              const unsigned nChannels, const unsigned samplingRate, uint32_t* const sfbStepSizes,
-                             const unsigned firstChannelIndex, const bool commonWindow = false,
+                             const unsigned firstChannelIndex, const uint8_t* const sfm, const bool commonWindow,
                              const uint8_t* const sfbStereoData = nullptr, const uint8_t stereoConfig = 0);
 }; // BitAllocator
 

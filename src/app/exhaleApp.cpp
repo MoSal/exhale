@@ -92,7 +92,7 @@ static bool eaInitDownsampler (int32_t** resampleBuffer, const uint16_t bitRateM
 {
   const uint16_t inLength = (frameSize * 3u) >> 1;
   const uint16_t chLength = inLength + (frameSize >> 3);
-  const bool useResampler = (frameSize >= 512 && bitRateMode == 1 && sampleRate == 48000);
+  const bool useResampler = (frameSize >= 512 && bitRateMode <= 1 && sampleRate == 48000);
 
   if (useResampler)
   {
@@ -550,7 +550,7 @@ int main (const int argc, char* argv[])
 
     if (wavReader.getSampleRate () > 32100 + (unsigned) variableCoreBitRateMode * 12000 + (variableCoreBitRateMode >> 2) * 3900
 #if ENABLE_RESAMPLING
-        && (variableCoreBitRateMode != 1 || wavReader.getSampleRate () != 48000)
+        && (variableCoreBitRateMode > 1 || wavReader.getSampleRate () != 48000)
 #endif
         )
     {
@@ -704,7 +704,7 @@ int main (const int argc, char* argv[])
       if (*argv[1] != '#') // user-def. mode
       {
         fprintf_s (stdout, " Encoding %d-kHz %d-channel %d-bit WAVE to low-complexity xHE-AAC at %d kbit/s\n\n",
-                   sampleRate / 1000, numChannels, inSampDepth, __min (4, numChannels) * (24 + variableCoreBitRateMode * 8));
+                   sampleRate / 1000, numChannels, inSampDepth, __min (5, numChannels) * (24 + variableCoreBitRateMode * 8));
       }
       if (!readStdin && (mod3Percent > 0))
       {

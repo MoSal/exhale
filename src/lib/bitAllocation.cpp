@@ -412,7 +412,7 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
 unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USAC_MAX_NUM_CHANNELS], const uint8_t numSwbShort,
                                          const int32_t* const mdctSpec[USAC_MAX_NUM_CHANNELS], const unsigned nSamplesInFrame,
                                          const unsigned nChannels, const unsigned samplingRate, uint32_t* const sfbStepSizes,
-                                         const unsigned firstChannelIndex, const bool commonWindow /*= false*/,
+                                         const unsigned firstChannelIndex, const uint8_t* const sfm, const bool commonWindow,
                                          const uint8_t* const sfbStereoData /*= nullptr*/, const uint8_t stereoConfig /*= 0*/)
 {
   const uint8_t maxSfbL16k = 16 + __min (35, (9 << 17) / __max (1, samplingRate)); // SFB index at 15.8 kHz
@@ -420,7 +420,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
   const uint32_t redWeight = __min (4, 9 - __min (9, m_rateIndex));
   short* const  tempCoeffs = (short* const) m_tempSfbValue;
 
-  if ((groupData == nullptr) || (mdctSpec == nullptr) || (sfbStepSizes == nullptr) || (nSamplesInFrame > 2048) ||
+  if ((groupData == nullptr) || (mdctSpec == nullptr) || (sfbStepSizes == nullptr) || (sfm == nullptr) || (nSamplesInFrame > 2048) ||
       (numSwbShort < MIN_NUM_SWB_SHORT) || (numSwbShort > MAX_NUM_SWB_SHORT) || (nChannels > USAC_MAX_NUM_CHANNELS) ||
       (samplingRate < 7350) || (samplingRate > 96000) || (firstChannelIndex > USAC_MAX_NUM_CHANNELS))
   {
@@ -469,8 +469,8 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
           }
         }
         if (grpRms[b] < grpRmsMin) grpRmsMin = grpRms[b];
-#ifndef NO_DTX_MODE
-        if (m_rateIndex > 0)
+#if 1
+        if ((m_rateIndex > 0) || (samplingRate >= 27713 && sfm[ch] <= (SCHAR_MAX >> 1)))
 #endif
         if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
         {
@@ -483,8 +483,8 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
         const uint32_t rmsComp = (grpSte != nullptr && grpSte[b] > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
         const uint32_t rmsRef9 = (commonWindow ? refRms[b] >> 9 : rmsComp);
         const uint8_t sfbWidth = grpOff[maxSfbL16k] - grpOff[b];
-#ifndef NO_DTX_MODE
-        if (m_rateIndex > 0)
+#if 1
+        if ((m_rateIndex > 0) || (samplingRate >= 27713 && sfm[ch] <= (SCHAR_MAX >> 1)))
 #endif
         if (rmsComp >= rmsRef9) // check only first SFB above max_sfb for simplification
         {
@@ -498,6 +498,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
       for (b = 0; b < maxSfbInCh; b++) // improve step-sizes by limiting and attenuation
       {
         grpStepSizes[b] = uint32_t ((__max (grpRmsMin, grpStepSizes[b]) * s * (m_tempSfbValue[b] + 1u) + (1u << 14)) >> 15);
+        if (grpStepSizes[b] <= (grpRms[b] >> 11)) grpStepSizes[b] = __max (BA_EPS, grpRms[b] >> 11);
       }
     } // for gr
   } // for ch
