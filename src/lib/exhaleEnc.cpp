@@ -2076,7 +2076,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 
   // initialize coder class memory
   m_tempIntBuf = m_timeSignals[0];
-  if (m_bitAllocator.initAllocMemory (&m_linPredictor, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode >> ((nChannels - 1) >> 1)) > 0 ||
+  if (m_bitAllocator.initAllocMemory (&m_linPredictor, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode >> ((nChannels - 1) >> 2)) > 0 ||
 #if EC_TRELLIS_OPT_CODING
       m_sfbQuantizer.initQuantMemory (nSamplesInFrame, numSwbOffsetL[m_swbTableIdx] - 1, m_bitRateMode, toSamplingRate (m_frequencyIdx)) > 0 ||
 #else

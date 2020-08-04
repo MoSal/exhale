@@ -42,7 +42,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
   const uint16_t       sfbsPerGrp = grpData.sfbsPerGroup;
   const uint16_t       windowNfso = noiseFillingStartOffset[grpData.numWindowGroups == 1 ? 0 : 1][nSamplesInFrame >> 10];
   const bool saveRate = (samplingRate >= sampRateBitSave);
-  uint8_t scaleFacLim = 0; // limit range
+  uint8_t scaleFacLim = 0;
   uint16_t u = 0;
   short diff = 0, s = 0;
   double    magnSum = 0.0;
@@ -181,7 +181,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
   u = __max (1, u - int (specFlat >> 5)); // SFM-adaptive reduction
 
   magnSum = pow (2.0, (14 - u) / 3.0); // noiseVal^-1, 23003-3, 7.2
-  magnSum *= 1.25 - specFlat * 0.0009765625; // zero-quant increase
+  magnSum *= 1.25 - specFlat * 0.0009765625;
 
 // --- calculate gap-fill scale factors for zero quantized SFBs, then determine noise_offset
   u <<= 5;  // left-shift for bit-stream
@@ -236,6 +236,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
 #if SGF_SF_PEAK_SMOOTHING
       else if (saveRate) lastNonZeroSfb = b;
 #endif
+
       if ((b > m_1stGapFillSfb) && (((grpRms[b - 1] >> 16) > 0) ^ ((grpRms[b - 2] >> 16) > 0)))
       {
         diff += (int) grpScFacs[b - 1] - (int) grpScFacs[b - 2]; // sum up transition deltas
@@ -248,7 +249,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
       const int32_t start = lastNonZeroSfb + 1;
       const int32_t size  = sfbsPerGrp - start - 1;
       const int32_t xSum  = (size * (size + 1)) >> 1;
-      int32_t ySum = 0, a = 0, b = 0;
+      int32_t ySum = 0, a = 0, b = 0, y = 0;
       uint16_t x;
 
       for (x = start + 1; x < sfbsPerGrp; x++) ySum += grpScFacs[x]; // size * (mean factor)
@@ -256,11 +257,14 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
       for (x = start + 1; x < sfbsPerGrp; x++)
       {
         const int32_t xZ  = size * (x - start) - xSum; // zero-mean
+        const int32_t yZ  = size * grpScFacs[x] - ySum;
 
         a += xZ * xZ;
-        b += xZ * (size * grpScFacs[x] - ySum);
+        b += xZ * yZ;
+        y += yZ * yZ;
       }
-      if (a > 0) // complete line and adjust gap-fill scale factors
+
+      if ((a > 0) && (b * b > ((a * y) >> 3)))  // factor smoothing
       {
         unsigned countOld = 0, countNew = 0;
 
@@ -270,7 +274,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
         ySum = grpScFacs[start];
         for (x = start + 1; x < sfbsPerGrp; x++)
         {
-          const int32_t y = CLIP_UCHAR ((a + b * (x - start) - SCHAR_MIN) >> 8);
+          y = CLIP_UCHAR ((a + b * (x - start) - SCHAR_MIN) >> 8);
 
           countOld += huffBitCountEstimate ((int) grpScFacs[x] - grpScFacs[x - 1]);
           countNew += huffBitCountEstimate (y - ySum);
@@ -307,7 +311,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
 
         if (grpScFacs[b] > scaleFacLim) grpScFacs[b] = scaleFacLim;
       }
-    } // for b
+    }
 
     // repeat first significant scale factor downwards to save bits
     memset (grpScFacs, grpScFacs[m_1stNonZeroSfb[gr]], m_1stNonZeroSfb[gr] * sizeof (uint8_t));

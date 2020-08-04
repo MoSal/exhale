@@ -432,6 +432,9 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
     const SfbGroupData& grpData = *groupData[ch];
     const uint32_t maxSfbInCh = __min (MAX_NUM_SWB_LONG, grpData.sfbsPerGroup);
     const bool    eightShorts = (grpData.numWindowGroups != 1);
+#if 1
+    const bool  lowRateTuning = (samplingRate >= 27713) && (sfm[ch] <= (SCHAR_MAX >> 1));
+#endif
     const uint32_t*   rms = grpData.sfbRmsValues;
     uint32_t*   stepSizes = &sfbStepSizes[ch * numSwbShort * NUM_WINDOW_GROUPS];
 
@@ -450,7 +453,25 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
       uint64_t  s = (eightShorts ? (nSamplesInFrame * grpData.windowGroupLength[gr]) >> 1 : nSamplesInFrame << 2);
 
       memset (m_tempSfbValue, UCHAR_MAX, maxSfbInCh * sizeof (uint8_t));
+#if 1
+      if ((m_rateIndex == 0) && lowRateTuning && (maxSfbInCh > 0) && !eightShorts)
+      {
+        uint32_t numRedBands = nSamplesInFrame; // final result lies between 1/4 and 1/2
 
+        if ((nChannels == 2) && commonWindow && (grpSte != nullptr))
+        {
+          for (b = 0; b < maxSfbInCh; b++) if (grpSte[b] == 0) numRedBands += grpOff[b + 1] - grpOff[b];
+        }
+        b = MAX_NUM_SWB_LONG - ((numRedBands * ((SCHAR_MAX >> 1) + 1 - sfm[ch]) + (1 << 11)) >> 12);
+
+        while ((b < maxSfbInCh) && (grpRms[b] > grpRms[b - 1])) b++; // start after peak
+
+        for (b += ((nChannels == 2) && commonWindow ? b & 1 : 0); b < maxSfbInCh; b++)
+        {
+          grpStepSizes[b] = __max (grpStepSizes[b], grpRms[b] >= (UINT_MAX >> 1) ? UINT_MAX : (grpRms[b] + 1) << 1);
+        }
+      }
+#endif
       // undercoding reduction for case where large number of coefs is quantized to zero
       for (b = 0; b < maxSfbInCh; b++)
       {
@@ -470,7 +491,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
         }
         if (grpRms[b] < grpRmsMin) grpRmsMin = grpRms[b];
 #if 1
-        if ((m_rateIndex > 0) || (samplingRate >= 27713 && sfm[ch] <= (SCHAR_MAX >> 1)))
+        if ((m_rateIndex > 0) || lowRateTuning)
 #endif
         if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
         {
@@ -484,7 +505,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
         const uint32_t rmsRef9 = (commonWindow ? refRms[b] >> 9 : rmsComp);
         const uint8_t sfbWidth = grpOff[maxSfbL16k] - grpOff[b];
 #if 1
-        if ((m_rateIndex > 0) || (samplingRate >= 27713 && sfm[ch] <= (SCHAR_MAX >> 1)))
+        if ((m_rateIndex > 0) || lowRateTuning)
 #endif
         if (rmsComp >= rmsRef9) // check only first SFB above max_sfb for simplification
         {
@@ -499,6 +520,12 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
       {
         grpStepSizes[b] = uint32_t ((__max (grpRmsMin, grpStepSizes[b]) * s * (m_tempSfbValue[b] + 1u) + (1u << 14)) >> 15);
         if (grpStepSizes[b] <= (grpRms[b] >> 11)) grpStepSizes[b] = __max (BA_EPS, grpRms[b] >> 11);
+#if 1
+        if ((m_rateIndex == 0) && lowRateTuning)
+        {
+          if ((grpStepSizes[b] > grpRms[b]) && ((grpStepSizes[b] >> 1) <= grpRms[b])) grpStepSizes[b] = grpRms[b];
+        }
+#endif
       }
     } // for gr
   } // for ch
