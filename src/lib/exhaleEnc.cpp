@@ -838,7 +838,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       const TnsData&  tnsData1 = coreConfig.tnsData[1];
       uint8_t realOnlyStartSfb = (eightShorts0 ? m_numSwbShort : m_numSwbLong) - __max (tnsData0.filterLength[0], tnsData1.filterLength[0]);
 
-      if (coreConfig.commonWindow && (coreConfig.stereoMode == 0) && (m_perCorrHCurr[el] > SCHAR_MAX || m_perCorrLCurr[el] > (UCHAR_MAX * 3) / 4))
+      if (coreConfig.commonWindow && (coreConfig.stereoMode == 0) && (m_perCorrHCurr[el] > SCHAR_MAX || m_perCorrLCurr[el] > (UCHAR_MAX * 5) / 8))
       {
         coreConfig.stereoMode = 1;
       }
@@ -929,8 +929,11 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                                                          (coreConfig.stereoConfig & 2) > 0, realOnlyStartSfb,
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS *  ci],
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS * (ci + 1)]);
-        if (errorValue == 2) // signal M/S with complex prediction
+        if (errorValue >= 2) // signal M/S with complex prediction
         {
+#if SP_MDST_PRED
+          coreConfig.stereoConfig |= errorValue - 2; // cplx coefs
+#endif
           coreConfig.stereoMode += 2; errorValue = 0;
         }
         m_specAnaCurr[ci    ] = (m_specAnaCurr[ci    ] & (UINT_MAX - 65504)) | peakIndexSte;
@@ -952,7 +955,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #if !RESTRICT_TO_AAC
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
 #endif
-        const uint16_t mSfmFac = UCHAR_MAX - (((16u + (m_bitRateMode >> 1)) * meanSpecFlat[ci]) >> 5);
+        const uint16_t mSfmSqr = (m_bitRateMode < 2 && samplingRate >= 27713 ? ((uint16_t) meanSpecFlat[ci] * meanSpecFlat[ci]) >> m_bitRateMode : 0);
+        const uint16_t mSfmFac = 256u - (((32u + m_bitRateMode) * ((uint32_t) meanSpecFlat[ci] << 4) - mSfmSqr + (1u << 9)) >> 10);
         uint32_t*    stepSizes = &sfbStepSizes[ci * m_numSwbShort * NUM_WINDOW_GROUPS];
 
         memset (grpData.scaleFactors, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
@@ -1713,7 +1717,8 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
           if ((winSeq0 != initialWs0) && (winSeq0 == EIGHT_SHORT))
           {
 #if !RESTRICT_TO_AAC
-            if ((tsCurr[0] * 7 < tsCurr[1] * 2) && (tsNext[0] * 7 < tsNext[1] * 2))
+            if ((tsCurr[0] * 7 < tsCurr[1] * 2) && (tsNext[0] * 7 < tsNext[1] * 2) &&
+                (abs (m_specFlatPrev[ci - 1] - (int) m_specFlatPrev[ci - 2]) > UCHAR_MAX / 4))
             {
               winSeq0 = STOP_START; // don't synchronize to EIGHT_SHORT but keep low overlap
             }
@@ -1724,7 +1729,8 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
           if ((winSeq1 != initialWs1) && (winSeq1 == EIGHT_SHORT))
           {
 #if !RESTRICT_TO_AAC
-            if ((tsCurr[1] * 7 < tsCurr[0] * 2) && (tsNext[1] * 7 < tsNext[0] * 2))
+            if ((tsCurr[1] * 7 < tsCurr[0] * 2) && (tsNext[1] * 7 < tsNext[0] * 2) &&
+                (abs (m_specFlatPrev[ci - 1] - (int) m_specFlatPrev[ci - 2]) > UCHAR_MAX / 4))
             {
               winSeq1 = STOP_START; // don't synchronize to EIGHT_SHORT but keep low overlap
             }

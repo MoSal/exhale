@@ -77,9 +77,9 @@ static inline void   setStepSizesMS (const uint32_t* const rmsSfbL, const uint32
 StereoProcessor::StereoProcessor ()
 {
 #if SP_OPT_ALPHA_QUANT
-  memset (m_randomIntMemRe, 0, (MAX_NUM_SWB_LONG / 2) * sizeof (int32_t));
+  memset (m_randomIntMemRe, 0, (1+MAX_NUM_SWB_LONG/2) * sizeof (int32_t));
 # if SP_MDST_PRED
-  memset (m_randomIntMemIm, 0, (MAX_NUM_SWB_LONG / 2) * sizeof (int32_t));
+  memset (m_randomIntMemIm, 0, (1+MAX_NUM_SWB_LONG/2) * sizeof (int32_t));
 # endif
 #endif
   memset (m_stereoCorrValue, 0, (1024 >> SA_BW_SHIFT) * sizeof (uint8_t));
@@ -132,7 +132,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 #if SP_OPT_ALPHA_QUANT
   if ((bitRateMode >= 4) && eightShorts) // reset quantizer dither memory in short transform
   {
-    for (uint16_t sfb = 0; sfb < MAX_NUM_SWB_LONG / 2; sfb++)
+    for (uint16_t sfb = 0; sfb <= MAX_NUM_SWB_LONG / 2; sfb++)
     {
       m_randomIntMemRe[sfb] = (1 << 30);
 # if SP_MDST_PRED
@@ -351,7 +351,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           }
           sfbTempVar *= sfbTempVar;  // account for residual RMS reduction due to prediction
 #if SP_MDST_PRED
-          if (bitRateMode > 1) sfbTempVar += alphaLimit * alphaLimit;  // including alpha_im
+          if (bitRateMode > 0) sfbTempVar += alphaLimit * alphaLimit;  // including alpha_im
 #endif
           for (b = sfbIsOdd; b >= 0; b--)
           {
@@ -501,15 +501,17 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   if (numSfbPredSte == 0) // discard prediction coefficients and stay with legacy M/S stereo
   {
     if (applyPredSte)
-    for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
     {
-      uint8_t* const grpSData = &sfbStereoData[numSwbFrame * gr];
-
-      for (uint16_t sfb = 0; sfb < maxSfbSte; sfb++)
+      for (uint16_t gr = 0; gr < grp.numWindowGroups; gr++)
       {
-        if (grpSData[sfb] > 0) grpSData[sfb] = 16;
+        uint8_t* const grpSData = &sfbStereoData[numSwbFrame * gr];
+
+        for (uint16_t sfb = 0; sfb < maxSfbSte; sfb++)
+        {
+          if (grpSData[sfb] > 0) grpSData[sfb] = 16;
+        }
+        if (numSwbFrame > maxSfbSte) memset (&grpSData[maxSfbSte], (useFullFrameMS ? 16 : 0), (numSwbFrame - maxSfbSte) * sizeof (uint8_t));
       }
-      if (numSwbFrame > maxSfbSte) memset (&grpSData[maxSfbSte], (useFullFrameMS ? 16 : 0), (numSwbFrame - maxSfbSte) * sizeof (uint8_t));
     }
   }
   else // at least one "significant" prediction band, apply prediction and update RMS values
@@ -634,5 +636,5 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
     numSfbPredSte = 2;
   }
 
-  return (numSfbPredSte); // no error
+  return numSfbPredSte; // no error
 }

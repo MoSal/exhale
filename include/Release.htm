@@ -25,9 +25,14 @@
 <td valign="top">
 
 <h1><br><span class="pink">exhale</span> - <span class="pink">e</span>codis e<span class="pink">x</span>tended <span class="pink">h</span>igh-efficiency <span class="pink">a</span>nd <span class="pink">l</span>ow-complexity <span class="pink">e</span>ncoder<br><span class="gray"><sup><br>Software Release Notes, Version History, Known Issues, Upcoming Feature Roadmap</sup></span><br><br></h1>
-<h3>&nbsp; &nbsp;The version of this distribution of the &laquo;exhale&raquo; software release is <b>1.0.6</b> (official pub&shy;lic minor release) from July 30, 2020. Please check <a href="http://www.ecodis.de/audio.htm#mpeg">www.ecodis.de</a> regularly for new versions of this software. A summary of each version up to this release, a list of known issues with this release, and a roadmap of additional functionality are provided below.</h3>
+<h3>&nbsp; &nbsp;The version of this distribution of the &laquo;exhale&raquo; software release is <b>1.0.7</b> (official pub&shy;lic minor release) from August 2020. Please check <a href="http://www.ecodis.de/audio.htm#mpeg">www.ecodis.de</a> regularly for new versions of this software. A summary of each version up to this release, a list of known issues with this release, and a roadmap of additional functionality are provided below.</h3>
 <h3><br><b>Chronological Version History</b></h3>
-<h3>&nbsp; &nbsp;Version <b>1.0.6 <span class="gray">&nbsp;July 2020, this release</span></b></h3>
+<h3>&nbsp; &nbsp;Version <b>1.0.7 <span class="gray">&nbsp;Aug. 2020, this release</span></b></h3>
+<ul>
+ <li><h3>minor bugfixes in bit-rate control and higher-rate coding at 32 kHz sampling rate</h3></li>
+ <li><h3>exhaleApp: write complete MP4 &laquo;stss&raquo; data for improved compatibility (issue 13)</h3></li>
+</ul>
+<h3>&nbsp; &nbsp;Version <b>1.0.6 <span class="gray">&nbsp;July 2020</span></b></h3>
 <ul>
  <li><h3>bugfixes, improved quality on some transient signals, better decoder compatibility</h3></li>
  <li><h3>exhaleApp: support for Extensible WAVE format, write MP4 &laquo;prol&raquo; data (issue 10)</h3></li>
@@ -85,19 +90,19 @@
 <h3><br><b>Known Issues with This Release</b></h3>
 <h3>&nbsp; &nbsp;If you notice an issue with this release <b>not</b> mentioned below, please contact ecodis or a contributor with the details (configuration, input file) needed to reproduce the issue.</h3>
 <ul>
- <li><h3>exhaleLib: Coding of stereo or multichannel input occasionally leads to slightly in&shy;creased bit-rates because the predictive joint-channel coding provided by ISO/IEC <a href="https://www.iso.org/standard/76385.html">23003-3</a> has not been fully implemented. See the functionality roadmap below.</h3></li>
+ <li><h3>exhaleApp: At the end of each encoding run, the MPEG-4 file header with seeking information is written to the beginning of the output file to maximize compatibility in audio streaming applications. Since such a file operation is not supported with pipe based output, encoding to stdout instead of files is currently not supported.</h3></li>
  <li><h3>exhaleApp: Only basic WAVE input file reading functionality has been implemen&shy;ted. Specifically, 8-bit WAVE input is assumed to contain an even number of audio samples, and ITU-R <a href="https://www.itu.int/rec/R-REC-BS.2088/en">BS.2088</a> (RF64, Broadcast WAVE) files are not supported.</h3></li>
 </ul>
 <h3><br><b>Roadmap of Upcoming Features</b></h3>
 <h3>&nbsp; &nbsp;If you are in need of an additional library or application feature <b>not</b> mentioned below, please contact ecodis or a contributor with a request, and we will see what we can do.</h3>
 <ul>
  <li><h3>support for coding with a core coder frame length of 768 samples, no version plan</h3></li>
- <li><h3>exhaleLib: completed integration of predictive joint-channel coding, version 1.0.7</h3></li>
+ <li><h3>exhaleLib: completed integration of predictive joint-channel coding, version 1.1.x</h3></li>
  <li><h3>exhaleLib: finalization of support for 3.0&#x2013;5.1 multichannel coding, no version plan</h3></li>
  <li><h3>exhaleLib: speed-ups and further quality tuning for difficult signals, as necessary.</h3></li>
 </ul>
 <h3><br></h3>
-<h4><span class="gray">Written by C. R. Helmrich for exhale 1.0.6, July 2020. Available at www.ecodis.de/exhale/release.htm.</span><br><br></h4>
+<h4><span class="gray">Written by C. R. Helmrich for exhale 1.0.7, August 2020. Available at www.ecodis.de/exhale/release.htm.</span><br><br></h4>
 
 </td>
 <td valign="top" colspan="2">

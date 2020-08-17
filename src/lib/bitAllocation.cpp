@@ -432,9 +432,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
     const SfbGroupData& grpData = *groupData[ch];
     const uint32_t maxSfbInCh = __min (MAX_NUM_SWB_LONG, grpData.sfbsPerGroup);
     const bool    eightShorts = (grpData.numWindowGroups != 1);
-#if 1
     const bool  lowRateTuning = (samplingRate >= 27713) && (sfm[ch] <= (SCHAR_MAX >> 1));
-#endif
     const uint32_t*   rms = grpData.sfbRmsValues;
     uint32_t*   stepSizes = &sfbStepSizes[ch * numSwbShort * NUM_WINDOW_GROUPS];
 
@@ -453,7 +451,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
       uint64_t  s = (eightShorts ? (nSamplesInFrame * grpData.windowGroupLength[gr]) >> 1 : nSamplesInFrame << 2);
 
       memset (m_tempSfbValue, UCHAR_MAX, maxSfbInCh * sizeof (uint8_t));
-#if 1
+
       if ((m_rateIndex == 0) && lowRateTuning && (maxSfbInCh > 0) && !eightShorts)
       {
         uint32_t numRedBands = nSamplesInFrame; // final result lies between 1/4 and 1/2
@@ -471,7 +469,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
           grpStepSizes[b] = __max (grpStepSizes[b], grpRms[b] >= (UINT_MAX >> 1) ? UINT_MAX : (grpRms[b] + 1) << 1);
         }
       }
-#endif
+
       // undercoding reduction for case where large number of coefs is quantized to zero
       for (b = 0; b < maxSfbInCh; b++)
       {
@@ -520,14 +518,15 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
       {
         grpStepSizes[b] = uint32_t ((__max (grpRmsMin, grpStepSizes[b]) * s * (m_tempSfbValue[b] + 1u) + (1u << 14)) >> 15);
         if (grpStepSizes[b] <= (grpRms[b] >> 11)) grpStepSizes[b] = __max (BA_EPS, grpRms[b] >> 11);
-#if 1
-        if ((m_rateIndex == 0) && lowRateTuning)
+
+        if ((m_rateIndex == 0) && lowRateTuning) // clip near-zero SNRs to a minimum SNR
         {
-          if ((grpStepSizes[b] > grpRms[b]) && ((grpStepSizes[b] >> 1) <= grpRms[b])) grpStepSizes[b] = grpRms[b];
+          const uint32_t rms = uint32_t ((grpRms[b] * (8192u - (uint64_t) sfm[ch] * sfm[ch]) + (1u << 12)) >> 13);
+
+          if ((grpStepSizes[b] > grpRms[b]) && ((grpStepSizes[b] >> 1) <= rms)) grpStepSizes[b] = grpRms[b];
         }
-#endif
       }
-    } // for gr
+    }
   } // for ch
 
   return 0; // no error

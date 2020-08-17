@@ -39,9 +39,9 @@ private:
 #endif
 #if SP_OPT_ALPHA_QUANT
   std::minstd_rand m_randomInt32;
-  int32_t m_randomIntMemRe[MAX_NUM_SWB_LONG / 2];
+  int32_t m_randomIntMemRe[1+MAX_NUM_SWB_LONG/2];
 # if SP_MDST_PRED
-  int32_t m_randomIntMemIm[MAX_NUM_SWB_LONG / 2];
+  int32_t m_randomIntMemIm[1+MAX_NUM_SWB_LONG/2];
 # endif
 #endif
   uint8_t m_stereoCorrValue[1024 >> SA_BW_SHIFT]; // one value for every 32 spectral coefficients
