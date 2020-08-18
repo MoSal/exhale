@@ -584,7 +584,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             *sfbMdctR = resiRe;
           }
         }
-        else  // complex data, both MDCT and MDST is available
+        else // complex data, both MDCT and MDST are available
         {
           int32_t* sfbMdstD = (alterPredDir ? &mdstSpectrum2[sfbStart] : &mdstSpectrum1[sfbStart]);
           int32_t* sfbMdstR = (alterPredDir ? &mdstSpectrum1[sfbStart] : &mdstSpectrum2[sfbStart]);

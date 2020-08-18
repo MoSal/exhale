@@ -13,14 +13,6 @@
 #include "basicMP4Writer.h"
 #include "version.h"
 
-#if 0 // DEBUG
-static const uint8_t muLawHeader[44] = {
-  0x52, 0x49, 0x46, 0x46, 0xF0, 0xFF, 0xFF, 0xFF, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74, 0x20,
-  0x10, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x08, 0x00, 0x64, 0x61, 0x74, 0x61, 0xF0, 0xFF, 0xFF, 0xFF
-};
-#endif
-
 static const uint8_t staticHeaderTemplate[STAT_HEADER_SIZE] = {
   0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6D, 0x70, 0x34, 0x32, 0x00, 0x00, 0x00, 0x00, // ftyp
   0x6D, 0x70, 0x34, 0x32, 0x69, 0x73, 0x6F, 0x6D, 0x00, 0x00, MOOV_BSIZE, 0x6D, 0x6F, 0x6F, 0x76, // moov
@@ -107,7 +99,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
 #ifndef NO_FIX_FOR_ISSUE_1
 # ifndef NO_FIX_FOR_ISSUE_13
   const uint32_t chunkCount   = (m_frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod;
-  const uint32_t stssAtomSize = STSX_BSIZE + chunkCount * 4;
+  const uint32_t stssAtomSize = STSX_BSIZE + chunkCount * 4; // NOTE: must equal stcoAtomSize
 # else
   const uint32_t stssAtomSize = STSX_BSIZE + 4;
 # endif
@@ -369,22 +361,6 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
 
 int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for header in file
 {
-#if 0 // DEBUG
-  const uint8_t numChannels = m_staticHeader[517];
-
-  // write basic µ-Law WAVE header for testing
-  memcpy (m_staticHeader, muLawHeader, 44 * sizeof (uint8_t));
-  m_staticHeader[22] = numChannels;
-  m_staticHeader[24] = uint8_t (m_sampleRate & 0xFF);
-  m_staticHeader[25] = uint8_t (m_sampleRate >>  8u);
-  m_staticHeader[26] = uint8_t (m_sampleRate >> 16u);
-  m_staticHeader[28] = uint8_t ((m_sampleRate * numChannels) & 0xFF);
-  m_staticHeader[29] = uint8_t ((m_sampleRate * numChannels) >>  8u);
-  m_staticHeader[30] = uint8_t ((m_sampleRate * numChannels) >> 16u);
-  m_staticHeader[32] = numChannels;  // byte count per frame
-
-  return _WRITE (m_fileHandle, m_staticHeader, 44);
-#else
   /* NOTE: the following condition is, as far as I can tell, correct, but some decoders with DRC processing
   may decode too few samples with it. Hence, I disabled it. See also corresponding NOTE in exhaleApp.cpp */
   const bool flushFrameUsed = true; // ((audioLength + m_pregapLength) % m_frameLength) > 0;
@@ -411,7 +387,6 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
   m_mediaOffset = bytesWritten; // first frame will be written at this offset
 
   return bytesWritten;
-#endif
 }
 
 unsigned BasicMP4Writer::open (const int mp4FileHandle, const unsigned sampleRate,  const unsigned numChannels,
@@ -437,9 +412,7 @@ unsigned BasicMP4Writer::open (const int mp4FileHandle, const unsigned sampleRat
 #else
   reset (frameLength, pregapLength, raPeriod);
 #endif
-#if 0 // DEBUG
-  m_sampleRate = sampleRate;
-#endif
+
   // create fixed-length 576-byte part of MPEG-4 file header
   memcpy (m_staticHeader, staticHeaderTemplate, STAT_HEADER_SIZE * sizeof (uint8_t));
 

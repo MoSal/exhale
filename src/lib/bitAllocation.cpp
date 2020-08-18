@@ -521,9 +521,9 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
 
         if ((m_rateIndex == 0) && lowRateTuning) // clip near-zero SNRs to a minimum SNR
         {
-          const uint32_t rms = uint32_t ((grpRms[b] * (8192u - (uint64_t) sfm[ch] * sfm[ch]) + (1u << 12)) >> 13);
+          const uint32_t lim = uint32_t ((grpRms[b] * (8192u - (uint64_t) sfm[ch] * sfm[ch]) + (1u << 12)) >> 13);
 
-          if ((grpStepSizes[b] > grpRms[b]) && ((grpStepSizes[b] >> 1) <= rms)) grpStepSizes[b] = grpRms[b];
+          if ((grpStepSizes[b] > grpRms[b]) && ((grpStepSizes[b] >> 1) <= lim)) grpStepSizes[b] = grpRms[b];
         }
       }
     }
