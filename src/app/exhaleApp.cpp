@@ -118,14 +118,15 @@ static void eaApplyUpsampler2x (int32_t* const pcmBuffer, int32_t* const upsampl
   {
     int32_t* chPcmBuf = &pcmBuffer[ch];
     int32_t* chUpsBuf = &upsampleBuffer[chLength * ch];
-# if 1
+
     if (firstFrame) // construct leading sample values via extrapolation
     {
       for (int8_t i = 0; i < 32; i++) chUpsBuf[i] = (*chPcmBuf * i + (32 >> 1)) >> 5;
     }
     else
-# endif
-    memcpy (chUpsBuf, &chUpsBuf[inLength], (chLength - inLength) * sizeof (int32_t)); // update memory
+    {
+      memcpy (chUpsBuf, &chUpsBuf[inLength], (chLength - inLength) * sizeof (int32_t)); // update memory
+    }
     chUpsBuf += chLength - inLength;
 
     for (uint16_t i = inLength; i > 0; i--, chPcmBuf += numChannels, chUpsBuf++)
@@ -174,15 +175,16 @@ static void eaApplyDownsampler (int32_t* const pcmBuffer, int32_t* const resampl
   {
     int32_t* chPcmBuf = &pcmBuffer[ch];
     int32_t* chResBuf = &resampleBuffer[chLength * ch];
-# if 1
+
     if (firstFrame) // construct leading sample values via extrapolation
     {
       memset (chResBuf, 0, (lookahead - 32) * sizeof (int32_t));
       for (int8_t i = 0; i < 32; i++) chResBuf[lookahead - 32 + i] = (*chPcmBuf * i + (32 >> 1)) >> 5;
     }
     else
-# endif
-    memcpy (chResBuf, &chResBuf[inLength], (chLength - inLength) * sizeof (int32_t)); // update memory
+    {
+      memcpy (chResBuf, &chResBuf[inLength], (chLength - inLength) * sizeof (int32_t)); // update memory
+    }
     chResBuf += chLength - inLength;
 
     for (uint16_t i = inLength; i > 0; i--, chPcmBuf += numChannels, chResBuf++)
@@ -368,13 +370,13 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
 #endif
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-    fprintf_s (stdout, " preset\t=  # (1-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
+    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
 # if XHE_AAC_LOW_DELAY
 //  fprintf_s (stdout, " \t     (a-i)  low-complexity compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
     fprintf_s (stdout, " \t     (A-I)  41ms low-delay compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
 # endif
 #else
-    fprintf_s (stdout, " preset\t=  # (1-9)  low-complexity standard compliant xHE-AAC at 16*#+48 kbit/s\n");
+    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16*#+48 kbit/s\n");
 # if XHE_AAC_LOW_DELAY
 //  fprintf_s (stdout, " \t     (a-i)  low-complexity compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
     fprintf_s (stdout, " \t     (A-I)  41ms low-delay compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
@@ -406,9 +408,9 @@ int main (const int argc, char* argv[])
 
   // check preset mode, derive coder config
 #if XHE_AAC_LOW_DELAY
-  if ((*argv[1] >= '1' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'i') || (*argv[1] >= 'A' && *argv[1] <= 'I'))
+  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'i') || (*argv[1] >= 'A' && *argv[1] <= 'I'))
 #else
-  if ((*argv[1] >= '1' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'i'))
+  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'i'))
 #endif
   {
     i = (uint16_t) argv[1][0];
@@ -424,15 +426,15 @@ int main (const int argc, char* argv[])
   {
 #if XHE_AAC_LOW_DELAY
 # ifdef EXHALE_APP_WCHAR
-    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Use 1-9 or A-I.\n\n", argv[1]);
+    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Use 0-9 or A-I.\n\n", argv[1]);
 #else
-    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 1-9 or A-I.\n\n", argv[1]);
+    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 0-9 or A-I.\n\n", argv[1]);
 # endif
 #else
 # ifdef EXHALE_APP_WCHAR
-    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Please use 1-9.\n\n", argv[1]);
+    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Please use 0-9.\n\n", argv[1]);
 # else
-    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Please use 1-9.\n\n", argv[1]);
+    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Please use 0-9.\n\n", argv[1]);
 # endif
 #endif
     return 16384; // preset isn't supported
