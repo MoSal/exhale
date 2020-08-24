@@ -1181,7 +1181,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint8_t maxSfbLong  = (samplingRate < 37566 ? 63 - (samplingRate >> 11) : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           const uint8_t maxSfbShort = (samplingRate < 37566 ? 21 - (samplingRate >> 12) : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
-          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 4 : maxSfbLong - 6) + (meanSpecFlat[ci] >> 5);
+          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong - 6 + (meanSpecFlat[ci] >> 5));
           const unsigned targetBitCount25 = ((60000 + 20000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
           unsigned b = grpData.sfbsPerGroup - 1;
 
