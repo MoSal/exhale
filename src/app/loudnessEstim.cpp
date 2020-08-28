@@ -11,11 +11,25 @@
 #include "exhaleAppPch.h"
 #include "loudnessEstim.h"
 
+#if LE_ACCURATE_CALC
+static const int64_t kFilterCoeffs[4][8] = { // first 4: numerator, last 4: denominator, values fit into 32 bit
+  {-1007060950, 1418359536, -889278046, 209544004,  -986120192, 1360482752, -836214568, 193416912}, // <=32 kHz TODO
+  {-1007060950, 1418359536, -889278046, 209544004,  -986120192, 1360482752, -836214568, 193416912}, // 44.1 kHz
+  {-1007547085, 1419341519, -889783607, 209553717,  -988032194, 1365543311, -840618073, 194671779}, // 48.0 kHz
+  {-1007547085, 1419341519, -889783607, 209553717,  -988032194, 1365543311, -840618073, 194671779}  // >=64 kHz TODO
+};
+#endif
+
 // constructor
 LoudnessEstimator::LoudnessEstimator (int32_t* const inputPcmData,           const unsigned bitDepth /*= 24*/,
                                       const unsigned sampleRate /*= 44100*/, const unsigned numChannels /*= 2*/)
 {
+#if LE_ACCURATE_CALC
+  m_filterCoeffs  = kFilterCoeffs[sampleRate <= 44100 ? (sampleRate <= 32000 ? 0 : 1) : (sampleRate <= 48000 ? 2 : 3)];
+  m_filterFactor  = (sampleRate < 48000 ? (48000 - sampleRate) >> 11 : 0);
+#else
   m_filterFactor  = 224 + (__min (SHRT_MAX, (int) sampleRate - 47616) >> 10);
+#endif
   m_gbHopSize64   = (__min (163519, sampleRate) + 320) / 640; // 100 msec
   m_gbNormFactor  = (m_gbHopSize64 == 0 ? 0 : 1.0f / (4.0f * m_gbHopSize64));
   m_inputChannels = __min (8, numChannels);
@@ -23,7 +37,15 @@ LoudnessEstimator::LoudnessEstimator (int32_t* const inputPcmData,           con
   m_inputPcmData  = inputPcmData;
 
   reset ();
+#if LE_ACCURATE_CALC
+  for (unsigned ch = 0; ch < 8; ch++)
+  {
+    memset (m_filterMemI[ch], 0, 4 * sizeof (int32_t));
+    memset (m_filterMemO[ch], 0, 4 * sizeof (int32_t));
+  }
+#else
   for (unsigned ch = 0; ch < 8; ch++) m_filterMemoryI[ch] = m_filterMemoryO[ch] = 0;
+#endif
 }
 
 // public functions
@@ -32,6 +54,10 @@ uint32_t LoudnessEstimator::addNewPcmData (const unsigned samplesPerChannel)
   const unsigned frameSize64  = samplesPerChannel >> 6; // in units of 64
   const unsigned numSamples64 = 1 << 6; // sub-frame size (64, of course)
   const int32_t* chSig        = m_inputPcmData;
+#if LE_ACCURATE_CALC
+  const int64_t* filtI        = m_filterCoeffs;
+  const int64_t* filtO        = &m_filterCoeffs[4];
+#endif
   uint64_t* newQuarterPower   = m_powerValue[3];
   unsigned  ch, f, s;
 
@@ -47,6 +73,20 @@ uint32_t LoudnessEstimator::addNewPcmData (const unsigned samplesPerChannel)
     {
       for (ch = 0; ch < m_inputChannels; ch++)
       {
+#if LE_ACCURATE_CALC
+        // accurate K-filter according to ITU-R BS.1770-4, Annex 1 (2015)
+        int32_t* const i = m_filterMemI[ch];
+        int32_t* const o = m_filterMemO[ch];
+        const int64_t pi = filtI[0] * i[0] + filtI[1] * i[1] + filtI[2] * i[2] + filtI[3] * i[3] -
+                           filtO[0] * o[0] - filtO[1] * o[1] - filtO[2] * o[2] - filtO[3] * o[3];
+        const int64_t to = (pi < 0 ? (1 << 28) - 1 : 0); // trunc. offset
+        const int32_t xi = (*(chSig++)) << 2;
+        const int32_t yi = xi + int32_t ((pi + (xi == 0 ? to : (1 << 27))) >> 28);
+        const uint32_t a = abs (xi >> 2);
+
+        i[3] = i[2];   i[2] = i[1];   i[1] = i[0];   i[0] = xi; // update
+        o[3] = o[2];   o[2] = o[1];   o[1] = o[0];   o[0] = yi; // memory
+#else
         // simplified K-filter, including 500-Hz high-pass pre-processing
         const int32_t xi = *(chSig++);
         const int32_t yi = xi - m_filterMemoryI[ch] + ((128 + m_filterFactor * m_filterMemoryO[ch]) >> 8);
@@ -54,6 +94,7 @@ uint32_t LoudnessEstimator::addNewPcmData (const unsigned samplesPerChannel)
 
         m_filterMemoryI[ch] = xi;
         m_filterMemoryO[ch] = yi;
+#endif
         newQuarterPower[ch] += (int64_t) yi * (int64_t) yi;
 
         if (m_inputPeakValue < a) m_inputPeakValue = a; // get peak level
@@ -121,6 +162,9 @@ uint32_t LoudnessEstimator::getStatistics (const bool includeWarmUp /*= false*/)
   if (zg < LE_THRESH_ABS) return peakValue16Bits;
 
   zg = LE_LUFS_OFFSET + 10.0f * log10 (zg / (normFac * numBlocks * (float) m_inputMaxValue * (float) m_inputMaxValue));
+#if LE_ACCURATE_CALC
+  zg -= m_filterFactor * 0.046875f; // for sample rates other than 48 kHz
+#endif
   i  = __max (0, int32_t ((zg + 100.0f) * 512.0f + 0.5f)); // map to uint
 
   return (__min (USHRT_MAX, i) << 16) | peakValue16Bits; // L = i/512-100

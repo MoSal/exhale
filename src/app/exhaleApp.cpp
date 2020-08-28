@@ -45,7 +45,11 @@
 #endif
 
 // constants, experimental macros
+#if LE_ACCURATE_CALC
+#define EA_LOUD_INIT  16384u  // bsSamplePeakLevel = 0 & methodValue = 0
+#else
 #define EA_LOUD_INIT  16399u  // bsSamplePeakLevel = 0 & methodValue = 0
+#endif
 #define EA_LOUD_NORM -42.25f  // -100 + 57.75 of ISO 23003-4, Table A.48
 #define EA_PEAK_NORM -96.33f  // 20 * log10(2^-16), 16-bit normalization
 #define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
@@ -912,7 +916,7 @@ int main (const int argc, char* argv[])
         const uint32_t qPeak = uint32_t (32.0f * (20.0f - 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) - EA_PEAK_NORM) + 0.5f);
 
         // recreate ASC + UC + loudness data
-        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6); // measurementSystem is 3
+        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11; // measurementSystem
         memset (outAuData, 0, 108 * sizeof (uint8_t)); // max allowed ASC + UC size
         i = exhaleEnc.initEncoder (outAuData, &bw); // with finished loudnessInfo()
       }
@@ -925,7 +929,7 @@ int main (const int argc, char* argv[])
       fprintf_s (stdout, " Done, actual average %.1f kbit/s\n\n", (float) br * 0.001f);
       if (numChannels < 7)
       {
-        fprintf_s (stdout, " Input statistics: Mobile loudness %.2f LUFS,\tsample peak level %.2f dBFS\n\n",
+        fprintf_s (stdout, " Input statistics:  File loudness %.2f LUFS,\tsample peak level %.2f dBFS\n\n",
                    __max (3u, loudStats >> 16) / 512.f - 100.0f, 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) + EA_PEAK_NORM);
       }
 
