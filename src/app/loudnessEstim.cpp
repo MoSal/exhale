@@ -13,8 +13,8 @@
 
 #if LE_ACCURATE_CALC
 static const int64_t kFilterCoeffs[4][8] = { // first 4: numerator, last 4: denominator, values fit into 32 bit
-  {-1007060950, 1418359536, -889278046, 209544004,  -986120192, 1360482752, -836214568, 193416912}, // <=32 kHz TODO
-  {-1007060950, 1418359536, -889278046, 209544004,  -986120192, 1360482752, -836214568, 193416912}, // 44.1 kHz
+  { -974848000, 1329463296, -808124416, 185073664,  -946145526, 1253229580, -741406522, 165888320}, // <=32 kHz
+  {-1007157248, 1418657792, -889585664, 209649664,  -986120192, 1360482752, -836214568, 193416912}, // 44.1 kHz
   {-1007547085, 1419341519, -889783607, 209553717,  -988032194, 1365543311, -840618073, 194671779}, // 48.0 kHz
   {-1007547085, 1419341519, -889783607, 209553717,  -988032194, 1365543311, -840618073, 194671779}  // >=64 kHz TODO
 };
@@ -26,7 +26,7 @@ LoudnessEstimator::LoudnessEstimator (int32_t* const inputPcmData,           con
 {
 #if LE_ACCURATE_CALC
   m_filterCoeffs  = kFilterCoeffs[sampleRate <= 44100 ? (sampleRate <= 32000 ? 0 : 1) : (sampleRate <= 48000 ? 2 : 3)];
-  m_filterFactor  = (sampleRate < 48000 ? (48000 - sampleRate) >> 11 : 0);
+  m_filterFactor  = (sampleRate < 48000 ? (48200 - sampleRate) >> 12 : 0);
 #else
   m_filterFactor  = 224 + (__min (SHRT_MAX, (int) sampleRate - 47616) >> 10);
 #endif

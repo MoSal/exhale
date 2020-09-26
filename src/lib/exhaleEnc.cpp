@@ -2096,14 +2096,23 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 
   if ((errorValue == 0) && (audioConfigBuffer != nullptr)) // save UsacConfig() for writeout
   {
+    const uint32_t loudnessInfo = (audioConfigBytes ? *audioConfigBytes : 0);
+
     errorValue = m_outStream.createAudioConfig (m_frequencyIdx, m_frameLength != CCFL_1024, chConf, m_numElements,
-                                                elementTypeConfig[chConf], audioConfigBytes ? *audioConfigBytes : 0,
+                                                elementTypeConfig[chConf], loudnessInfo,
 #if !RESTRICT_TO_AAC
                                                 m_timeWarping, m_noiseFilling,
 #endif
                                                 audioConfigBuffer);
     if (audioConfigBytes) *audioConfigBytes = errorValue; // length of UsacConfig() in bytes
     errorValue = (errorValue == 0 ? 1 : 0);
+
+    // NOTE: In the following, an error value of 256 is actually a warning, not an error. If
+    // the exhale library is used for realtime encoding and a nonzero program loudness level
+    // is provided before any frames have been encoded, this warning reminds the implementer
+    // to apply short-term loudness normalization of the incoming live audio before encoding
+    // each frame, preferably to a program level of -23 LUFS and as recommended in EBU R128.
+    if ((m_frameCount == 0) && ((loudnessInfo & 16383) > 0)) errorValue |= 256;
   }
 
   return errorValue;

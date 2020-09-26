@@ -53,7 +53,7 @@ double SfbQuantizer::getQuantDist (const unsigned* const coeffMagn, const uint8_
   {
     const double d = m_lutXExp43[coeffQuant[i]] - coeffMagn[i] * stepSizeDiv;
 
-    dDist += d * d; // TODO: do this in fixed-point and with SIMD
+    dDist += d * d;
   }
 
   // consider quantization step-size in calculation of distortion
@@ -520,7 +520,8 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 {
   const unsigned numScaleFactors = (unsigned) maxScaleFacIndex + 1;
 #if EC_TRELLIS_OPT_CODING
-  const uint8_t numTrellisStates = (samplingRate < 28800 ? 8 - (samplingRate >> 13) : 5) - __min (2, (bitRateMode + 2) >> 2); // states per SFB
+  const uint8_t complexityOffset = (samplingRate < 28800 ? 8 - (samplingRate >> 13) : 5) + (bitRateMode == 0 ? 1 : 0);
+  const uint8_t numTrellisStates = complexityOffset - __min (2, (bitRateMode + 2) >> 2);  // number of states per SFB
   const uint8_t numSquaredStates = numTrellisStates * numTrellisStates;
   const uint16_t quantRateLength = (samplingRate < 28800 || samplingRate >= 57600 ? 512 : 256); // quantizeMagnRDOC()
 #endif
@@ -606,7 +607,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
     const uint16_t   sfbWidth = grpOffsets[sfb + 1] - sfbStart;
     uint32_t* const coeffMagn = &m_coeffMagn[sfbStart];
 
-    for (int i = sfbWidth - 1; i >= 0; i--) // back up magnitudes. TODO: use SIMD for speed?
+    for (int i = sfbWidth - 1; i >= 0; i--) // back up magnitudes
     {
       coeffMagn[i] = abs (inputCoeffs[sfbStart + i]);
     }
@@ -642,7 +643,7 @@ uint8_t SfbQuantizer::quantizeSpecSfb (EntropyCoder& entropyCoder, const int32_t
     uint8_t* ptrCurr  = &m_coeffTemp[100];
     uint8_t  sfCurr   = sfIndex;
 
-    for (int i = sfbWidth - 1; i >= 0; i--) // back up magnitudes. TODO: use SIMD for speed?
+    for (int i = sfbWidth - 1; i >= 0; i--) // back up magnitudes
     {
       coeffMagn[i] = abs (inputCoeffs[sfbStart + i]);
     }

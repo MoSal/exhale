@@ -34,7 +34,7 @@ static inline uint32_t squareMeanRoot (const uint32_t value1, const uint32_t val
   return uint32_t (meanRoot * meanRoot + 0.5);
 }
 
-static void jndPowerLawAndPeakSmoothing (uint32_t* const  stepSizes, const unsigned nStepSizes,
+static void jndPowerLawAndPeakSmoothing (uint32_t* const  stepSizes, const unsigned nStepSizes, const bool lowRateMode,
                                          const uint32_t avgStepSize, const uint8_t sfm, const uint8_t tfm)
 {
   const unsigned  expTimes512 = 512u - sfm; // 1.0 - sfm / 2.0
@@ -51,15 +51,16 @@ static void jndPowerLawAndPeakSmoothing (uint32_t* const  stepSizes, const unsig
   stepSizes[0] = __min (stepSizeM1, stepSizes[0]); // `- becomes --
   for (/*b*/; b < nStepSizes; b++)
   {
-    const uint64_t oneMinusB = 128 - b;
+    const uint64_t modifiedB = (lowRateMode ? 16 + b : b);
+    const uint64_t oneMinusB = 128 - modifiedB;
     const uint32_t stepSizeB = jndModel (stepSizes[b], avgStepSize, expTimes512, mulTimes512);
 
     if ((stepSizeM3 <= stepSizeM2) && (stepSizeM3 <= stepSizeM1) && (stepSizeB <= stepSizeM2) && (stepSizeB <= stepSizeM1))
     {
       const uint32_t maxM3M0 = __max (stepSizeM3, stepSizeB); // smoothen local spectral peak of _´`- shape
 
-      stepSizes[b - 2] = uint32_t ((b * (uint64_t) stepSizes[b - 2] + oneMinusB * __min (maxM3M0, stepSizes[b - 2]) + 64) >> 7); // _-`-
-      stepSizes[b - 1] = uint32_t ((b * (uint64_t) stepSizes[b - 1] + oneMinusB * __min (maxM3M0, stepSizes[b - 1]) + 64) >> 7); // _---
+      stepSizes[b - 2] = uint32_t ((modifiedB * stepSizes[b - 2] + oneMinusB * __min (maxM3M0, stepSizes[b - 2]) + 64) >> 7); // _-`-
+      stepSizes[b - 1] = uint32_t ((modifiedB * stepSizes[b - 1] + oneMinusB * __min (maxM3M0, stepSizes[b - 1]) + 64) >> 7); // _---
     }
     stepSizeM3 = stepSizeM2;
     stepSizeM2 = stepSizeM1;
@@ -275,7 +276,8 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
 
         for (gr = 0; gr < grpData.numWindowGroups; gr++) // separate spectral peak smoothing for each group
         {
-          jndPowerLawAndPeakSmoothing (&stepSizes[numSwbShort * gr], maxSfbInCh, m_avgStepSize[ch], m_avgSpecFlat[ch], 0);
+          jndPowerLawAndPeakSmoothing (&stepSizes[numSwbShort * gr], maxSfbInCh, false,
+                                       m_avgStepSize[ch], m_avgSpecFlat[ch], 0);
         }
       }
       continue;
@@ -345,7 +347,8 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
     sumMeans += m_avgStepSize[ch];
     m_avgStepSize[ch] *= m_avgStepSize[ch];
 
-    jndPowerLawAndPeakSmoothing (stepSizes, maxSfbInCh, m_avgStepSize[ch], m_avgSpecFlat[ch], tnsDisabled ? m_avgTempFlat[ch] : 0);
+    jndPowerLawAndPeakSmoothing (stepSizes, maxSfbInCh, (m_rateIndex == 0) && (samplingRate >= 27713),
+                                 m_avgStepSize[ch], m_avgSpecFlat[ch], tnsDisabled ? m_avgTempFlat[ch] : 0);
 
     if ((samplingRate >= 27713) && (samplingRate < 75132))
     {
