@@ -12,11 +12,11 @@
 #include "loudnessEstim.h"
 
 #if LE_ACCURATE_CALC
-static const int64_t kFilterCoeffs[4][8] = { // first 4: numerator, last 4: denominator, values fit into 32 bit
-  { -974848000, 1329463296, -808124416, 185073664,  -946145526, 1253229580, -741406522, 165888320}, // <=32 kHz
-  {-1007157248, 1418657792, -889585664, 209649664,  -986120192, 1360482752, -836214568, 193416912}, // 44.1 kHz
-  {-1007547085, 1419341519, -889783607, 209553717,  -988032194, 1365543311, -840618073, 194671779}, // 48.0 kHz
-  {-1007547085, 1419341519, -889783607, 209553717,  -988032194, 1365543311, -840618073, 194671779}  // >=64 kHz TODO
+static const int64_t kFilterCoeffs[4][8] = { // first 4: numerator (16->-32 bit), last 4: denominator (32 bit)
+  { -974848000, 1329463296, -808124416, 185073664,  -946145519, 1253229559, -741406502, 165888314}, // <=32 k
+  {-1001717760, 1403125760, -874840064, 204996608,  -980574000, 1345222905, -822320842, 189236866}, // 44.1 k
+  {-1007550464, 1419378688, -889847808, 209584128,  -988032194, 1365543311, -840618073, 194671779}, // 48.0 k
+  {-1024000000, 1465647104, -933036032, 222953472, -1009281050, 1424244875, -894338686, 210939497}  // >=64 k
 };
 #endif
 
@@ -26,7 +26,7 @@ LoudnessEstimator::LoudnessEstimator (int32_t* const inputPcmData,           con
 {
 #if LE_ACCURATE_CALC
   m_filterCoeffs  = kFilterCoeffs[sampleRate <= 44100 ? (sampleRate <= 32000 ? 0 : 1) : (sampleRate <= 48000 ? 2 : 3)];
-  m_filterFactor  = (sampleRate < 48000 ? (48200 - sampleRate) >> 12 : 0);
+  m_filterFactor  = (sampleRate < 48000 ? (48200 - sampleRate) >> 12 : (48000 - sampleRate) >> 14);
 #else
   m_filterFactor  = 224 + (__min (SHRT_MAX, (int) sampleRate - 47616) >> 10);
 #endif

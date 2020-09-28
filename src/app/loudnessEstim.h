@@ -40,7 +40,11 @@ private:
 #endif
   uint64_t m_powerValue[4][8]; // channel-wise power in each gating block quarter
   float    m_gbNormFactor; // 64-sample normalization factor, 1/(4*m_gbHopSize64)
+#if LE_ACCURATE_CALC
+  int8_t   m_filterFactor; // sampling rate dependent K-weighting filter constant
+#else
   uint8_t  m_filterFactor; // sampling rate dependent K-weighting filter constant
+#endif
   uint8_t  m_gbHopLength64;  // number of 64-sample units in gating block quarter
   uint8_t  m_gbHopSize64;  // hop-size between gating blocks, 25% of block length
   uint8_t  m_inputChannels;

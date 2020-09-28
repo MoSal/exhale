@@ -213,7 +213,7 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
     {
       const double normalizedMagn = (double) coeffMagn[i] * magnNormDiv;
 
-      dNum += normalizedMagn * normalizedMagn; // TODO: use SIMD?
+      dNum += normalizedMagn * normalizedMagn;
     }
 
     if (dNum > SF_THRESH_POS * SF_THRESH_POS * dDen) sf++;
@@ -520,7 +520,7 @@ unsigned SfbQuantizer::initQuantMemory (const unsigned maxTransfLength,
 {
   const unsigned numScaleFactors = (unsigned) maxScaleFacIndex + 1;
 #if EC_TRELLIS_OPT_CODING
-  const uint8_t complexityOffset = (samplingRate < 28800 ? 8 - (samplingRate >> 13) : 5) + (bitRateMode == 0 ? 1 : 0);
+  const uint8_t complexityOffset = (samplingRate < 28800 ? 8 - (samplingRate >> 13) : 5) + ((bitRateMode == 0) && (samplingRate >= 8192) ? 1 : 0);
   const uint8_t numTrellisStates = complexityOffset - __min (2, (bitRateMode + 2) >> 2);  // number of states per SFB
   const uint8_t numSquaredStates = numTrellisStates * numTrellisStates;
   const uint16_t quantRateLength = (samplingRate < 28800 || samplingRate >= 57600 ? 512 : 256); // quantizeMagnRDOC()
