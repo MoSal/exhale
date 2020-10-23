@@ -15,7 +15,6 @@
 
 // constants, experimental macros
 #define TA_EPS               4096
-#define TA_MORE_PITCH_TESTS     1
 
 // temporal signal analysis class
 class TempAnalyzer
@@ -38,7 +37,7 @@ public:
   ~TempAnalyzer () { }
   // public functions
   void getTempAnalysisStats (uint32_t avgTempAnaStats[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
-  void getTransientLocation (int16_t maxHighPassValueLocation[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
+  void getTransientAndPitch (int16_t transIdxAndPitch[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   unsigned temporalAnalysis (const int32_t* const timeSignals[USAC_MAX_NUM_CHANNELS], const unsigned nChannels,
                              const int nSamplesInFrame, const unsigned lookaheadOffset,
                              const unsigned lfeChannelIndex = USAC_MAX_NUM_CHANNELS); // to skip an LFE channel

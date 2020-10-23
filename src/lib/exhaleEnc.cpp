@@ -1605,14 +1605,14 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
 
   // get temporal channel statistics for this frame, used for spectral grouping/quantization
   m_tempAnalyzer.getTempAnalysisStats (m_tempAnaCurr, nChannels);
-  m_tempAnalyzer.getTransientLocation (m_tranLocCurr, nChannels);
+  m_tempAnalyzer.getTransientAndPitch (m_tranLocCurr, nChannels);
 
   // temporal analysis for look-ahead signal (central nSamplesInFrame samples of next frame)
   errorValue |= m_tempAnalyzer.temporalAnalysis (m_timeSignals, nChannels, nSamplesInFrame, nSamplesTempAna, lfeChannelIndex);
 
   // get temporal channel statistics for next frame, used for window length/overlap decision
   m_tempAnalyzer.getTempAnalysisStats (m_tempAnaNext, nChannels);
-  m_tempAnalyzer.getTransientLocation (m_tranLocNext, nChannels);
+  m_tempAnalyzer.getTransientAndPitch (m_tranLocNext, nChannels);
 
 #ifndef NO_FIX_FOR_ISSUE_1
   m_indepFlag = (((m_frameCount++) % m_indepPeriod) <= 1); // configure usacIndependencyFlag
@@ -1654,10 +1654,13 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         const USAC_WSEQ wsPrev = icsPrev.windowSequence;
              USAC_WSEQ& wsCurr = icsCurr.windowSequence;
         // get temporal signal statistics, then determine overlap config. for the next frame
+        const unsigned  plCurr = abs (m_tranLocCurr[ci]) & 1023;
         const unsigned  sfCurr = (m_tempAnaCurr[ci] >> 24) & UCHAR_MAX;
         const unsigned  tfCurr = (m_tempAnaCurr[ci] >> 16) & UCHAR_MAX;
+        const unsigned  plNext = abs (m_tranLocNext[ci]) & 1023;
         const unsigned  sfNext = (m_tempAnaNext[ci] >> 24) & UCHAR_MAX;
         const unsigned  tfNext = (m_tempAnaNext[ci] >> 16) & UCHAR_MAX;
+        const unsigned tThresh = UCHAR_MAX * (__max (plCurr, plNext) < 614 /*0.6 * 1024*/ ? 16 : 15 - (m_bitRateMode >> 2));
 
         tsCurr[ch] = (m_tempAnaCurr[ci] /*R*/) & UCHAR_MAX;
         tsNext[ch] = (m_tempAnaNext[ci] >>  8) & UCHAR_MAX;
@@ -1677,7 +1680,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         }
         else // LONG_START_SEQUENCE, STOP_START_SEQUENCE, EIGHT_SHORT_SEQUENCE - min overlap
         {
-          wsCurr = (m_tranLocCurr[ci] >= 0) || (tsCurr[ch] > (UCHAR_MAX * 5) / 8) || (tfCurr > (UCHAR_MAX * 15) / 16) ? EIGHT_SHORT :
+          wsCurr = (m_tranLocCurr[ci] >= 0) || (tsCurr[ch] > (UCHAR_MAX * 5) / 8) || (tfCurr > tThresh / 16) ? EIGHT_SHORT :
 #if RESTRICT_TO_AAC
                    (lowOlapNext ? EIGHT_SHORT : LONG_STOP);
 #else
@@ -1697,7 +1700,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         }
 
         // set scale_factor_grouping
-        icsCurr.windowGrouping = (wsCurr == EIGHT_SHORT ? (m_tranLocCurr[ci] * 8) / (int16_t) nSamplesInFrame : 0);
+        icsCurr.windowGrouping = (wsCurr == EIGHT_SHORT ? __max (0, m_tranLocCurr[ci]) / (2 * nSamplesInFrame) : 0);
         ci++;
       } // for ch
 
@@ -1743,7 +1746,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         {
           const int16_t tranLocSynch = __min (m_tranLocCurr[ci - 2], m_tranLocCurr[ci - 1]);
 
-          icsInfo0.windowGrouping = icsInfo1.windowGrouping = (tranLocSynch * 8) / (int16_t) nSamplesInFrame;
+          icsInfo0.windowGrouping = icsInfo1.windowGrouping = __max (0, tranLocSynch) / (2 * nSamplesInFrame);
         }
 
         if ((icsInfo0.windowShape != WINDOW_SINE) || (icsInfo1.windowShape != WINDOW_SINE))

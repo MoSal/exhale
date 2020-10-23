@@ -61,14 +61,14 @@ static inline uint32_t packAvgTempAnalysisStats (const unsigned avgAbsHpL,  cons
   return (CLIP_UCHAR (flatSpec) << 24) | (CLIP_UCHAR (flatTemp) << 16) | (CLIP_UCHAR (statTmpL) << 8) | CLIP_UCHAR (statTmpR);
 }
 
-static inline int16_t getMaxAbsHpValueLocation (const unsigned maxAbsValL, const unsigned maxAbsValR, const unsigned maxAbsValP,
-                                                const int16_t  maxAbsIdxL, const int16_t  maxAbsIdxR)
+static inline int16_t packTransLocWithPitchLag (const unsigned maxAbsValL, const unsigned maxAbsValR, const unsigned maxAbsValP,
+                                                const int16_t  maxAbsIdxL, const int16_t  maxAbsIdxR, const int16_t  optPitchLag)
 {
   if ((maxAbsValP * 5 < maxAbsValL * 2) || (maxAbsValL * 5 < maxAbsValR * 2)) // has transient
   {
-    return maxAbsValR > maxAbsValL ? maxAbsIdxR : maxAbsIdxL;
+    return (((maxAbsValR > maxAbsValL ? maxAbsIdxR : maxAbsIdxL) << 4) & 0xF800) | __min (2047, optPitchLag);
   }
-  return -1; // no transient
+  return -1 * optPitchLag; // has no transient
 }
 
 // constructor
@@ -95,13 +95,13 @@ void TempAnalyzer::getTempAnalysisStats (uint32_t avgTempAnaStats[USAC_MAX_NUM_C
   memcpy (avgTempAnaStats, m_tempAnaStats, nChannels * sizeof (uint32_t));
 }
 
-void TempAnalyzer::getTransientLocation (int16_t maxHighPassValueLocation[USAC_MAX_NUM_CHANNELS], const unsigned nChannels)
+void TempAnalyzer::getTransientAndPitch (int16_t transIdxAndPitch[USAC_MAX_NUM_CHANNELS], const unsigned nChannels)
 {
-  if ((maxHighPassValueLocation == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS))
+  if ((transIdxAndPitch == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS))
   {
     return;
   }
-  memcpy (maxHighPassValueLocation, m_transientLoc, nChannels * sizeof (int16_t));
+  memcpy (transIdxAndPitch, m_transientLoc, nChannels * sizeof (int16_t));
 }
 
 unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_MAX_NUM_CHANNELS], const unsigned nChannels,
@@ -213,23 +213,19 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       {
         sumAbsPpL = sumAbsValL; // left side
       }
-#if TA_MORE_PITCH_TESTS
       if ((sumAbsValR = applyPitchPred (chSigPH, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
       {
         sumAbsPpR = sumAbsValR; // right side
         pLagBestR = pLag;
       }
-#endif
       // test right-side pitch lag on the frame
       pLag = __min (maxAbsIdxR - maxAbsIdxL, (int) lookaheadOffset - 1);
       pSgn = (((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] > 0) && (chSig[maxAbsIdxL] - chSigM1[maxAbsIdxL] < 0)) ||
               ((chSig[maxAbsIdxR] - chSigM1[maxAbsIdxR] < 0) && (chSig[maxAbsIdxL] - chSigM1[maxAbsIdxL] > 0)) ? -1 : 1);
-#if TA_MORE_PITCH_TESTS
       if ((sumAbsValL = applyPitchPred (chSig, halfFrameOffset, pLag, pSgn)) < sumAbsPpL)
       {
         sumAbsPpL = sumAbsValL; // left side
       }
-#endif
       if ((sumAbsValR = applyPitchPred (chSigPH, halfFrameOffset, pLag, pSgn)) < sumAbsPpR)
       {
         sumAbsPpR = sumAbsValR; // right side
@@ -248,7 +244,6 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         sumAbsPpR = sumAbsValR; // right side
         pLagBestR = pLag;
       }
-#if TA_MORE_PITCH_TESTS
       if (pLagBestR >= halfFrameOffset) // half
       {
         pLag = pLagBestR >> 1;
@@ -264,7 +259,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
           pLagBestR = pLag;
         }
       }
-#endif
+
       // convert L1 norms into average values
       sumAbsHpL = (sumAbsHpL + unsigned (halfFrameOffset >> 1)) / unsigned (halfFrameOffset);
       sumAbsHpR = (sumAbsHpR + unsigned (halfFrameOffset >> 1)) / unsigned (halfFrameOffset);
@@ -273,8 +268,8 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
 // --- temporal analysis statistics for frame
       m_tempAnaStats[ch] = packAvgTempAnalysisStats (sumAbsHpL,  sumAbsHpR,  m_avgAbsHpPrev[ch],
                                                      sumAbsPpL + sumAbsPpR,  maxAbsValL + maxAbsValR);
-      m_transientLoc[ch] = getMaxAbsHpValueLocation (maxAbsValL, maxAbsValR, m_maxAbsHpPrev[ch],
-                                                     maxAbsIdxL, maxAbsIdxR);
+      m_transientLoc[ch] = packTransLocWithPitchLag (maxAbsValL, maxAbsValR, m_maxAbsHpPrev[ch],
+                                                     maxAbsIdxL, maxAbsIdxR, __max (1, pLagBestR));
       // update stats history for this channel
       m_avgAbsHpPrev[ch] = sumAbsHpR;
       m_maxAbsHpPrev[ch] = maxAbsValR;
