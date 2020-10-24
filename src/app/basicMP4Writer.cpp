@@ -2,7 +2,7 @@
  * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  * pre-roll serializer and related code added by J. Calhoun in 2020, see merge request 4
  *
- * The copyright in this software is being made available under a Modified BSD-Style License
+ * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *

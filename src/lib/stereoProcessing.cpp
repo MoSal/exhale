@@ -1,7 +1,7 @@
 /* stereoProcessing.cpp - source file for class providing M/S stereo coding functionality
  * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
- * The copyright in this software is being made available under a Modified BSD-Style License
+ * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *

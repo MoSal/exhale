@@ -1,7 +1,7 @@
 /* exhaleApp.cpp - source file with main() routine for exhale application executable
  * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
- * The copyright in this software is being made available under a Modified BSD-Style License
+ * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
@@ -359,7 +359,7 @@ int main (const int argc, char* argv[])
   {
     fprintf_s (stdout, " Copyright 2018-2020 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
-    fprintf_s (stdout, " This software is being made available under a Modified BSD License and comes\n");
+    fprintf_s (stdout, " This software is made available under the exhale Copyright License and comes\n");
     fprintf_s (stdout, " with ABSOLUTELY NO WARRANTY. This software may be subject to other third-party\n");
     fprintf_s (stdout, " rights, including patent rights. No such rights are granted under this License.\n\n");
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)

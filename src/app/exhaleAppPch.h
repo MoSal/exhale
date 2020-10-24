@@ -1,7 +1,7 @@
 /* exhaleAppPch.h - pre-compiled header file for source code of exhale application
- * written by C. R. Helmrich, last modified in 2019 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
  *
- * The copyright in this software is being made available under a Modified BSD-Style License
+ * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
