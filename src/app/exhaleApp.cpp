@@ -444,7 +444,7 @@ int main (const int argc, char* argv[])
     return 16384; // preset isn't supported
   }
 
-  const unsigned frameLength = (3 + coreSbrFrameLengthIndex) << 8;
+  const unsigned frameLength = (3 + coreSbrFrameLengthIndex) << 8; // dec. output
   const unsigned startLength = (frameLength * 25) >> 4; // encoder PCM look-ahead
 
   if (readStdin) // configure stdin
@@ -566,7 +566,7 @@ int main (const int argc, char* argv[])
 
       goto mainFinish; // ask for resampling
     }
-    if (wavReader.getSampleRate () > 32000 && variableCoreBitRateMode == 1)
+    if (wavReader.getSampleRate () > 32000 && variableCoreBitRateMode <= 1)
     {
 #if ENABLE_RESAMPLING
       if (wavReader.getSampleRate () == 48000)

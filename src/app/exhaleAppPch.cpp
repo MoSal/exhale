@@ -12,14 +12,14 @@
 
 // ISO/IEC 23003-3 USAC Table 67
 static const unsigned supportedSamplingRates[16] = {
-  96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025,  8000, 7350, // AAC
+  96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350, // AAC
   57600, 38400, 19200 // BL USAC
 };
 
 // public sampling rate function
 bool isSamplingRateSupported (const unsigned samplingRate)
 {
-  for (unsigned i = 0; i < 16; i++)
+  for (uint8_t i = 0; i < 16; i++)
   {
     if (samplingRate == supportedSamplingRates[i]) return true;
   }
