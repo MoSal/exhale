@@ -39,7 +39,8 @@ public:
   void getTempAnalysisStats (uint32_t avgTempAnaStats[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   void getTransientAndPitch (int16_t transIdxAndPitch[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   unsigned temporalAnalysis (const int32_t* const timeSignals[USAC_MAX_NUM_CHANNELS], const unsigned nChannels,
-                             const int nSamplesInFrame, const unsigned lookaheadOffset,
+                             const int nSamplesInFrame, const unsigned lookaheadOffset, const uint8_t sbrShift,
+                             int32_t* const lrCoreTimeSignals[USAC_MAX_NUM_CHANNELS] = nullptr, // if using SBR
                              const unsigned lfeChannelIndex = USAC_MAX_NUM_CHANNELS); // to skip an LFE channel
 }; // TempAnalyzer
 

@@ -67,6 +67,7 @@ private:
   BitAllocator    m_bitAllocator; // for scale factor init
   uint8_t         m_bitRateMode;
   USAC_CCI        m_channelConf;
+  int32_t*        m_coreSignals[USAC_MAX_NUM_CHANNELS];
   CoreCoderData*  m_elementData[USAC_MAX_NUM_ELEMENTS];
   EntropyCoder    m_entropyCoder[USAC_MAX_NUM_CHANNELS];
   uint32_t        m_frameCount;
@@ -95,6 +96,7 @@ private:
   uint16_t        m_sfbLoudMem[2][26][32]; // loudness mem
 #endif
   SfbQuantizer    m_sfbQuantizer; // powerlaw quantization
+  uint8_t         m_shiftValSBR; // SBR ratio for shifting
   SpecAnalyzer    m_specAnalyzer; // for spectral analysis
   uint32_t        m_specAnaCurr[USAC_MAX_NUM_CHANNELS];
   uint8_t         m_specFlatPrev[USAC_MAX_NUM_CHANNELS];

@@ -34,6 +34,8 @@ private:
   // helper functions
   void     writeByteAlignment (); // write 0s for byte alignment
   unsigned writeChannelWiseIcsInfo (const IcsInfo& icsInfo); // ics_info()
+  unsigned writeChannelWiseSbrData (const int32_t* const sbrDataCh0, const int32_t* const sbrDataCh1,
+                                    const bool indepFlag = false);
   unsigned writeChannelWiseTnsData (const TnsData& tnsData, const bool eightShorts);
   unsigned writeFDChannelStream    (const CoreCoderData& elData, EntropyCoder& entrCoder, const unsigned ch,
                                     const int32_t* const mdctSignal, const uint8_t* const mdctQuantMag,
@@ -60,7 +62,7 @@ public:
 #if !RESTRICT_TO_AAC
                               const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
 #endif
-                              unsigned char* const audioConfig);
+                              const uint8_t sbrRatioShiftValue,   unsigned char* const audioConfig);
   unsigned createAudioFrame  (CoreCoderData** const elementData,  EntropyCoder* const entropyCoder,
                               int32_t** const mdctSignals,        uint8_t** const mdctQuantMag,
                               const bool usacIndependencyFlag,    const uint8_t numElements,
@@ -68,6 +70,7 @@ public:
 #if !RESTRICT_TO_AAC
                               const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
 #endif
+                              const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                               unsigned char* const accessUnit,    const unsigned nSamplesInFrame = 1024);
 }; // BitStreamWriter
 

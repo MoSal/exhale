@@ -11,6 +11,14 @@
 #include "exhaleLibPch.h"
 #include "tempAnalysis.h"
 
+static const int16_t lffc2x[65] = { // low-frequency filter coefficients
+  // 269-pt. sinc windowed by 0.409 * cos(0*pi.*t) - 0.5 * cos(2*pi.*t) + 0.091 * cos(4*pi.*t)
+  17887, -27755, 16590, -11782, 9095, -7371, 6166, -5273, 4582, -4029, 3576, -3196, 2873,
+  -2594, 2350, -2135, 1944, -1773, 1618, -1478, 1351, -1235, 1129, -1032, 942, -860, 784,
+  -714, 650, -591, 536, -485, 439, -396, 357, -321, 287, -257, 229, -204, 181, -160, 141,
+  -124, 108, -95, 82, -71, 61, -52, 44, -37, 31, -26, 21, -17, 14, -11, 8, -6, 5, -3, 2, -1, 1
+};
+
 // static helper functions
 static unsigned updateAbsStats (const int32_t* const chSig, const int nSamples, unsigned* const maxAbsVal, int16_t* const maxAbsIdx)
 {
@@ -105,13 +113,16 @@ void TempAnalyzer::getTransientAndPitch (int16_t transIdxAndPitch[USAC_MAX_NUM_C
 }
 
 unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_MAX_NUM_CHANNELS], const unsigned nChannels,
-                                         const int nSamplesInFrame, const unsigned lookaheadOffset,
-                                         const unsigned lfeChannelIndex /*= USAC_MAX_NUM_CHANNELS*/) // to skip an LFE channel
+                                         const int nSamplesInFrame, const unsigned lookaheadOffset, const uint8_t sbrShift,
+                                         int32_t* const lrCoreTimeSignals[USAC_MAX_NUM_CHANNELS] /*= nullptr*/, // if using SBR
+                                         const unsigned lfeChannelIndex /*= USAC_MAX_NUM_CHANNELS*/)  // to skip an LFE channel
 {
+  const bool applyResampler = (sbrShift > 0 && lrCoreTimeSignals != nullptr);
   const int halfFrameOffset = nSamplesInFrame >> 1;
+  const int resamplerOffset = (int) lookaheadOffset - 128;
 
-  if ((timeSignals == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS) || (lfeChannelIndex > USAC_MAX_NUM_CHANNELS) ||
-      (nSamplesInFrame > 2048) || (nSamplesInFrame < 2) || (lookaheadOffset > 2048) || (lookaheadOffset == 0))
+  if ((timeSignals == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS) || (lfeChannelIndex > USAC_MAX_NUM_CHANNELS) || (sbrShift > 1) ||
+      (nSamplesInFrame > 2048) || (nSamplesInFrame < 2) || (lookaheadOffset > 4096) || (lookaheadOffset <= 256u * sbrShift))
   {
     return 1;
   }
@@ -133,6 +144,26 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
     unsigned uR0 = abs (chSig[splitPtC    ] - chSigM1[splitPtC    ]);
     unsigned uR1 = abs (chSig[splitPtR - 1] - chSigM1[splitPtR - 1]);
     unsigned u; // temporary value - register?
+
+    if (applyResampler && lrCoreTimeSignals[ch] != nullptr) // downsampler
+    {
+      /*LF*/int32_t* lrSig = &lrCoreTimeSignals[ch][resamplerOffset >> sbrShift]; // low-rate,
+      const int32_t* hrSig = &timeSignals[ch][resamplerOffset]; // high-rate input time signal
+
+      for (int i = nSamplesInFrame >> sbrShift; i > 0; i--, lrSig++, hrSig += 2)
+      {
+        int64_t r  = ((int64_t) hrSig[0] << 17) + (hrSig[-1] + (int64_t) hrSig[1]) * -2*SHRT_MIN;
+        int16_t s;
+
+        for (u = 65, s = 129; u > 0; s -= 2) r += (hrSig[-s] + (int64_t) hrSig[s]) * lffc2x[--u];
+
+        *lrSig = int32_t ((r + (1 << 17)) >> 18); // low-pass and low-rate
+// TODO: bandpass
+        if (*lrSig < -8388608) *lrSig = -8388608;
+        else
+        if (*lrSig >  8388607) *lrSig =  8388607;
+      }
+    }
 
     if (ch == lfeChannelIndex)  // no analysis
     {

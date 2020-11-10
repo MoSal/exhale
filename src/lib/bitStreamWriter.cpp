@@ -112,6 +112,117 @@ unsigned BitStreamWriter::writeChannelWiseIcsInfo (const IcsInfo& icsInfo)   // 
   return 9;
 }
 
+unsigned BitStreamWriter::writeChannelWiseSbrData (const int32_t* const sbrDataCh0, const int32_t* const sbrDataCh1,
+                                                   const bool indepFlag /*= false*/)
+{
+  const unsigned nb = (sbrDataCh0 != nullptr ? 2 * ((sbrDataCh0[0] >> 23) & 1) + 2 : 0); // noise bits/ch = 2 or 4
+  const int16_t res = (nb > 0 ? sbrDataCh0[0] >> 29 : 0); // short bs_amp_res
+  const bool stereo = (sbrDataCh1 != nullptr);
+  const bool couple = (stereo ? ((sbrDataCh1[0] >> 23) & 1) : false);
+  unsigned bitCount = (stereo ? (couple ? 2 : 7 + nb) : 0) + 6 + nb, i, tmpCh0, tmpCh1;
+
+  if (nb == 0) return 0;
+
+  tmpCh0 = (sbrDataCh0[0] >> 21) & 3;
+  tmpCh1 = ((stereo && !couple ? sbrDataCh1[0] : sbrDataCh0[0]) >> 21) & 3;
+
+  if (stereo) m_auBitStream.write (couple ? 1 : 0, 1); // _coupling
+
+  // sbr_grid(), assumes bs_frame_class[ch] == 0, i.e. class FIXFIX
+  m_auBitStream.write ((sbrDataCh0[0] >> 20) & 7, 5); // class data
+  if (stereo && !couple) m_auBitStream.write ((sbrDataCh1[0] >> 20) & 7, 5);
+
+  // sbr_dtdf()
+  i = (1u << tmpCh0) - (indepFlag ? 1 : 0); // actual bs_num_env[0]
+  if (i > 0) m_auBitStream.write ((sbrDataCh0[0] >> 12) & 255, i); // _df_env
+  bitCount += i;
+  i = (tmpCh0 > 0 ? 2 : 1) - (indepFlag ? 1 : 0);// bs_num_noise[0]
+  if (i > 0) m_auBitStream.write ((sbrDataCh0[0] >> 4) & 255, i); // df_noise
+  bitCount += i;
+
+  if (stereo)
+  {
+    i = (1u << tmpCh1) - (indepFlag ? 1 : 0);
+    if (i > 0) m_auBitStream.write ((sbrDataCh1[0] >> 12) & 255, i);
+    bitCount += i;
+    i = (tmpCh1 > 0 ? 2 : 1) - (indepFlag ? 1 : 0);
+    if (i > 0) m_auBitStream.write ((sbrDataCh1[0] >> 4) & 255, i);
+    bitCount += i;
+  }
+
+  // sbr_invf(), assumes dflt_noise_bands < 3, i.e. 1-2 noise bands
+  i = 6 * nb - 9; // bitmask = 3 or 15
+  m_auBitStream.write (sbrDataCh0[0] & i, nb); // bs_invf_mode[0][]
+  if (stereo && !couple) m_auBitStream.write (sbrDataCh1[0] & i, nb);
+
+  // sbr_envelope() for mono/left channel, assumes bs_pvc_mode == 0
+  for (i = 1; i <= (1u << tmpCh0); i++) // dt loop
+  {
+    const uint8_t bits = (res > 0 && tmpCh0 > 0 ? 6 : 7);
+
+    m_auBitStream.write (15/*sbrDataCh0[i] & 127*/, bits); // bs_data_env
+    bitCount += bits;
+    m_auBitStream.write (sbrDataCh0[i] >> 7, 5<<1); // TODO: VLC words
+    bitCount += 5<<1;
+  }
+
+  if (stereo && !couple)
+  {
+    for (i = 1; i <= (1u << tmpCh1); i++) // sbr_envelope() dt loop
+    {
+      const uint8_t bits = (res > 0 && tmpCh1 > 0 ? 6 : 7);
+
+      m_auBitStream.write (sbrDataCh1[i] & 127, bits);
+      bitCount += bits;
+      m_auBitStream.write (sbrDataCh1[i] >> 7, 5<<1); // TODO: VLC words
+      bitCount += 5<<1;
+    }
+  }
+
+  for (i = (tmpCh0 > 0 ? 2 : 1); i > 0; i--) // sbr_noise() dt loop
+  {
+    m_auBitStream.write (31/*(sbrDataCh0[9] >> (12 * i)) & 31*/, 5); // _data_noise
+    bitCount += 5;
+    if (nb == 4)
+    {
+      m_auBitStream.write ((sbrDataCh0[9] >> (12 * i - 6)) & 31, 1); // TODO: VLC word
+      bitCount++;
+    }
+  }
+
+  if (stereo)
+  {
+    if (couple)
+    {
+      for (i = 1; i <= (1u << tmpCh1); i++) // sbr_envelope dt loop
+      {
+        const uint8_t bits = (res > 0 && tmpCh1 > 0 ? 5 : 6);
+
+        m_auBitStream.write (sbrDataCh1[i] & 63, bits);
+        bitCount += bits;
+        m_auBitStream.write (sbrDataCh1[i] >> 7, 5<<1); // TODO: VLC words
+        bitCount += 5<<1;
+      }
+    }
+
+    for (i = (tmpCh1 > 0 ? 2 : 1); i > 0; i--) // sbr_noise dt loop
+    {
+      m_auBitStream.write ((sbrDataCh1[9] >> (12 * i)) & 31, 5);
+      bitCount += 5;
+      if (nb == 4)
+      {
+        m_auBitStream.write ((sbrDataCh1[9] >> (12 * i - 6)) & 31, 1); // TODO: VLC word
+        bitCount++;
+      }
+    }
+  }
+
+  m_auBitStream.write (0, 1);  // fixed bs_add_harmonic_flag[0] = 0
+  if (stereo) m_auBitStream.write (0, 1);
+
+  return bitCount;
+}
+
 unsigned BitStreamWriter::writeChannelWiseTnsData (const TnsData& tnsData, const bool eightShorts)
 {
   const unsigned numWindows = (eightShorts ? 8 : 1);
@@ -514,8 +625,10 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
 #if !RESTRICT_TO_AAC
                                              const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
 #endif
-                                             unsigned char* const audioConfig)
+                                             const uint8_t sbrRatioShiftValue,   unsigned char* const audioConfig)
 {
+  const uint8_t fli = (sbrRatioShiftValue == 0 ? 1 /*no SBR*/ : __min (2, sbrRatioShiftValue) + 2);
+  const int8_t usfi = __max (0, samplingFrequencyIndex - 3 * sbrRatioShiftValue); // TODO: non-standard sampling rates
   unsigned bitCount = 37;
 
   if ((elementType == nullptr) || (audioConfig == nullptr) || (chConfigurationIndex >= USAC_MAX_NUM_ELCONFIGS) ||
@@ -532,20 +645,20 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
   m_auBitStream.write (0x7CA, 11); // audio object type (AOT) 32 (esc) + 10 = 42
   if (samplingFrequencyIndex < AAC_NUM_SAMPLE_RATES)
   {
-    m_auBitStream.write (samplingFrequencyIndex, 4);
+    m_auBitStream.write (usfi, 4);
   }
   else
   {
     m_auBitStream.write (0xF, 4); // esc
-    m_auBitStream.write (toSamplingRate (samplingFrequencyIndex), 24);
+    m_auBitStream.write (toSamplingRate (usfi), 24);
     bitCount += 24;
   }
   // for multichannel audio, refer to channel mapping of AotSpecificConfig below
   m_auBitStream.write (chConfigurationIndex > 2 ? 0 : chConfigurationIndex, 4);
 
 // --- AotSpecificConfig(): UsacConfig()
-  m_auBitStream.write (samplingFrequencyIndex, 5); // usacSamplingFrequencyIndex
-  m_auBitStream.write (shortFrameLength ? 0 : 1, 3);  // coreSbrFrameLengthIndex
+  m_auBitStream.write (usfi, 5); // usacSamplingFrequencyIndex (after SBR dec.!)
+  m_auBitStream.write (shortFrameLength ? 0 : fli, 3);// coreSbrFrameLengthIndex
   m_auBitStream.write (chConfigurationIndex, 5);    // channelConfigurationIndex
   m_auBitStream.write (numElements - 1, 4);  // numElements in UsacDecoderConfig
 
@@ -561,6 +674,22 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
       m_auBitStream.write ((tw_mdct[el] ? 2 : 0) | (noiseFilling[el] ? 1 : 0), 2);
 #endif
       bitCount += 2;
+      if (sbrRatioShiftValue > 0)  // sbrRatioIndex > 0: SbrConfig
+      {
+        const uint32_t sf = (samplingFrequencyIndex == 6 || samplingFrequencyIndex < 5 ? 10 : (samplingFrequencyIndex < 8 ? 9 : 8)); // bs_stop_freq
+
+        m_auBitStream.write (0, 3);  // fix harmonicSBR, bs_interTes, bs_pvc = 0
+        bitCount += 13; // incl. SbrDfltHeader following hereafter
+        m_auBitStream.write (15, 4); // 11025 @ 44.1, 11625 @ 48, 15000 @ 64 kHz
+        m_auBitStream.write (sf, 4); // 16193 @ 44.1, 18375 @ 48, 22500 @ 64 kHz
+        m_auBitStream.write ( 0, 2); // fix dflt_header_extra* = 0
+
+        if (elementType[el] == ID_USAC_CPE)
+        {
+          m_auBitStream.write (0, 2); // fix stereoConfigIndex = 0
+          bitCount += 2;
+        }
+      }
     }
   } // for el
 
@@ -591,7 +720,7 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
   bitCount += (8 - m_auBitStream.heldBitCount) & 7;
   writeByteAlignment ();  // flush bytes
 
-  memcpy (audioConfig, &m_auBitStream.stream.front (), __min (16, bitCount >> 3));
+  memcpy (audioConfig, &m_auBitStream.stream.front (), __min (15u + fli, bitCount >> 3));
 
   return (bitCount >> 3);  // byte count
 }
@@ -603,11 +732,12 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
 #if !RESTRICT_TO_AAC
                                             const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
 #endif
+                                            const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                                             unsigned char* const accessUnit,    const unsigned nSamplesInFrame /*= 1024*/)
 {
   unsigned bitCount = 1, ci = 0;
 
-  if ((elementData == nullptr) || (entropyCoder == nullptr) || (tempBuffer == nullptr) ||
+  if ((elementData == nullptr) || (entropyCoder == nullptr) || (tempBuffer == nullptr) || (sbrInfoAndData == nullptr) ||
       (mdctSignals == nullptr) || (mdctQuantMag == nullptr) || (accessUnit == nullptr) || (nSamplesInFrame > 2048) ||
 #if !RESTRICT_TO_AAC
       (noiseFilling == nullptr) || (tw_mdct == nullptr) ||
@@ -644,6 +774,22 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
                                           tw_mdct[el], noiseFilling[el],
 #endif
                                           usacIndependencyFlag);
+        if (sbrRatioShiftValue > 0) // UsacSbrData()
+        {
+          if (usacIndependencyFlag)
+          {
+            m_auBitStream.write ((sbrInfoAndData[ci][0] >> 24), 6); // SbrInfo()
+            m_auBitStream.write (1, 1);// fix sbrUseDfltHeader = 1
+            bitCount += 7;
+          }
+          else
+          {
+            m_auBitStream.write (0, 1);  // fix sbrInfoPresent = 0
+            bitCount++;
+          }
+          bitCount += writeChannelWiseSbrData (sbrInfoAndData[ci], nullptr, // L (mono) only, no R
+                                               usacIndependencyFlag);
+        }
         ci++;
         break;
       }
@@ -670,6 +816,22 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
                                           tw_mdct[el], noiseFilling[el],
 #endif
                                           usacIndependencyFlag);
+        if (sbrRatioShiftValue > 0) // UsacSbrData()
+        {
+          if (usacIndependencyFlag)
+          {
+            m_auBitStream.write ((sbrInfoAndData[ci][0] >> 24), 6); // SbrInfo()
+            m_auBitStream.write (1, 1);// fix sbrUseDfltHeader = 1
+            bitCount += 7;
+          }
+          else
+          {
+            m_auBitStream.write (0, 1);  // fix sbrInfoPresent = 0
+            bitCount++;
+          }
+          bitCount += writeChannelWiseSbrData (sbrInfoAndData[ci - 1], sbrInfoAndData[ci], // L, R
+                                               usacIndependencyFlag);
+        }
         ci++;
         break;
       }

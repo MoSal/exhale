@@ -54,6 +54,7 @@
 #define EA_PEAK_NORM -96.33f  // 20 * log10(2^-16), 16-bit normalization
 #define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
 #define ENABLE_RESAMPLING  1  // 1: automatic input up- and downsampling
+#define ENABLE_SIMPLE_SBR  1  // 1: basic 2:1 low-rate SBR functionality
 #define IGNORE_WAV_LENGTH  0  // 1: ignore input size indicators (nasty)
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 
@@ -376,14 +377,16 @@ int main (const int argc, char* argv[])
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
 # if XHE_AAC_LOW_DELAY
-//  fprintf_s (stdout, " \t     (a-i)  low-complexity compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
-    fprintf_s (stdout, " \t     (A-I)  41ms low-delay compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
+    fprintf_s (stdout, " \t     (A-J)  41ms low-delay compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
+# elif ENABLE_SIMPLE_SBR
+    fprintf_s (stdout, " \t     (a-g)  low-complexity compliant xHE-AAC with SBR at 12ú#+36 kbit/s\n");
 # endif
 #else
     fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16*#+48 kbit/s\n");
 # if XHE_AAC_LOW_DELAY
-//  fprintf_s (stdout, " \t     (a-i)  low-complexity compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
-    fprintf_s (stdout, " \t     (A-I)  41ms low-delay compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
+    fprintf_s (stdout, " \t     (A-J)  41ms low-delay compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
+# elif ENABLE_SIMPLE_SBR
+    fprintf_s (stdout, " \t     (a-g)  low-complexity compliant xHE-AAC with SBR at 12*#+36 kbit/s\n");
 # endif
 #endif
     fprintf_s (stdout, "\n inputWaveFile.wav  lossless WAVE audio input, read from stdin if not specified\n\n");
@@ -412,15 +415,21 @@ int main (const int argc, char* argv[])
 
   // check preset mode, derive coder config
 #if XHE_AAC_LOW_DELAY
-  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'i') || (*argv[1] >= 'A' && *argv[1] <= 'I'))
+  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'A' && *argv[1] <= 'J'))
+#elif ENABLE_SIMPLE_SBR
+  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'g'))
 #else
-  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'i'))
+  if (*argv[1] >= '0' && *argv[1] <= '9')
 #endif
   {
     i = (uint16_t) argv[1][0];
     compatibleExtensionFlag = (i & 0x40) >> 6;
+#if ENABLE_SIMPLE_SBR
+    coreSbrFrameLengthIndex = (i > 0x60 ? 5 : (i & 0x20) >> 5);
+#else
     coreSbrFrameLengthIndex = (i & 0x20) >> 5;
-    variableCoreBitRateMode = (i & 0x0F);
+#endif
+    variableCoreBitRateMode = (i & 0x0F) - (i >> 6);
   }
   else if (*argv[1] == '#') // default mode
   {
@@ -430,9 +439,15 @@ int main (const int argc, char* argv[])
   {
 #if XHE_AAC_LOW_DELAY
 # ifdef EXHALE_APP_WCHAR
-    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Use 0-9 or A-I.\n\n", argv[1]);
-#else
-    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 0-9 or A-I.\n\n", argv[1]);
+    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Use 0-9 or A-J.\n\n", argv[1]);
+# else
+    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 0-9 or A-J.\n\n", argv[1]);
+# endif
+#elif ENABLE_SIMPLE_SBR
+# ifdef EXHALE_APP_WCHAR
+    fwprintf_s (stderr, L" ERROR reading preset mode: character %s is not supported! Use 0-9 or a-g.\n\n", argv[1]);
+# else
+    fprintf_s (stderr, " ERROR reading preset mode: character %s is not supported! Use 0-9 or a-g.\n\n", argv[1]);
 # endif
 #else
 # ifdef EXHALE_APP_WCHAR
@@ -523,9 +538,18 @@ int main (const int argc, char* argv[])
 #else // Linux, MacOS, Unix
   if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : lseek (inFileHandle, 0, 2 /*SEEK_END*/)) != 0) ||
 #endif
+#if ENABLE_SIMPLE_SBR
+      (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && coreSbrFrameLengthIndex >= 3) ||
+#endif
       (wavReader.getNumChannels () >= 7))
   {
     fprintf_s (stderr, " ERROR while trying to open WAVE file: invalid or unsupported audio format!\n\n");
+#if ENABLE_SIMPLE_SBR
+    if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && coreSbrFrameLengthIndex >= 3)
+    {
+      fprintf_s (stderr, " The sampling rate is %d kHz but xHE-AAC with SBR requires at least 24 kHz.\n\n", wavReader.getSampleRate () / 1000);
+    }
+#endif
     i = 8192; // return value
 
     goto mainFinish; // audio format invalid
@@ -555,6 +579,9 @@ int main (const int argc, char* argv[])
     }
 
     if (wavReader.getSampleRate () > 32100 + (unsigned) variableCoreBitRateMode * 12000 + (variableCoreBitRateMode >> 2) * 3900
+#if ENABLE_SIMPLE_SBR
+        && (coreSbrFrameLengthIndex < 3)
+#endif
 #if ENABLE_RESAMPLING
         && (variableCoreBitRateMode > 1 || wavReader.getSampleRate () != 48000)
 #endif
@@ -566,7 +593,11 @@ int main (const int argc, char* argv[])
 
       goto mainFinish; // ask for resampling
     }
+#if ENABLE_SIMPLE_SBR
+    if (wavReader.getSampleRate () > 32000 && coreSbrFrameLengthIndex < 3 && variableCoreBitRateMode <= 1)
+#else
     if (wavReader.getSampleRate () > 32000 && variableCoreBitRateMode <= 1)
+#endif
     {
 #if ENABLE_RESAMPLING
       if (wavReader.getSampleRate () == 48000)
@@ -613,8 +644,8 @@ int main (const int argc, char* argv[])
 
   // enforce executable specific constraints
   i = __min (USHRT_MAX, wavReader.getSampleRate ());
-  if ((wavReader.getNumChannels () > 3) && (i == 57600 || i == 51200 || i == 40000 || i == 38400 || i == 34150 ||
-      i == 28800 || i == 25600 || i == 20000 || i == 19200 || i == 17075 || i == 14400 || i == 12800 || i == 9600))
+  if ((wavReader.getNumChannels () > 3 || coreSbrFrameLengthIndex >= 3) && (i == 57600 || i == 51200 || i == 40000 || i == 38400 ||
+      i == 34150 || i == 28800 || i == 25600 || i == 20000 || i == 19200 || i == 17075 || i == 14400 || i == 12800 || i == 9600))
   {
     fprintf_s (stderr, " ERROR: exhale does not support %d-channel coding with %d Hz sampling rate.\n\n", wavReader.getNumChannels (), i);
 
@@ -626,7 +657,12 @@ int main (const int argc, char* argv[])
     const unsigned inSampDepth = wavReader.getBitDepth ();
 #if ENABLE_RESAMPLING
     const bool enableUpsampler = eaInitUpsampler2x (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels);
+# if ENABLE_SIMPLE_SBR
+    const bool enableResampler = (coreSbrFrameLengthIndex >= 3 ? false : // no 3:2 downsampling needed when using SBR
+                                 eaInitDownsampler (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels));
+# else
     const bool enableResampler = eaInitDownsampler (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels);
+# endif
     const uint16_t firstLength = uint16_t (enableUpsampler ? (frameLength >> 1) + 32 : (enableResampler ? startLength : frameLength));
     const unsigned inFrameSize = (enableResampler ? startLength : frameLength) * sizeof (int32_t); // max buffer size
     const unsigned resampRatio = (enableResampler ? 3 : 1); // for resampling ratio
@@ -671,7 +707,7 @@ int main (const int argc, char* argv[])
       const unsigned sampleRate  = wavReader.getSampleRate ();
 #endif
       const unsigned indepPeriod = (sampleRate < 48000 ? (sampleRate - 320) / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
-      const unsigned mod3Percent = unsigned ((expectLength * (3 + coreSbrFrameLengthIndex)) >> 17);
+      const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
       uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
       uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
       uint32_t headerRes = 0;
@@ -696,7 +732,11 @@ int main (const int argc, char* argv[])
       memset (outAuData, 0, 108 * sizeof (uint8_t));  // max. allowed ASC + UC size
       i = exhaleEnc.initEncoder (outAuData, &bw); // bw stores actual ASC + UC size
 
+#if ENABLE_SIMPLE_SBR
+      if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength + (coreSbrFrameLengthIndex >= 3 ? 962 : 0),
+#else
       if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength,
+#endif
                                 indepPeriod, outAuData, bw, (time (nullptr) + 2082844800) & UINT_MAX, (char) variableCoreBitRateMode)) != 0)
       {
         fprintf_s (stderr, " ERROR while trying to initialize xHE-AAC encoder: error value %d was returned!\n\n", i);
@@ -710,7 +750,12 @@ int main (const int argc, char* argv[])
       if (*argv[1] != '#') // user-def. mode
       {
         fprintf_s (stdout, " Encoding %d-kHz %d-channel %d-bit WAVE to low-complexity xHE-AAC at %d kbit/s\n\n",
+#if ENABLE_SIMPLE_SBR
+                   sampleRate / 1000, numChannels, inSampDepth, __min (5, numChannels) * (((24 + variableCoreBitRateMode * 8) *
+                   (coreSbrFrameLengthIndex >= 3 ? 3 : 4)) >> 2));
+#else
                    sampleRate / 1000, numChannels, inSampDepth, __min (5, numChannels) * (24 + variableCoreBitRateMode * 8));
+#endif
       }
       if (!readStdin && (mod3Percent > 0))
       {
@@ -926,6 +971,13 @@ int main (const int argc, char* argv[])
       bw = mp4Writer.finishFile (br, bw, uint32_t (__min (UINT_MAX - startLength, actualLength)), (time (nullptr) + 2082844800) & UINT_MAX,
                                  (i == 0) && (numChannels < 7) ? outAuData : nullptr);
       // print out collected file statistics
+#if ENABLE_SIMPLE_SBR
+      if (coreSbrFrameLengthIndex >= 3)
+      {
+        fprintf_s (stdout, " Done, actual average incl. SBR data %.2f kbit/s\n\n", (float) br * 0.001f);
+      }
+      else
+#endif
       fprintf_s (stdout, " Done, actual average %.1f kbit/s\n\n", (float) br * 0.001f);
       if (numChannels < 7)
       {

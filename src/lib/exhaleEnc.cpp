@@ -785,11 +785,13 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
-  const uint32_t maxSfbLong      = (samplingRate < 37566 ? MAX_NUM_SWB_LONG : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3, m_bitRateMode)
+  const uint32_t maxSfbLong      = (samplingRate < 37566 || m_shiftValSBR > 0 ? m_numSwbLong // was MAX_NUM_SWB_LONG
+                                                                              : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+  const uint32_t scaleSBR        = (m_shiftValSBR > 0 ? 8 : 0); // reduces core rate by 25 %
+  const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3 << m_shiftValSBR, m_bitRateMode)
                                                          : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 3 + (samplingRate >> 10) + (samplingRate >> 13) - (nChannels >> 1))
-                                   : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1));
+                                   : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1)) + scaleSBR;
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
 //uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS];
@@ -1081,13 +1083,13 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
   const unsigned samplingRate     = toSamplingRate (m_frequencyIdx);
   const unsigned* const coeffMagn = m_sfbQuantizer.getCoeffMagnPtr ();
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
-//uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS];
+  uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS] = {208, 208, 208, 208, 208, 208, 208, 208};
   unsigned ci = 0, s; // running index
   unsigned errorValue = (coeffMagn == nullptr ? 1 : 0);
 
   // get means of spectral and temporal flatness for every channel
   m_bitAllocator.getChAverageSpecFlat (meanSpecFlat, nChannels);
-//m_bitAllocator.getChAverageTempFlat (meanTempFlat, nChannels);
+  if (m_bitRateMode == 0 && samplingRate >= 23004) m_bitAllocator.getChAverageTempFlat (meanTempFlat, nChannels);
 
   for (unsigned el = 0; el < m_numElements; el++)  // element loop
   {
@@ -1097,7 +1099,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
     if ((coreConfig.elementType < ID_USAC_LFE) && (coreConfig.stereoMode > 0)) // synch SFMs
     {
       meanSpecFlat[ci] = meanSpecFlat[ci + 1] = ((uint16_t) meanSpecFlat[ci] + (uint16_t) meanSpecFlat[ci + 1]) >> 1;
-   // meanTempFlat[ci] = meanTempFlat[ci + 1] = ((uint16_t) meanTempFlat[ci] + (uint16_t) meanTempFlat[ci + 1]) >> 1;
+      meanTempFlat[ci] = meanTempFlat[ci + 1] = ((uint16_t) meanTempFlat[ci] + (uint16_t) meanTempFlat[ci + 1]) >> 1;
     }
 
     for (unsigned ch = 0; ch < nrChannels; ch++)   // channel loop
@@ -1181,7 +1183,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint8_t maxSfbLong  = (samplingRate < 37566 ? 63 - (samplingRate >> 11) : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           const uint8_t maxSfbShort = (samplingRate < 37566 ? 21 - (samplingRate >> 12) : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
-          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong - 6 + (meanSpecFlat[ci] >> 5));
+          const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong  - 6 + (meanSpecFlat[ci] >> 5)) +
+                                            (shortWinCurr ? -3 + (((1 << 5) + meanTempFlat[ci]) >> 6) : -7 + (((1 << 4) + meanTempFlat[ci]) >> 5));
           const unsigned targetBitCount25 = ((60000 + 20000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
           unsigned b = grpData.sfbsPerGroup - 1;
 
@@ -1212,7 +1215,10 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
             }
           }
 #endif
-          b = lastSfb;
+          // coarse-quantize near-Nyquist SFB with SBR @ 48-64 kHz
+          b = 40 + (samplingRate >> 12);
+          if ((m_shiftValSBR == 0) || (samplingRate < 23004) || shortWinCurr || (b > lastSfb)) b = lastSfb;
+
           while ((b >= sfmBasedSfbStart + (m_bitRateMode >> 1)) && (grpOff[b] > peakIndex) && ((grpRms[b] >> 16) <= 1) /*coarse quantization*/ &&
                  ((estimBitCount * 5 > targetBitCount25 * 2) || (grpLength > 1 /*no accurate bit count estim. available for grouped spectrum*/)))
           {
@@ -1308,6 +1314,11 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
       // NOTE: gap-filling SFB bit count might be inaccurate now since scale factors changed
       if (coreConfig.specFillData[ch] == 1) errorValue |= 1;
 #endif
+      if ((coreConfig.elementType < ID_USAC_LFE) && (m_shiftValSBR > 0)) // collect SBR data
+      {
+        memset (m_coreSignals[ci], 0, 10 * sizeof (int32_t)); // TODO
+        m_coreSignals[ci][0] = 1 << 20;  // fix bs_freq_res = high
+      }
       ci++;
     }
   } // for el
@@ -1317,7 +1328,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #if !RESTRICT_TO_AAC
                                                              m_timeWarping, m_noiseFilling,
 #endif
-                                                             m_outAuData, nSamplesInFrame)); // returns AU size
+                                                             m_shiftValSBR, m_coreSignals, m_outAuData, nSamplesInFrame)); // returns AU size
 }
 
 unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS and SFB data
@@ -1597,7 +1608,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects of ics_info()
 {
   const unsigned nChannels       = toNumChannels (m_channelConf);
-  const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
+  const unsigned nSamplesInFrame = toFrameLength (m_frameLength) << m_shiftValSBR;
   const unsigned nSamplesTempAna = (nSamplesInFrame * 25) >> 4;  // pre-delay for look-ahead
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   unsigned ci = 0; // running ch index
@@ -1608,8 +1619,8 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
   m_tempAnalyzer.getTransientAndPitch (m_tranLocCurr, nChannels);
 
   // temporal analysis for look-ahead signal (central nSamplesInFrame samples of next frame)
-  errorValue |= m_tempAnalyzer.temporalAnalysis (m_timeSignals, nChannels, nSamplesInFrame, nSamplesTempAna, lfeChannelIndex);
-
+  errorValue |= m_tempAnalyzer.temporalAnalysis (m_timeSignals, nChannels, nSamplesInFrame, nSamplesTempAna,
+                                                 m_shiftValSBR, m_coreSignals, lfeChannelIndex);
   // get temporal channel statistics for next frame, used for window length/overlap decision
   m_tempAnalyzer.getTempAnalysisStats (m_tempAnaNext, nChannels);
   m_tempAnalyzer.getTransientAndPitch (m_tranLocNext, nChannels);
@@ -1654,10 +1665,10 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         const USAC_WSEQ wsPrev = icsPrev.windowSequence;
              USAC_WSEQ& wsCurr = icsCurr.windowSequence;
         // get temporal signal statistics, then determine overlap config. for the next frame
-        const unsigned  plCurr = abs (m_tranLocCurr[ci]) & 1023;
+        const unsigned  plCurr = abs (m_tranLocCurr[ci]) & ((1024 << m_shiftValSBR) - 1);
         const unsigned  sfCurr = (m_tempAnaCurr[ci] >> 24) & UCHAR_MAX;
         const unsigned  tfCurr = (m_tempAnaCurr[ci] >> 16) & UCHAR_MAX;
-        const unsigned  plNext = abs (m_tranLocNext[ci]) & 1023;
+        const unsigned  plNext = abs (m_tranLocNext[ci]) & ((1024 << m_shiftValSBR) - 1);
         const unsigned  sfNext = (m_tempAnaNext[ci] >> 24) & UCHAR_MAX;
         const unsigned  tfNext = (m_tempAnaNext[ci] >> 16) & UCHAR_MAX;
         const unsigned tThresh = UCHAR_MAX * (__max (plCurr, plNext) < 614 /*0.6 * 1024*/ ? 16 : 15 - (m_bitRateMode >> 2));
@@ -1775,6 +1786,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
     {
       const IcsInfo& icsPrev = coreConfig.icsInfoPrev[ch];
       const IcsInfo& icsCurr = coreConfig.icsInfoCurr[ch];
+      const int32_t* timeSig = (m_shiftValSBR > 0 ? m_coreSignals[ci] : m_timeSignals[ci]);
       const USAC_WSEQ wsCurr = icsCurr.windowSequence;
       const bool eightShorts = (wsCurr == EIGHT_SHORT);
       SfbGroupData&  grpData = coreConfig.groupingData[ch];
@@ -1782,7 +1794,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
       grpData.numWindowGroups = (eightShorts ? NUM_WINDOW_GROUPS : 1);  // fill groupingData
       memcpy (grpData.windowGroupLength, windowGroupingTable[icsCurr.windowGrouping], NUM_WINDOW_GROUPS * sizeof (uint8_t));
 
-      errorValue |= m_transform.applyMCLT (m_timeSignals[ci], eightShorts, icsPrev.windowShape != WINDOW_SINE, icsCurr.windowShape != WINDOW_SINE,
+      errorValue |= m_transform.applyMCLT (timeSig, eightShorts, icsPrev.windowShape != WINDOW_SINE, icsCurr.windowShape != WINDOW_SINE,
                                            wsCurr > LONG_START /*lOL*/, (wsCurr % 3) != ONLY_LONG /*lOR*/, m_mdctSignals[ci], m_mdstSignals[ci]);
       m_scaleFacData[ci++] = &grpData;
     }
@@ -1809,9 +1821,14 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
     m_channelConf = CCI_2_CHM; // passing numChannels = 0 to ExhaleEncoder is interpreted as 2-ch dual-mono
   }
   m_numElements  = elementCountConfig[m_channelConf % USAC_MAX_NUM_ELCONFIGS]; // used in UsacDecoderConfig
+#if 1
+  m_shiftValSBR  = (frameLength >= 1536 ? 1 : 0);
+#else
+  m_shiftValSBR  = 0;
+#endif
   m_frameCount   = 0;
-  m_frameLength  = (USAC_CCFL) frameLength; // coreCoderFrameLength, signaled using coreSbrFrameLengthIndex
-  m_frequencyIdx = toSamplingFrequencyIndex (sampleRate);  // I/O sample rate as usacSamplingFrequencyIndex
+  m_frameLength  = USAC_CCFL (frameLength >> m_shiftValSBR); // ccfl signaled using coreSbrFrameLengthIndex
+  m_frequencyIdx = toSamplingFrequencyIndex (sampleRate >> m_shiftValSBR); // as usacSamplingFrequencyIndex
   m_indepFlag    = true; // usacIndependencyFlag in UsacFrame(), will be set per frame, true in first frame
   m_indepPeriod  = (indepPeriod == 0 ? UINT_MAX : indepPeriod); // RAP, signaled using usacIndependencyFlag
 #if !RESTRICT_TO_AAC
@@ -1841,6 +1858,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
   {
     m_bandwidCurr[ch]  = 0;
     m_bandwidPrev[ch]  = 0;
+    m_coreSignals[ch]  = nullptr;
     m_mdctQuantMag[ch] = nullptr;
     m_mdctSignals[ch]  = nullptr;
     m_mdstSignals[ch]  = nullptr;
@@ -1873,6 +1891,7 @@ ExhaleEncoder::~ExhaleEncoder ()
   // free allocated signal buffers
   for (unsigned ch = 0; ch < USAC_MAX_NUM_CHANNELS; ch++)
   {
+    if (m_shiftValSBR > 0) MFREE (m_coreSignals[ch]);
     MFREE (m_mdctQuantMag[ch]);
     MFREE (m_mdctSignals[ch]);
     MFREE (m_mdstSignals[ch]);
@@ -1891,7 +1910,7 @@ ExhaleEncoder::~ExhaleEncoder ()
 unsigned ExhaleEncoder::encodeLookahead ()
 {
   const unsigned nChannels       = toNumChannels (m_channelConf);
-  const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
+  const unsigned nSamplesInFrame = toFrameLength (m_frameLength) << m_shiftValSBR;
   const unsigned nSamplesTempAna = (nSamplesInFrame * 25) >> 4;  // pre-delay for look-ahead
   const int32_t* chSig           = m_pcm24Data;
   unsigned ch, s;
@@ -1921,11 +1940,12 @@ unsigned ExhaleEncoder::encodeLookahead ()
                                  *(predSig + 2) * (int64_t) filterC[2] + *(predSig + 3) * (int64_t) filterC[3];
       *(--predSig) = int32_t ((predSample > 0 ? -predSample + (1 << 9) - 1 : -predSample) >> 9);
     }
+    if (m_shiftValSBR > 0) memset (m_coreSignals[ch], 0, (nSamplesInFrame >> 2) * sizeof (int32_t));
   }
 
   // set initial temporal channel statistic to something meaningful before first coded frame
-  m_tempAnalyzer.temporalAnalysis (m_timeSignals, nChannels, nSamplesInFrame, nSamplesTempAna - nSamplesInFrame);
-
+  m_tempAnalyzer.temporalAnalysis (m_timeSignals, nChannels, nSamplesInFrame, nSamplesTempAna - nSamplesInFrame,
+                                   m_shiftValSBR, m_coreSignals); // default lfeChannelIndex
   if (temporalProcessing ()) // time domain: window length, overlap, grouping, and transform
   {
     return 2; // internal error in temporal processing
@@ -1945,7 +1965,7 @@ unsigned ExhaleEncoder::encodeLookahead ()
 unsigned ExhaleEncoder::encodeFrame ()
 {
   const unsigned nChannels       = toNumChannels (m_channelConf);
-  const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
+  const unsigned nSamplesInFrame = toFrameLength (m_frameLength) << m_shiftValSBR;
   const unsigned nSamplesTempAna = (nSamplesInFrame * 25) >> 4;  // pre-delay for look-ahead
   const int32_t* chSig           = m_pcm24Data;
   unsigned ch, s;
@@ -1955,6 +1975,14 @@ unsigned ExhaleEncoder::encodeFrame ()
   {
     memcpy (&m_timeSignals[ch][0], &m_timeSignals[ch][nSamplesInFrame], nSamplesInFrame * sizeof (int32_t));
     memcpy (&m_timeSignals[ch][nSamplesInFrame], &m_timeSignals[ch][2 * nSamplesInFrame], (nSamplesTempAna - nSamplesInFrame) * sizeof (int32_t));
+
+    if (m_shiftValSBR > 0)
+    {
+      const unsigned nSmpInFrame = toFrameLength (m_frameLength); // core coder frame length
+
+      memcpy (&m_coreSignals[ch][0], &m_coreSignals[ch][nSmpInFrame], nSmpInFrame * sizeof (int32_t));
+      memcpy (&m_coreSignals[ch][nSmpInFrame], &m_coreSignals[ch][2 * nSmpInFrame], (nSamplesInFrame >> 2) * sizeof (int32_t));
+    }
   }
 
   // copy nSamplesInFrame external channel-interleaved samples into internal channel buffers
@@ -1987,7 +2015,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   const unsigned nChannels       = toNumChannels (m_channelConf);
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   const unsigned specSigBufSize  = nSamplesInFrame * sizeof (int32_t);
-  const unsigned timeSigBufSize  = ((nSamplesInFrame * 41) >> 4) * sizeof (int32_t); // core-codec delay*4
+  const unsigned timeSigBufSize  = (((nSamplesInFrame << m_shiftValSBR) * 41) >> 4) * sizeof (int32_t); // core-codec delay*4
   const unsigned char chConf     = m_channelConf;
   unsigned errorValue = 0; // no error
 
@@ -2008,7 +2036,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   {
     errorValue |=  64;
   }
-  if ((m_frequencyIdx < 0) || (m_bitRateMode > (toSamplingRate (m_frequencyIdx) >> 12) + 2))
+  if ((m_frequencyIdx < 0) || (m_bitRateMode > (toSamplingRate (m_frequencyIdx) >> (m_shiftValSBR > 0 ? 11 : 12)) + 2))
   {
     errorValue |=  32;
   }
@@ -2036,7 +2064,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 #if !RESTRICT_TO_AAC
                                                   m_timeWarping, m_noiseFilling,
 #endif
-                                                  audioConfigBuffer);
+                                                  m_shiftValSBR, audioConfigBuffer);
       if (audioConfigBytes) *audioConfigBytes = errorValue; // size of UsacConfig() in bytes
       errorValue = (errorValue == 0 ? 1 : 0);
     }
@@ -2061,6 +2089,20 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   memset (m_sfbLoudMem, 1, 2 * 26 * 32 * sizeof (uint16_t));
 #endif
   // allocate all signal buffers
+  if (m_shiftValSBR > 0)
+  {
+    if (m_shiftValSBR > 1)
+    {
+      return (errorValue | 4); // >2:1 not supported at the moment
+    }
+    else for (unsigned ch = 0; ch < nChannels; ch++)
+    {
+      if ((m_coreSignals[ch] = (int32_t*) malloc (timeSigBufSize >> m_shiftValSBR)) == nullptr)
+      {
+        errorValue |= 4;
+      }
+    }
+  }
   for (unsigned ch = 0; ch < nChannels; ch++)
   {
     if ((m_entropyCoder[ch].initCodingMemory (nSamplesInFrame) > 0) ||
@@ -2106,7 +2148,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 #if !RESTRICT_TO_AAC
                                                 m_timeWarping, m_noiseFilling,
 #endif
-                                                audioConfigBuffer);
+                                                m_shiftValSBR, audioConfigBuffer);
     if (audioConfigBytes) *audioConfigBytes = errorValue; // length of UsacConfig() in bytes
     errorValue = (errorValue == 0 ? 1 : 0);
 
