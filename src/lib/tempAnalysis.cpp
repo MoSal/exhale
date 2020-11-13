@@ -11,12 +11,23 @@
 #include "exhaleLibPch.h"
 #include "tempAnalysis.h"
 
-static const int16_t lffc2x[65] = { // low-frequency filter coefficients
+static const int16_t lpfc12[65] = {  // 50% low-pass filter coefficients
   // 269-pt. sinc windowed by 0.409 * cos(0*pi.*t) - 0.5 * cos(2*pi.*t) + 0.091 * cos(4*pi.*t)
   17887, -27755, 16590, -11782, 9095, -7371, 6166, -5273, 4582, -4029, 3576, -3196, 2873,
   -2594, 2350, -2135, 1944, -1773, 1618, -1478, 1351, -1235, 1129, -1032, 942, -860, 784,
   -714, 650, -591, 536, -485, 439, -396, 357, -321, 287, -257, 229, -204, 181, -160, 141,
   -124, 108, -95, 82, -71, 61, -52, 44, -37, 31, -26, 21, -17, 14, -11, 8, -6, 5, -3, 2, -1, 1
+};
+
+static const int16_t lpfc34[128] = { // 25% low-pass filter coefficients
+  // see also A. H. Nuttall, "Some Windows with Very Good Sidelobe Behavior," IEEE, Feb. 1981.
+  3 /*<<16*/, 26221, -8914, 19626, 0, -11731, 13789, -8331, 0, 6431, -8148, 5212, 0, -4360,
+  5688, -3728, 0, 3240, -4291, 2849, 0, -2529, 3378, -2260, 0, 2032, -2729, 1834, 0, -1662,
+  2240, -1510, 0, 1375, -1856, 1253, 0, -1144, 1546, -1045, 0, 955, -1292, 873, 0, -798,
+  1079, -729, 0, 666, -900, 608, 0, -555, 748, -505, 0, 459, -620, 418, 0, -379, 510, -343,
+  0, 310, -417, 280, 0, -252, 338, -227, 0, 203, -272, 182, 0, -162, 216, -144, 0, 128, -170,
+  113, 0, -100, 132, -88, 0, 77, -101, 67, 0, -58, 76, -50, 0, 43, -56, 37, 0, -31, 41, -26,
+  0, 22, -28, 18, 0, -15, 19, -12, 0, 10, -12, 8, 0, -6, 7, -4, 0, 3, -4, 2, 0, -1, 2, -1
 };
 
 // static helper functions
@@ -86,6 +97,7 @@ TempAnalyzer::TempAnalyzer ()
   {
     m_avgAbsHpPrev[ch] = 0;
     m_maxAbsHpPrev[ch] = 0;
+    m_maxHfLevPrev[ch] = 0;
     m_maxIdxHpPrev[ch] = 1;
     m_pitchLagPrev[ch] = 0;
     m_tempAnaStats[ch] = 0;
@@ -122,7 +134,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
   const int resamplerOffset = (int) lookaheadOffset - 128;
 
   if ((timeSignals == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS) || (lfeChannelIndex > USAC_MAX_NUM_CHANNELS) || (sbrShift > 1) ||
-      (nSamplesInFrame > 2048) || (nSamplesInFrame < 2) || (lookaheadOffset > 4096) || (lookaheadOffset <= 256u * sbrShift))
+      (nSamplesInFrame > 2048) || (nSamplesInFrame <= 128 * sbrShift) || (lookaheadOffset > 4096) || (lookaheadOffset <= 256u * sbrShift))
   {
     return 1;
   }
@@ -135,6 +147,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
 // --- get L1 norm and pitch lag of both sides
     unsigned sumAbsValL = 0,  sumAbsValR = 0;
     unsigned maxAbsValL = 0,  maxAbsValR = 0;
+    int32_t  maxHfrLevL = 8,  maxHfrLevR = 8;
     int16_t  maxAbsIdxL = 0,  maxAbsIdxR = 0;
     int      splitPtL   = 0;
     int      splitPtC   = halfFrameOffset;
@@ -147,21 +160,52 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
 
     if (applyResampler && lrCoreTimeSignals[ch] != nullptr) // downsampler
     {
-      /*LF*/int32_t* lrSig = &lrCoreTimeSignals[ch][resamplerOffset >> sbrShift]; // low-rate,
-      const int32_t* hrSig = &timeSignals[ch][resamplerOffset]; // high-rate input time signal
+      /*LF*/int32_t* lrSig = &lrCoreTimeSignals[ch][resamplerOffset >> sbrShift];
+      const int32_t* hrSig = &timeSignals[ch][resamplerOffset];
+      /*MF*/uint64_t ue[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; // unit energies
 
       for (int i = nSamplesInFrame >> sbrShift; i > 0; i--, lrSig++, hrSig += 2)
       {
         int64_t r  = ((int64_t) hrSig[0] << 17) + (hrSig[-1] + (int64_t) hrSig[1]) * -2*SHRT_MIN;
         int16_t s;
 
-        for (u = 65, s = 129; u > 0; s -= 2) r += (hrSig[-s] + (int64_t) hrSig[s]) * lffc2x[--u];
+        for (u = 65, s = 129; u > 0; s -= 2) r += (hrSig[-s] + (int64_t) hrSig[s]) * lpfc12[--u];
 
-        *lrSig = int32_t ((r + (1 << 17)) >> 18); // low-pass and low-rate
-// TODO: bandpass
+        *lrSig = int32_t ((r + (1 << 17)) >> 18); // low-pass at half rate
         if (*lrSig < -8388608) *lrSig = -8388608;
         else
         if (*lrSig >  8388607) *lrSig =  8388607;
+
+        if ((i & 1) != 0) // compute quarter-rate mid-frequency SBR signal
+        {
+          r  = ((3 * (int64_t) hrSig[0]) << 16) - (hrSig[-1] + (int64_t) hrSig[1]) * SHRT_MIN - r;
+          r += (hrSig[-2] + (int64_t) hrSig[2]) * SHRT_MIN;
+
+          for (s = 127; s > 0; s--/*u = s*/) r += (hrSig[-s] + (int64_t) hrSig[s]) * lpfc34[s];
+
+          r = (r + (1 << 17)) >> 18; // SBR env. band-pass at quarter rate
+          ue[i >> 7] += uint64_t (r * r);
+        }
+      }
+
+      if (ch != lfeChannelIndex) // calculate overall and unit-wise levels
+      {
+        const unsigned numUnits = nSamplesInFrame >> (sbrShift + 7);
+        int32_t* const hfrLevel = &lrCoreTimeSignals[ch][(resamplerOffset + nSamplesInFrame) >> sbrShift];
+
+        for (u = numUnits; u > 0; /*u*/)
+        {
+          ue[8] += ue[--u];
+          hfrLevel[numUnits - u] = int32_t (0.5 + sqrt ((double) ue[u]));
+        }
+        hfrLevel[0] = int32_t (0.5 + sqrt ((double) ue[8]));
+
+        // stabilize transient detection below
+        for (u = numUnits >> 1; u > 0; u--)
+        {
+          if (maxHfrLevL < hfrLevel[u]) /* update max. */ maxHfrLevL = hfrLevel[u];
+          if (maxHfrLevR < hfrLevel[u + (numUnits >> 1)]) maxHfrLevR = hfrLevel[u + (numUnits >> 1)];
+        }
       }
     }
 
@@ -225,9 +269,9 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       m_transientLoc[ch] = -1;
       // re-init stats history for this channel
       m_avgAbsHpPrev[ch] = 0;
-      m_maxAbsHpPrev[ch] = 0; // maxAbsValR
-      m_maxIdxHpPrev[ch] = 1; // maxAbsIdxR
-      m_pitchLagPrev[ch] = 0; // pLagBestR
+      m_maxAbsHpPrev[ch] = 0;
+      m_maxIdxHpPrev[ch] = 1;
+      m_pitchLagPrev[ch] = 0;
     }
     else // nonzero signal in the current frame
     {
@@ -299,14 +343,23 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
 // --- temporal analysis statistics for frame
       m_tempAnaStats[ch] = packAvgTempAnalysisStats (sumAbsHpL,  sumAbsHpR,  m_avgAbsHpPrev[ch],
                                                      sumAbsPpL + sumAbsPpR,  maxAbsValL + maxAbsValR);
+      u = maxAbsValR;
+      if ((m_maxHfLevPrev[ch] < (maxHfrLevL >> 3)) || (maxHfrLevL < (maxHfrLevR >> 3))) // transient
+      {
+        maxAbsValL = maxHfrLevL;
+        maxAbsValR = maxHfrLevR;
+        m_maxAbsHpPrev[ch] = m_maxHfLevPrev[ch];
+      }
       m_transientLoc[ch] = packTransLocWithPitchLag (maxAbsValL, maxAbsValR, m_maxAbsHpPrev[ch],
                                                      maxAbsIdxL, maxAbsIdxR, __max (1, pLagBestR));
       // update stats history for this channel
       m_avgAbsHpPrev[ch] = sumAbsHpR;
-      m_maxAbsHpPrev[ch] = maxAbsValR;
+      m_maxAbsHpPrev[ch] = u;
       m_maxIdxHpPrev[ch] = (unsigned) maxAbsIdxR;
       m_pitchLagPrev[ch] = (unsigned) pLagBestR;
     } // if sumAbsValL == 0 && sumAbsValR == 0
+
+    if (applyResampler) m_maxHfLevPrev[ch] = maxHfrLevR;
   } // for ch
 
   return 0; // no error

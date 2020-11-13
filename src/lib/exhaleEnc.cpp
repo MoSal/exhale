@@ -371,25 +371,6 @@ static inline unsigned toNumChannels (const USAC_CCI chConfigurationIndex)
   return numberOfChannels[__max (0, (signed char) chConfigurationIndex)];
 }
 
-// ISO/IEC 23003-3, Table 68
-static const uint8_t  elementCountConfig[USAC_MAX_NUM_ELCONFIGS] = {0, 1, 1, 2, 3, 3, 4, 5, 2, 2, 2, 5, 5};
-
-static const ELEM_TYPE elementTypeConfig[USAC_MAX_NUM_ELCONFIGS][USAC_MAX_NUM_ELEMENTS] = {
-  {ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_UNDEF
-  {ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_1_CH
-  {ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_2_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_3_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_4_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_5_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE, ID_EL_UNDEF}, // CCI_6_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE}, // CCI_8_CH
-  {ID_USAC_SCE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_2_CHM
-  {ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_3_CHR
-  {ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_4_CHR
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_SCE, ID_USAC_LFE}, // CCI_7_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE}  // CCI_8_CHM
-};
-
 // ISO/IEC 14496-3, Table 4.140
 static const uint16_t sfbOffsetL0[42] = { // 88.2 and 96 kHz
     0,   4,   8,  12,  16,  20,  24,  28,  32,  36,  40,  44,  48,  52,  56,  64,  72,  80,  88,  96, 108,
@@ -785,8 +766,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned nSamplesInFrame = toFrameLength (m_frameLength);
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
-  const uint32_t maxSfbLong      = (samplingRate < 37566 || m_shiftValSBR > 0 ? m_numSwbLong // was MAX_NUM_SWB_LONG
-                                                                              : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+  const bool     useMaxBandwidth = (samplingRate < 37566 || m_shiftValSBR > 0);
+  const uint32_t maxSfbLong      = (useMaxBandwidth ? m_numSwbLong : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
   const uint32_t scaleSBR        = (m_shiftValSBR > 0 ? 8 : 0); // reduces core rate by 25 %
   const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3 << m_shiftValSBR, m_bitRateMode)
                                                          : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
@@ -847,7 +828,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       if (m_perCorrHCurr[el] > 128) // execute stereo pre-processing to increase correlation
       {
         const int16_t chanCorrSign = (coreConfig.stereoConfig & 2 ? -1 : 1);
-        const uint16_t nSamplesMax = (samplingRate < 37566 ? nSamplesInFrame : swbOffsetsL[m_swbTableIdx][__min (m_numSwbLong, maxSfbLong + 1)]);
+        const uint16_t nSamplesMax = (useMaxBandwidth ? nSamplesInFrame : swbOffsetsL[m_swbTableIdx][__min (m_numSwbLong, maxSfbLong + 1)]);
         const uint8_t steppFadeLen = (eightShorts0 ? 4 : (coreConfig.tnsActive ? 32 : 64));
         const uint8_t steppFadeOff = ((m_bitRateMode + 77000 / samplingRate) & 6) << (eightShorts0 ? 2 : 5);
         const int64_t steppWeightI = __min (64, m_perCorrHCurr[el] - 128) >> (eightShorts0 || coreConfig.tnsActive ? 1 : 0);
@@ -987,9 +968,10 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #if !RESTRICT_TO_AAC
         if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_bitRateMode <= 3 || !eightShorts))
         {
-          const uint32_t maxSfbCurr = (eightShorts ? (samplingRate < 37566 ? 14 : brModeAndFsToMaxSfbShort (m_bitRateMode, samplingRate)) : maxSfbLong);
+          const uint32_t maxSfbCurr = (eightShorts ? (useMaxBandwidth ? 17 - (samplingRate >> 13) // was 14, good for 22.05 - 32 kHz
+                                                                      : brModeAndFsToMaxSfbShort (m_bitRateMode, samplingRate)) : maxSfbLong);
           const bool keepMaxSfbCurr = ((samplingRate < 37566) || (samplingRate >= 46009 && samplingRate < 55426 && eightShorts));
-          const uint8_t numSwbFrame = __min ((numSwbCh * ((maxSfbCh == maxSfbCurr) || (m_bitRateMode <= 2) ? 4u : 3u)) >> 2,
+          const uint8_t numSwbFrame = __min ((numSwbCh * ((maxSfbCh == maxSfbCurr) || (m_bitRateMode <= 2) || (m_shiftValSBR > 0) ? 4u : 3u)) >> 2,
                                       (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || keepMaxSfbCurr ? 0 : 1));
 #ifndef NO_DTX_MODE
           if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713) && eightShorts)
@@ -1081,6 +1063,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
   const unsigned nChannels        = toNumChannels (m_channelConf);
   const unsigned nSamplesInFrame  = toFrameLength (m_frameLength);
   const unsigned samplingRate     = toSamplingRate (m_frequencyIdx);
+  const unsigned nSamplesTempAna  = (nSamplesInFrame * 25) >> 4; // pre-delay for look-ahead
+  const bool     useMaxBandwidth  = (samplingRate < 37566 || m_shiftValSBR > 0);
   const unsigned* const coeffMagn = m_sfbQuantizer.getCoeffMagnPtr ();
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
   uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS] = {208, 208, 208, 208, 208, 208, 208, 208};
@@ -1180,8 +1164,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
         if (grpData.sfbsPerGroup > 0) // rate control part 2 to reach constrained VBR (CVBR)
         {
-          const uint8_t maxSfbLong  = (samplingRate < 37566 ? 63 - (samplingRate >> 11) : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-          const uint8_t maxSfbShort = (samplingRate < 37566 ? 21 - (samplingRate >> 12) : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
+          const uint8_t maxSfbLong  = (useMaxBandwidth ? 54 - (samplingRate >> 13) : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+          const uint8_t maxSfbShort = (useMaxBandwidth ? 19 - (samplingRate >> 13) : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong  - 6 + (meanSpecFlat[ci] >> 5)) +
                                             (shortWinCurr ? -3 + (((1 << 5) + meanTempFlat[ci]) >> 6) : -7 + (((1 << 4) + meanTempFlat[ci]) >> 5));
@@ -1316,8 +1300,28 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #endif
       if ((coreConfig.elementType < ID_USAC_LFE) && (m_shiftValSBR > 0)) // collect SBR data
       {
+        int32_t* const sbrLevel = &m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame];
+
         memset (m_coreSignals[ci], 0, 10 * sizeof (int32_t)); // TODO
-        m_coreSignals[ci][0] = 1 << 20;  // fix bs_freq_res = high
+#if ENABLE_INTERTES
+        m_coreSignals[ci][0] = (shortWinPrev ? 0x40000000 : 0x40100000); // freq_res, interTes
+#else
+        m_coreSignals[ci][0] = (shortWinPrev ? 0 : 1) << 20; // bs_freq_res = low resp. high
+#endif
+        const int32_t msfVal = (shortWinPrev ? 31 : __max (2, __max (m_meanFlatPrev[ci], meanSpecFlat[ci]) >> 3));
+
+        m_meanFlatPrev[ci]   = meanSpecFlat[ci];
+        m_coreSignals[ci][9] = (msfVal << 13) | (msfVal << 26); // noise level(s), 31 = none
+        m_coreSignals[ci][0] |= 4 - int32_t (sqrt (0.75 * msfVal)); // filter mode, 0 = none
+
+        const uint64_t enAdd = (uint64_t) sbrLevel[11] * (uint64_t) sbrLevel[11]; // envelope
+        const uint64_t enSub = (uint64_t) sbrLevel[21] * (uint64_t) sbrLevel[21]; // 1.9 frms
+        const uint64_t enSum = (uint64_t) sbrLevel[20] * (uint64_t) sbrLevel[20]; // of delay
+        const uint64_t enAdj = (enSum + enAdd - enSub + (nSamplesInFrame >> 1)) / nSamplesInFrame;
+
+        m_coreSignals[ci][1] = (enAdj > 8192 ? int32_t (1.375 - 0.03125 * msfVal + 6.64385619 * log10 ((double) enAdj)) - 26 : 0);
+        memcpy (&sbrLevel[20], &sbrLevel[10] /*last*/, 10 * sizeof (int32_t));
+        memcpy (&sbrLevel[10], sbrLevel /*& current*/, 10 * sizeof (int32_t)); // delay line
       }
       ci++;
     }
@@ -1338,6 +1342,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
   const unsigned nSamplesInShort = nSamplesInFrame >> 3;
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
+  const bool     useMaxBandwidth = (samplingRate < 37566 || m_shiftValSBR > 0);
   unsigned ci = 0, s; // running index
   unsigned errorValue = 0; // no error
 
@@ -1384,7 +1389,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         const bool     eightShorts = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
         const uint8_t meanSpecFlat = (((m_specAnaCurr[ci] >> 16) & UCHAR_MAX) + ((m_specAnaCurr[ci + 1] >> 16) & UCHAR_MAX) + 1) >> 1;
         const uint16_t* const swbo = swbOffsetsL[m_swbTableIdx];
-        const uint16_t nSamplesMax = (samplingRate < 37566 ? nSamplesInFrame : swbo[brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate)]);
+        const uint16_t nSamplesMax = (useMaxBandwidth ? nSamplesInFrame : swbo[brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate)]);
         const int16_t  steAnaStats = m_specAnalyzer.stereoSigAnalysis (m_mdctSignals[ci], m_mdctSignals[ci + 1],
                                                                        m_mdstSignals[ci], m_mdstSignals[ci + 1], nSamplesMax,
                                                                        nSamplesInFrame, eightShorts, coreConfig.stereoDataCurr);
@@ -1862,6 +1867,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
     m_mdctQuantMag[ch] = nullptr;
     m_mdctSignals[ch]  = nullptr;
     m_mdstSignals[ch]  = nullptr;
+    m_meanFlatPrev[ch] = 0;
     m_scaleFacData[ch] = nullptr;
     m_specAnaCurr[ch]  = 0;
     m_specFlatPrev[ch] = 0;
@@ -1940,7 +1946,7 @@ unsigned ExhaleEncoder::encodeLookahead ()
                                  *(predSig + 2) * (int64_t) filterC[2] + *(predSig + 3) * (int64_t) filterC[3];
       *(--predSig) = int32_t ((predSample > 0 ? -predSample + (1 << 9) - 1 : -predSample) >> 9);
     }
-    if (m_shiftValSBR > 0) memset (m_coreSignals[ch], 0, (nSamplesInFrame >> 2) * sizeof (int32_t));
+    if (m_shiftValSBR > 0) memset (m_coreSignals[ch], 0, ((nSamplesInFrame * 41) >> (4 + m_shiftValSBR)) * sizeof (int32_t));
   }
 
   // set initial temporal channel statistic to something meaningful before first coded frame

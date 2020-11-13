@@ -32,6 +32,12 @@
 #define USAC_NUM_FREQ_TABLES    6
 #define USAC_NUM_SAMPLE_RATES  (2 * AAC_NUM_SAMPLE_RATES)
 
+#define ENABLE_INTERTES         0 // inter-sample TES in SBR
+
+#if ENABLE_INTERTES
+# define GAMMA                  1 // 2?
+#endif
+
 #define RESTRICT_TO_AAC         0 // allow only AAC tool-set
 
 #if RESTRICT_TO_AAC
@@ -166,6 +172,25 @@ const uint8_t eightTimesSqrt256Minus[256] = {
    69,  68,  68,  67,  67,  66,  66,  65,  65,  64,  64,  63,  63,  62,  62,  61,  61,  60,  60,  59,  59,  58,  58,  57,  57,  56,
    55,  55,  54,  54,  53,  52,  52,  51,  51,  50,  49,  49,  48,  47,  47,  46,  45,  45,  44,  43,  42,  42,  41,  40,  39,  38,
    38,  37,  36,  35,  34,  33,  32,  31,  30,  29,  28,  27,  25,  24,  23,  21,  20,  18,  16,  14,  11,   8
+};
+
+// ISO/IEC 23003-3:2012, Table 68
+static const uint8_t  elementCountConfig[USAC_MAX_NUM_ELCONFIGS] = {0, 1, 1, 2, 3, 3, 4, 5, 2, 2, 2, 5, 5};
+
+static const ELEM_TYPE elementTypeConfig[USAC_MAX_NUM_ELCONFIGS][USAC_MAX_NUM_ELEMENTS] = {
+  {ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_UNDEF
+  {ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_1_CH
+  {ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_2_CH
+  {ID_USAC_SCE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_3_CH
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_4_CH
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_5_CH
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE, ID_EL_UNDEF}, // CCI_6_CH
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE}, // CCI_8_CH
+  {ID_USAC_SCE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_2_CHM
+  {ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_3_CHR
+  {ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_4_CHR
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_SCE, ID_USAC_LFE}, // CCI_7_CH
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE}  // CCI_8_CHM
 };
 
 // fast calculation of x / den: (x * oneTwentyEightOver[den]) >> 7, accurate for 0 <= x <= 162

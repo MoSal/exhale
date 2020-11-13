@@ -846,7 +846,11 @@ int main (const int argc, char* argv[])
 
         if (!readStdin && (mod3Percent > 0) && !(mp4Writer.getFrameCount () % mod3Percent))
         {
+#if ENABLE_SIMPLE_SBR
+          if ((i++) < (coreSbrFrameLengthIndex >= 3 ? 17 : 34)) // with short files
+#else
           if ((i++) < 34) // for short files
+#endif
           {
             fprintf_s (stdout, "-");  fflush (stdout);
           }
