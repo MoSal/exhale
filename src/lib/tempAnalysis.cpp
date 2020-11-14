@@ -147,7 +147,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
 // --- get L1 norm and pitch lag of both sides
     unsigned sumAbsValL = 0,  sumAbsValR = 0;
     unsigned maxAbsValL = 0,  maxAbsValR = 0;
-    int32_t  maxHfrLevL = 8,  maxHfrLevR = 8;
+    int32_t  maxHfrLevL = 0,  maxHfrLevR = 0;
     int16_t  maxAbsIdxL = 0,  maxAbsIdxR = 0;
     int      splitPtL   = 0;
     int      splitPtC   = halfFrameOffset;
