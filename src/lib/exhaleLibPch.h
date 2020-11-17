@@ -196,6 +196,9 @@ static const ELEM_TYPE elementTypeConfig[USAC_MAX_NUM_ELCONFIGS][USAC_MAX_NUM_EL
 // fast calculation of x / den: (x * oneTwentyEightOver[den]) >> 7, accurate for 0 <= x <= 162
 const uint8_t oneTwentyEightOver[14] = {0, 128, 64, 43, 32, 26, 22, 19, 16, 15, 13, 12, 11, 10};
 
+// public SBR related functions
+int8_t quantizeSbrEnvelopeLevel (const uint64_t energy, const unsigned divisor, const uint8_t noiseLevel);
+
 // public sampling rate functions
 int8_t toSamplingFrequencyIndex (const unsigned samplingRate);
 unsigned toSamplingRate (const int8_t samplingFrequencyIndex);

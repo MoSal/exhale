@@ -1073,7 +1073,10 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
   // get means of spectral and temporal flatness for every channel
   m_bitAllocator.getChAverageSpecFlat (meanSpecFlat, nChannels);
-  if (m_bitRateMode == 0 && samplingRate >= 23004) m_bitAllocator.getChAverageTempFlat (meanTempFlat, nChannels);
+  if ((m_bitRateMode < (2u >> m_shiftValSBR)) && (samplingRate >= 23004) && (samplingRate < 37566))
+  {
+    m_bitAllocator.getChAverageTempFlat (meanTempFlat, nChannels);
+  }
 
   for (unsigned el = 0; el < m_numElements; el++)  // element loop
   {
@@ -1300,28 +1303,95 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #endif
       if ((coreConfig.elementType < ID_USAC_LFE) && (m_shiftValSBR > 0)) // collect SBR data
       {
-        int32_t* const sbrLevel = &m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame];
+        const uint8_t msfVal = (shortWinPrev ? 31 : __max (2, __max (m_meanFlatPrev[ci], meanSpecFlat[ci]) >> 3));
 
-        memset (m_coreSignals[ci], 0, 10 * sizeof (int32_t)); // TODO
+        memset (m_coreSignals[ci], 0, 10 * sizeof (int32_t));
 #if ENABLE_INTERTES
         m_coreSignals[ci][0] = (shortWinPrev ? 0x40000000 : 0x40100000); // freq_res, interTes
 #else
         m_coreSignals[ci][0] = (shortWinPrev ? 0 : 1) << 20; // bs_freq_res = low resp. high
 #endif
-        const int32_t msfVal = (shortWinPrev ? 31 : __max (2, __max (m_meanFlatPrev[ci], meanSpecFlat[ci]) >> 3));
-
-        m_meanFlatPrev[ci]   = meanSpecFlat[ci];
-        m_coreSignals[ci][9] = (msfVal << 13) | (msfVal << 26); // noise level(s), 31 = none
         m_coreSignals[ci][0] |= 4 - int32_t (sqrt (0.75 * msfVal)); // filter mode, 0 = none
+#if 1
+// TODO: start putting into function
+        int32_t* const sbrLevel = &m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame];
+        uint64_t enValues[8] = {(uint64_t) sbrLevel[22] * (uint64_t) sbrLevel[22], (uint64_t) sbrLevel[23] * (uint64_t) sbrLevel[23],
+                                (uint64_t) sbrLevel[24] * (uint64_t) sbrLevel[24], (uint64_t) sbrLevel[25] * (uint64_t) sbrLevel[25],
+                                (uint64_t) sbrLevel[26] * (uint64_t) sbrLevel[26], (uint64_t) sbrLevel[27] * (uint64_t) sbrLevel[27],
+                                (uint64_t) sbrLevel[28] * (uint64_t) sbrLevel[28], (uint64_t) sbrLevel[11] * (uint64_t) sbrLevel[11]};
+        uint64_t  envTmp0[1] = { enValues[0] + enValues[1] + enValues[2] + enValues[3] +
+                                 enValues[4] + enValues[5] + enValues[6] + enValues[7]};
+        uint64_t  envTmp1[2] = {(enValues[0] + enValues[1] + enValues[2] + enValues[3]) << 1,
+                                (enValues[4] + enValues[5] + enValues[6] + enValues[7]) << 1};
+        uint64_t  envTmp2[4] = {(enValues[0] + enValues[1]) << 2, (enValues[2] + enValues[3]) << 2,
+                                (enValues[4] + enValues[5]) << 2, (enValues[6] + enValues[7]) << 2};
+        uint64_t  envTmp3[8] = { enValues[0] << 3, enValues[1] << 3, enValues[2] << 3, enValues[3] << 3,
+                                 enValues[4] << 3, enValues[5] << 3, enValues[6] << 3, enValues[7] << 3};
+        uint64_t  errTmp[4] = {0, 0, 0, 0};
+        uint64_t  errBest;
+        int32_t   tmpBest;
 
-        const uint64_t enAdd = (uint64_t) sbrLevel[11] * (uint64_t) sbrLevel[11]; // envelope
-        const uint64_t enSub = (uint64_t) sbrLevel[21] * (uint64_t) sbrLevel[21]; // 1.9 frms
-        const uint64_t enSum = (uint64_t) sbrLevel[20] * (uint64_t) sbrLevel[20]; // of delay
-        const uint64_t enAdj = (enSum + enAdd - enSub + (nSamplesInFrame >> 1)) / nSamplesInFrame;
+        for (int unit = 0; unit < 8; unit++)
+        {
+          const int64_t ref = enValues[unit] << 3;
 
-        m_coreSignals[ci][1] = (enAdj > 8192 ? int32_t (1.375 - 0.03125 * msfVal + 6.64385619 * log10 ((double) enAdj)) - 26 : 0);
+          errTmp[0] += abs ((int64_t) envTmp0[unit >> 3] - ref); // abs() since
+          errTmp[1] += abs ((int64_t) envTmp1[unit >> 2] - ref); // both values
+          errTmp[2] += abs ((int64_t) envTmp2[unit >> 1] - ref); // are already
+          errTmp[3] += abs ((int64_t) envTmp3[unit >> 0] - ref); // squares
+        }
+
+        errBest = errTmp[0]; // find tmp value providing minimal weighted error
+        tmpBest = 0;
+        for (uint8_t t = 1; t < 3; t++)
+        {
+          if ((errTmp[t] << t) < errBest)
+          {
+            errBest = errTmp[t] << t;
+            tmpBest = t;
+          }
+        }
+        if ((errBest >> 3) > envTmp0[0]) tmpBest = (m_bitRateMode == 0 ? 2 : 3);
+
+  /*quant.*/ if (tmpBest == 0)
+        {
+          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp0[0], nSamplesInFrame, msfVal);
+        }
+        else if (tmpBest == 1)
+        {
+          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp1[0], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][2] = quantizeSbrEnvelopeLevel (envTmp1[1], nSamplesInFrame, msfVal);
+        }
+        else if (tmpBest == 2)
+        {
+          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp2[0], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][2] = quantizeSbrEnvelopeLevel (envTmp2[1], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][3] = quantizeSbrEnvelopeLevel (envTmp2[2], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][4] = quantizeSbrEnvelopeLevel (envTmp2[3], nSamplesInFrame, msfVal);
+        }
+        else // (tmpBest == 3)
+        {
+          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp3[0], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][2] = quantizeSbrEnvelopeLevel (envTmp3[1], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][3] = quantizeSbrEnvelopeLevel (envTmp3[2], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][4] = quantizeSbrEnvelopeLevel (envTmp3[3], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][5] = quantizeSbrEnvelopeLevel (envTmp3[4], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][6] = quantizeSbrEnvelopeLevel (envTmp3[5], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][7] = quantizeSbrEnvelopeLevel (envTmp3[6], nSamplesInFrame, msfVal);
+          m_coreSignals[ci][8] = quantizeSbrEnvelopeLevel (envTmp3[7], nSamplesInFrame, msfVal);
+        }
+
+        m_coreSignals[ci][9] = ((int32_t) msfVal << 13) | ((int32_t) msfVal << 26); // noise level(s), 31 = none
+# if ENABLE_INTERTES
+     // m_auBitStream.write ((m_coreSignals[ci][9] >> (i=0..(1 << tmpBest)-1)) & 1, 1); // bs_temp_shape[ch][env=i]
+# endif
         memcpy (&sbrLevel[20], &sbrLevel[10] /*last*/, 10 * sizeof (int32_t));
         memcpy (&sbrLevel[10], sbrLevel /*& current*/, 10 * sizeof (int32_t)); // delay line
+// TODO: end putting into function
+#endif
+        m_coreSignals[ci][0] |= tmpBest /* TODO: call function here, returning tmpBest */ << 21;
+
+        m_meanFlatPrev[ci] = meanSpecFlat[ci];
       }
       ci++;
     }

@@ -52,6 +52,14 @@ static const unsigned allowedSamplingRates[USAC_NUM_SAMPLE_RATES] = {
   57600, 51200, 40000, 38400, 34150, 28800, 25600, 20000, 19200, 17075, 14400, 12800, 9600 // USAC
 };
 
+// public SBR related functions
+int8_t quantizeSbrEnvelopeLevel (const uint64_t energy, const unsigned divisor, const uint8_t noiseLevel)
+{
+  const double ener = (double) energy / (double) divisor;
+
+  return (ener > 8192.0 ? int8_t (1.375 - 0.03125 * noiseLevel + 6.64385619 * log10 (ener)) - 26 : 0);
+}
+
 // public sampling rate functions
 int8_t toSamplingFrequencyIndex (const unsigned samplingRate)
 {
