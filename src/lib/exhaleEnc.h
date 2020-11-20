@@ -79,7 +79,8 @@ private:
   uint8_t*        m_mdctQuantMag[USAC_MAX_NUM_CHANNELS];
   int32_t*        m_mdctSignals[USAC_MAX_NUM_CHANNELS];
   int32_t*        m_mdstSignals[USAC_MAX_NUM_CHANNELS];
-  uint8_t         m_meanFlatPrev[USAC_MAX_NUM_CHANNELS];
+  uint8_t         m_meanSpecPrev[USAC_MAX_NUM_CHANNELS]; // for
+  uint8_t         m_meanTempPrev[USAC_MAX_NUM_CHANNELS]; // SBR
 #if !RESTRICT_TO_AAC
   bool            m_noiseFilling[USAC_MAX_NUM_ELEMENTS];
   bool            m_nonMpegExt;

@@ -178,27 +178,27 @@ const uint8_t eightTimesSqrt256Minus[256] = {
 static const uint8_t  elementCountConfig[USAC_MAX_NUM_ELCONFIGS] = {0, 1, 1, 2, 3, 3, 4, 5, 2, 2, 2, 5, 5};
 
 static const ELEM_TYPE elementTypeConfig[USAC_MAX_NUM_ELCONFIGS][USAC_MAX_NUM_ELEMENTS] = {
-  {ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_UNDEF
-  {ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_1_CH
-  {ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_2_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_3_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_4_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_5_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE, ID_EL_UNDEF}, // CCI_6_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE}, // CCI_8_CH
-  {ID_USAC_SCE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_2_CHM
-  {ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_3_CHR
-  {ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF}, // CCI_4_CHR
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_SCE, ID_USAC_LFE}, // CCI_7_CH
-  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE}  // CCI_8_CHM
+  {ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_SCE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE, ID_EL_UNDEF},
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE},
+  {ID_USAC_SCE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_CPE, ID_USAC_SCE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_CPE, ID_USAC_CPE, ID_EL_UNDEF, ID_EL_UNDEF, ID_EL_UNDEF},
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_SCE, ID_USAC_LFE},
+  {ID_USAC_SCE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_CPE, ID_USAC_LFE}
 };
 
 // fast calculation of x / den: (x * oneTwentyEightOver[den]) >> 7, accurate for 0 <= x <= 162
 const uint8_t oneTwentyEightOver[14] = {0, 128, 64, 43, 32, 26, 22, 19, 16, 15, 13, 12, 11, 10};
 
 // public SBR related functions
-int8_t quantizeSbrEnvelopeLevel (const uint64_t energy, const unsigned divisor, const uint8_t noiseLevel);
-
+int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat5b, const uint8_t tempFlat5b, const bool lowBitRateMode,
+                                const uint8_t specFlatSte, const int32_t tmpValSte, const uint32_t frameSize, int32_t* sbrArray);
 // public sampling rate functions
 int8_t toSamplingFrequencyIndex (const unsigned samplingRate);
 unsigned toSamplingRate (const int8_t samplingFrequencyIndex);

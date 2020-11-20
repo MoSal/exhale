@@ -344,7 +344,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       m_tempAnaStats[ch] = packAvgTempAnalysisStats (sumAbsHpL,  sumAbsHpR,  m_avgAbsHpPrev[ch],
                                                      sumAbsPpL + sumAbsPpR,  maxAbsValL + maxAbsValR);
       u = maxAbsValR;
-      if ((m_maxHfLevPrev[ch] < (maxHfrLevL >> 3)) || (maxHfrLevL < (maxHfrLevR >> 3))) // transient
+      if ((m_maxHfLevPrev[ch] < (maxHfrLevL >> 4)) || (maxHfrLevL < (maxHfrLevR >> 4))) // transient
       {
         maxAbsValL = maxHfrLevL;
         maxAbsValR = maxHfrLevR;

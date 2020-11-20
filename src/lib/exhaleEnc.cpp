@@ -768,7 +768,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const bool     useMaxBandwidth = (samplingRate < 37566 || m_shiftValSBR > 0);
   const uint32_t maxSfbLong      = (useMaxBandwidth ? m_numSwbLong : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint32_t scaleSBR        = (m_shiftValSBR > 0 ? 8 : 0); // reduces core rate by 25 %
+  const uint32_t scaleSBR        = (m_shiftValSBR > 0 || m_nonMpegExt ? (samplingRate < 23004 || m_bitRateMode == 0 ? 8 : 6 + ((m_bitRateMode + 1) >> 2)) : 0); // -25% rate
   const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3 << m_shiftValSBR, m_bitRateMode)
                                                          : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 3 + (samplingRate >> 10) + (samplingRate >> 13) - (nChannels >> 1))
@@ -926,8 +926,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       }
       else memset (coreConfig.stereoDataCurr, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
 
-      errorValue |= m_bitAllocator.imprSfbStepSizes (m_scaleFacData, m_numSwbShort, m_mdctSignals, nSamplesInFrame,
-                                                     nrChannels, samplingRate, sfbStepSizes, ci, meanSpecFlat,
+      errorValue |= m_bitAllocator.imprSfbStepSizes (m_scaleFacData, m_numSwbShort, m_mdctSignals, nSamplesInFrame, nrChannels,
+                                                     ((32 + 5 * m_shiftValSBR) * samplingRate) >> 5, sfbStepSizes, ci, meanSpecFlat,
                                                      coreConfig.commonWindow, coreConfig.stereoDataCurr, coreConfig.stereoConfig);
 
       for (unsigned ch = 0; ch < nrChannels; ch++) // channel loop
@@ -1301,9 +1301,13 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
       // NOTE: gap-filling SFB bit count might be inaccurate now since scale factors changed
       if (coreConfig.specFillData[ch] == 1) errorValue |= 1;
 #endif
+      s = ci + nrChannels - 1 - 2 * ch; // other channel in stereo
       if ((coreConfig.elementType < ID_USAC_LFE) && (m_shiftValSBR > 0)) // collect SBR data
       {
-        const uint8_t msfVal = (shortWinPrev ? 31 : __max (2, __max (m_meanFlatPrev[ci], meanSpecFlat[ci]) >> 3));
+        const uint8_t msfVal = (shortWinPrev ? 31 : __max (2, __max (m_meanSpecPrev[ci], meanSpecFlat[ci]) >> 3));
+        const uint8_t msfSte = (coreConfig.stereoMode == 0 ? 0 : (coreConfig.icsInfoPrev[s + ch - ci].windowSequence ==
+                                 EIGHT_SHORT ? 31 : __max (2, __max (m_meanSpecPrev[s ], meanSpecFlat[s ]) >> 3)));
+        int32_t  tmpValSynch = 0;
 
         memset (m_coreSignals[ci], 0, 10 * sizeof (int32_t));
 #if ENABLE_INTERTES
@@ -1312,86 +1316,21 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
         m_coreSignals[ci][0] = (shortWinPrev ? 0 : 1) << 20; // bs_freq_res = low resp. high
 #endif
         m_coreSignals[ci][0] |= 4 - int32_t (sqrt (0.75 * msfVal)); // filter mode, 0 = none
-#if 1
-// TODO: start putting into function
-        int32_t* const sbrLevel = &m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame];
-        uint64_t enValues[8] = {(uint64_t) sbrLevel[22] * (uint64_t) sbrLevel[22], (uint64_t) sbrLevel[23] * (uint64_t) sbrLevel[23],
-                                (uint64_t) sbrLevel[24] * (uint64_t) sbrLevel[24], (uint64_t) sbrLevel[25] * (uint64_t) sbrLevel[25],
-                                (uint64_t) sbrLevel[26] * (uint64_t) sbrLevel[26], (uint64_t) sbrLevel[27] * (uint64_t) sbrLevel[27],
-                                (uint64_t) sbrLevel[28] * (uint64_t) sbrLevel[28], (uint64_t) sbrLevel[11] * (uint64_t) sbrLevel[11]};
-        uint64_t  envTmp0[1] = { enValues[0] + enValues[1] + enValues[2] + enValues[3] +
-                                 enValues[4] + enValues[5] + enValues[6] + enValues[7]};
-        uint64_t  envTmp1[2] = {(enValues[0] + enValues[1] + enValues[2] + enValues[3]) << 1,
-                                (enValues[4] + enValues[5] + enValues[6] + enValues[7]) << 1};
-        uint64_t  envTmp2[4] = {(enValues[0] + enValues[1]) << 2, (enValues[2] + enValues[3]) << 2,
-                                (enValues[4] + enValues[5]) << 2, (enValues[6] + enValues[7]) << 2};
-        uint64_t  envTmp3[8] = { enValues[0] << 3, enValues[1] << 3, enValues[2] << 3, enValues[3] << 3,
-                                 enValues[4] << 3, enValues[5] << 3, enValues[6] << 3, enValues[7] << 3};
-        uint64_t  errTmp[4] = {0, 0, 0, 0};
-        uint64_t  errBest;
-        int32_t   tmpBest;
 
-        for (int unit = 0; unit < 8; unit++)
+        if (ch > 0 && coreConfig.stereoMode > 0) // synch. sbr_grid(), sbr_invf() for stereo
         {
-          const int64_t ref = enValues[unit] << 3;
-
-          errTmp[0] += abs ((int64_t) envTmp0[unit >> 3] - ref); // abs() since
-          errTmp[1] += abs ((int64_t) envTmp1[unit >> 2] - ref); // both values
-          errTmp[2] += abs ((int64_t) envTmp2[unit >> 1] - ref); // are already
-          errTmp[3] += abs ((int64_t) envTmp3[unit >> 0] - ref); // squares
+          tmpValSynch = (m_coreSignals[ci - 1][0] >> 21) & 3; // nEnv, bits 23-22
+          m_coreSignals[ci][0] |= m_coreSignals[ci - 1][0] & 0x10000F; // bits 21
+          m_coreSignals[ci - 1][0] |= m_coreSignals[ci][0] & 0x10000F; // and 4-1
         }
-
-        errBest = errTmp[0]; // find tmp value providing minimal weighted error
-        tmpBest = 0;
-        for (uint8_t t = 1; t < 3; t++)
+        m_coreSignals[ci][0] |= getSbrEnvelopeAndNoise (&m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame], msfVal,
+                                                        __max (m_meanTempPrev[ci], meanTempFlat[ci]) >> 3, m_bitRateMode == 0,
+                                                        msfSte, tmpValSynch, nSamplesInFrame, &m_coreSignals[ci][1]) << 21;
+        if (ch + 1 == nrChannels) // update the flatness histories
         {
-          if ((errTmp[t] << t) < errBest)
-          {
-            errBest = errTmp[t] << t;
-            tmpBest = t;
-          }
+          m_meanSpecPrev[ci] = meanSpecFlat[ci];  m_meanSpecPrev[s] = meanSpecFlat[s];
+          m_meanTempPrev[ci] = meanTempFlat[ci];  m_meanTempPrev[s] = meanTempFlat[s];
         }
-        if ((errBest >> 3) > envTmp0[0]) tmpBest = (m_bitRateMode == 0 ? 2 : 3);
-
-  /*quant.*/ if (tmpBest == 0)
-        {
-          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp0[0], nSamplesInFrame, msfVal);
-        }
-        else if (tmpBest == 1)
-        {
-          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp1[0], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][2] = quantizeSbrEnvelopeLevel (envTmp1[1], nSamplesInFrame, msfVal);
-        }
-        else if (tmpBest == 2)
-        {
-          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp2[0], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][2] = quantizeSbrEnvelopeLevel (envTmp2[1], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][3] = quantizeSbrEnvelopeLevel (envTmp2[2], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][4] = quantizeSbrEnvelopeLevel (envTmp2[3], nSamplesInFrame, msfVal);
-        }
-        else // (tmpBest == 3)
-        {
-          m_coreSignals[ci][1] = quantizeSbrEnvelopeLevel (envTmp3[0], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][2] = quantizeSbrEnvelopeLevel (envTmp3[1], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][3] = quantizeSbrEnvelopeLevel (envTmp3[2], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][4] = quantizeSbrEnvelopeLevel (envTmp3[3], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][5] = quantizeSbrEnvelopeLevel (envTmp3[4], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][6] = quantizeSbrEnvelopeLevel (envTmp3[5], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][7] = quantizeSbrEnvelopeLevel (envTmp3[6], nSamplesInFrame, msfVal);
-          m_coreSignals[ci][8] = quantizeSbrEnvelopeLevel (envTmp3[7], nSamplesInFrame, msfVal);
-        }
-
-        m_coreSignals[ci][9] = ((int32_t) msfVal << 13) | ((int32_t) msfVal << 26); // noise level(s), 31 = none
-# if ENABLE_INTERTES
-     // m_auBitStream.write ((m_coreSignals[ci][9] >> (i=0..(1 << tmpBest)-1)) & 1, 1); // bs_temp_shape[ch][env=i]
-# endif
-        memcpy (&sbrLevel[20], &sbrLevel[10] /*last*/, 10 * sizeof (int32_t));
-        memcpy (&sbrLevel[10], sbrLevel /*& current*/, 10 * sizeof (int32_t)); // delay line
-// TODO: end putting into function
-#endif
-        m_coreSignals[ci][0] |= tmpBest /* TODO: call function here, returning tmpBest */ << 21;
-
-        m_meanFlatPrev[ci] = meanSpecFlat[ci];
       }
       ci++;
     }
@@ -1937,7 +1876,8 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
     m_mdctQuantMag[ch] = nullptr;
     m_mdctSignals[ch]  = nullptr;
     m_mdstSignals[ch]  = nullptr;
-    m_meanFlatPrev[ch] = 0;
+    m_meanSpecPrev[ch] = 0;
+    m_meanTempPrev[ch] = 0;
     m_scaleFacData[ch] = nullptr;
     m_specAnaCurr[ch]  = 0;
     m_specFlatPrev[ch] = 0;

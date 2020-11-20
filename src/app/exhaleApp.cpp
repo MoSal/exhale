@@ -287,7 +287,9 @@ int main (const int argc, char* argv[])
   if ((argc > 1) && (strcmp (argv[1], "-V") == 0 || strcmp (argv[1], "-v") == 0))
 #endif
   {
-#if defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
+#if defined (__arm__) || defined (__aarch64__) || defined (__arm64__)
+    fprintf_s (stdout, "exhale %s.%s%s (ARM",
+#elif defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
     fprintf_s (stdout, "exhale %s.%s%s (x64",
 #else // 32-bit OS
     fprintf_s (stdout, "exhale %s.%s%s (x86",
@@ -347,7 +349,9 @@ int main (const int argc, char* argv[])
   fprintf_s (stdout, EXHALE_TEXT_INIT "ncoder |\n");
 #endif
   fprintf_s (stdout, " |                                                                     |\n");
-#if defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
+#if defined (__arm__) || defined (__aarch64__) || defined (__arm64__)
+  fprintf_s (stdout, " | version %s.%s%s (ARM, built on %s) - written by C.R.Helmrich |\n",
+#elif defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
   fprintf_s (stdout, " | version %s.%s%s (x64, built on %s) - written by C.R.Helmrich |\n",
 #else // 32-bit OS
   fprintf_s (stdout, " | version %s.%s%s (x86, built on %s) - written by C.R.Helmrich |\n",
