@@ -136,8 +136,8 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
     sbrArray[7] = quantizeSbrEnvelopeLevel (envTmp3[7], frameSize, specFlat5b);
   }
 
-  // quantized noise level for up to two temporal units, 31 = no noise
-  t = __max (specFlat5b, specFlatSte);
+  // quantized noise level for up to two temporal units, 30 = no noise
+  t = __min (30, __max (specFlat5b, specFlatSte));
   sbrArray[8] = ((int32_t) t << 13) | ((int32_t) t << 26);
 #if ENABLE_INTERTES
   if ((t < 12) && (tempFlat5b > (lowBitRateMode ? 15 : 26)) && (tmpBest < 3))

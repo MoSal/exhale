@@ -768,7 +768,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const bool     useMaxBandwidth = (samplingRate < 37566 || m_shiftValSBR > 0);
   const uint32_t maxSfbLong      = (useMaxBandwidth ? m_numSwbLong : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint32_t scaleSBR        = (m_shiftValSBR > 0 || m_nonMpegExt ? (samplingRate < 23004 || m_bitRateMode == 0 ? 8 : 6 + ((m_bitRateMode + 1) >> 2)) : 0); // -25% rate
+  const uint32_t scaleSBR        = (m_shiftValSBR > 0 || m_nonMpegExt ? (m_bitRateMode == 0 ? 8 : 6 + ((m_bitRateMode + 2 - samplingRate/24000) >> 2)) : 0); // -25% rate
   const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3 << m_shiftValSBR, m_bitRateMode)
                                                          : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 3 + (samplingRate >> 10) + (samplingRate >> 13) - (nChannels >> 1))
@@ -1172,7 +1172,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong  - 6 + (meanSpecFlat[ci] >> 5)) +
                                             (shortWinCurr ? -3 + (((1 << 5) + meanTempFlat[ci]) >> 6) : -7 + (((1 << 4) + meanTempFlat[ci]) >> 5));
-          const unsigned targetBitCount25 = ((60000 + 20000 * m_bitRateMode) * nSamplesInFrame) / (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
+          const unsigned targetBitCount25 = ((60000 + 20000 * (m_bitRateMode + m_shiftValSBR)) * nSamplesInFrame) /
+                                            (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
           unsigned b = grpData.sfbsPerGroup - 1;
 
           if ((grpRms[b] >> 16) > 0) lastSfb = b;
@@ -1319,9 +1320,9 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
         if (ch > 0 && coreConfig.stereoMode > 0) // synch. sbr_grid(), sbr_invf() for stereo
         {
-          tmpValSynch = (m_coreSignals[ci - 1][0] >> 21) & 3; // nEnv, bits 23-22
-          m_coreSignals[ci][0] |= m_coreSignals[ci - 1][0] & 0x10000F; // bits 21
-          m_coreSignals[ci - 1][0] |= m_coreSignals[ci][0] & 0x10000F; // and 4-1
+          tmpValSynch = (m_coreSignals[s][0] >> 21) & 3; // nEnv, bits 23-22
+          m_coreSignals[ci][0] |= m_coreSignals[s][0] & 0x10000F; // bits 21
+          m_coreSignals[s][0] |= m_coreSignals[ci][0] & 0x10000F; // and 4-1
         }
         m_coreSignals[ci][0] |= getSbrEnvelopeAndNoise (&m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame], msfVal,
                                                         __max (m_meanTempPrev[ci], meanTempFlat[ci]) >> 3, m_bitRateMode == 0,

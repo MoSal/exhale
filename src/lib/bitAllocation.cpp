@@ -419,7 +419,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
                                          const uint8_t* const sfbStereoData /*= nullptr*/, const uint8_t stereoConfig /*= 0*/)
 {
   const uint8_t maxSfbL16k = 16 + __min (4 + (samplingRate >> 10), (9 << 17) / __max (1, samplingRate)); // SFB index at 15.8 kHz
-  const uint32_t redFactor = __max ((samplingRate < 27713 ? 2 : 1), __min (3, m_rateIndex)) - (stereoConfig >> 3);
+  const uint32_t redFactor = __max ((samplingRate < 25495 ? 2 : 1), __min (3, m_rateIndex)) - (stereoConfig >> 3);
   const uint32_t redWeight = __min (4, 9 - __min (9, m_rateIndex));
   short* const  tempCoeffs = (short* const) m_tempSfbValue;
 
