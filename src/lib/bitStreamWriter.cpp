@@ -116,62 +116,61 @@ unsigned BitStreamWriter::writeChannelWiseSbrData (const int32_t* const sbrDataC
                                                    const bool indepFlag /*= false*/)
 {
   const unsigned nb = (sbrDataCh0 != nullptr ? 2 * ((sbrDataCh0[0] >> 23) & 1) + 2 : 0); // noise bits/ch = 2 or 4
-#if ENABLE_INTERTES
-  const bool issTes = (nb > 0 ? ((sbrDataCh0[0] >> 30) & 1) : false);
-  const int8_t  res = (nb > 0 ? (sbrDataCh0[0] >> 29) & 1 : 0); // bs_amp_res
-#else
-  const int16_t res = (nb > 0 ? sbrDataCh0[0] >> 29 : 0); // short bs_amp_res
-#endif
+  const unsigned ob = (indepFlag ? 1 : 0);  // indepFlag dependent bit offset
   const bool stereo = (sbrDataCh1 != nullptr);
-  const bool couple = (stereo ? ((sbrDataCh1[0] >> 23) & 1) : false);
+  const int32_t ch0 = (nb > 0 ? sbrDataCh0[0] : 0);
+  const int32_t ch1 = (stereo ? sbrDataCh1[0] : 0);
+#if ENABLE_INTERTES
+  const bool issTes = (((ch0 >> 30) & 1) != 0);
+  const int8_t  res = (ch0 >> 29) & 1; // bs_amp_res
+#else
+  const int16_t res = ch0 >> 29; // short bs_amp_res
+#endif
+  const bool couple = (((ch1 >> 23) & 1) != 0);
   unsigned bitCount = (stereo ? (couple ? 2 : 7 + nb) : 0) + 6 + nb;
   unsigned i, envCh0, envCh1, resCh0, resCh1;  // bs_num_env[], bs_freq_res[]
 
   if (nb == 0) return 0;
 
-  envCh0 = 1 << ((sbrDataCh0[0] >> 21) & 3);
-  resCh0 = (sbrDataCh0[0] >> 20) & 1;
-  envCh1 = 1 << (((stereo && !couple ? sbrDataCh1[0] : sbrDataCh0[0]) >> 21) & 3);
-  resCh1 = ((stereo && !couple ? sbrDataCh1[0] : sbrDataCh0[0]) >> 20) & 1;
+  envCh0 = 1 << ((ch0 >> 21) & 3);
+  resCh0 = (ch0 >> 20) & 1;
+  envCh1 = 1 << (((stereo && !couple ? ch1 : ch0) >> 21) & 3);
+  resCh1 = ((stereo && !couple ? ch1 : ch0) >> 20) & 1;
 
   if (stereo) m_auBitStream.write (couple ? 1 : 0, 1); // _coupling
 
   // sbr_grid(), assumes bs_frame_class[ch] == 0, i.e. class FIXFIX
-  m_auBitStream.write ((sbrDataCh0[0] >> 20) & 7, 5); // class data
-  if (stereo && !couple) m_auBitStream.write ((sbrDataCh1[0] >> 20) & 7, 5);
+  m_auBitStream.write ((ch0 >> 20) & 7, 5);
+  if (stereo && !couple) m_auBitStream.write ((ch1 >> 20) & 7, 5);
 
   // sbr_dtdf(), assumes bs_pvc == 0, i.e. no PVC like rest of code
-  i = envCh0 - (indepFlag ? 1 : 0);
-  if (i > 0) m_auBitStream.write ((sbrDataCh0[0] >> 12) & 255, i); // _df_env
-  bitCount += i;
-  i = __min (2, envCh0) - (indepFlag ? 1 : 0);
-  if (i > 0) m_auBitStream.write ((sbrDataCh0[0] >> 4) & 255, i); // df_noise
-  bitCount += i;
+  for (i = ob; i < envCh0; i++) m_auBitStream.write ((ch0 >> (12 + i)) & 1, 1);
+  bitCount += i - ob;
+  for (i = ob; i < __min (2, envCh0); i++) m_auBitStream.write ((ch0 >> (4 + i)) & 1, 1);
+  bitCount += i - ob;
 
   if (stereo)
   {
-    i = envCh1 - (indepFlag ? 1 : 0);
-    if (i > 0) m_auBitStream.write ((sbrDataCh1[0] >> 12) & 255, i);
-    bitCount += i;
-    i = __min (2, envCh1) - (indepFlag ? 1 : 0);
-    if (i > 0) m_auBitStream.write ((sbrDataCh1[0] >> 4) & 255, i);
-    bitCount += i;
+    for (i = ob; i < envCh1; i++) m_auBitStream.write ((ch1 >> (12 + i)) & 1, 1);
+    bitCount += i - ob;
+    for (i = ob; i < __min (2, envCh1); i++) m_auBitStream.write ((ch1 >> (4 + i)) & 1, 1);
+    bitCount += i - ob;
   }
 
   // sbr_invf(), assumes dflt_noise_bands < 3, i.e. 1-2 noise bands
-  i = 6 * nb - 9; // bitmask = 3 or 15
-  m_auBitStream.write (sbrDataCh0[0] & i, nb); // bs_invf_mode[0][]
-  if (stereo && !couple) m_auBitStream.write (sbrDataCh1[0] & i, nb);
+  i = 6 * nb - 9;
+  m_auBitStream.write (ch0 & i, nb); // 3 or 15-bit bs_invf_mode[0]
+  if (stereo && !couple) m_auBitStream.write (ch1 & i, nb);
 
   // sbr_envelope() for mono/left channel, assumes bs_df_env[] == 0
   for (i = 1; i <= envCh0; i++) // dt loop
   {
-    const uint8_t bits = (res > 0 && envCh0 > 1 ? 6 : 7);  // start
+    const uint8_t bits = ((ch0 & (1 << (11 + i))) != 0 ? 2 : (res > 0 && envCh0 > 1 ? 6 : 7));
     const uint8_t bitd = (2 + 3 * resCh0) * 2; // differential, <25 TODO: VLC words
 
     m_auBitStream.write (sbrDataCh0[i] & 127, bits); // bs_data_env
     bitCount += bits;
-    m_auBitStream.write (sbrDataCh0[i] >> 7, bitd);
+    m_auBitStream.write ((sbrDataCh0[i] >> 7) & ((1 << bitd) - 1), bitd);
     bitCount += bitd;
 #if ENABLE_INTERTES
     if (issTes)
@@ -191,12 +190,12 @@ unsigned BitStreamWriter::writeChannelWiseSbrData (const int32_t* const sbrDataC
   {
     for (i = 1; i <= envCh1; i++) // decoup. sbr_envelope() dt loop
     {
-      const uint8_t bits = (res > 0 && envCh1 > 1 ? 6 : 7);
+      const uint8_t bits = ((ch1 & (1 << (11 + i))) != 0 ? 2 : (res > 0 && envCh1 > 1 ? 6 : 7));
       const uint8_t bitd = (2 + 3 * resCh1) * 2; // TODO: VLC words
 
       m_auBitStream.write (sbrDataCh1[i] & 127, bits);
       bitCount += bits;
-      m_auBitStream.write (sbrDataCh1[i] >> 7, bitd);
+      m_auBitStream.write ((sbrDataCh1[i] >> 7) & ((1 << bitd) - 1), bitd);
       bitCount += bitd;
 #if ENABLE_INTERTES
       if (issTes)
@@ -214,10 +213,12 @@ unsigned BitStreamWriter::writeChannelWiseSbrData (const int32_t* const sbrDataC
   }
 
   // sbr_noise() for mono/left channel, assumes bs_df_noise[i] == 0
-  for (i = __min (2, envCh0); i > 0; i--) // dt loop
+  for (i = 1; i <= __min (2, envCh0); i++) // dt loop
   {
-    m_auBitStream.write ((sbrDataCh0[9] >> (13 * i)) & 31, 5); // _data_noise
-    bitCount += 5;
+    const uint8_t bits = ((ch0 & (1 << (3 + i))) != 0 ? 1 : 5);
+
+    m_auBitStream.write ((sbrDataCh0[9] >> (13 * i)) & 31, bits); // _noise[]
+    bitCount += bits;
     if (nb == 4)
     {
       m_auBitStream.write ((sbrDataCh0[9] >> (13 * i - 5)) & 31, 1); // TODO: VLC word
@@ -231,12 +232,12 @@ unsigned BitStreamWriter::writeChannelWiseSbrData (const int32_t* const sbrDataC
     {
       for (i = 1; i <= envCh1; i++) // coup. sbr_envelope() dt loop
       {
-        const uint8_t bits = (res > 0 && envCh1 > 1 ? 5 : 6);
-        const uint8_t bitd = (2 + 3 * resCh1) * 2; // TODO: VLC words
+        const uint8_t bits = ((ch1 & (1 << (11 + i))) != 0 ? 1 : (res > 0 && envCh1 > 1 ? 5 : 6));
+        const uint8_t bitd = (2 + 3 * resCh1) * 1; // TODO: VLC words
 
         m_auBitStream.write (sbrDataCh1[i] & 63, bits);
         bitCount += bits;
-        m_auBitStream.write (sbrDataCh1[i] >> 7, bitd);
+        m_auBitStream.write ((sbrDataCh1[i] >> 7) & ((1 << bitd) - 1), bitd);
         bitCount += bitd;
 #if ENABLE_INTERTES
         if (issTes)
@@ -253,10 +254,12 @@ unsigned BitStreamWriter::writeChannelWiseSbrData (const int32_t* const sbrDataC
       }
     }
 
-    for (i = __min (2, envCh1); i > 0; i--)  // sbr_noise() dt loop
+    for (i = 1; i <= __min (2, envCh1); i++) // sbr_noise() dt loop
     {
-      m_auBitStream.write ((sbrDataCh1[9] >> (13 * i)) & 31, 5);
-      bitCount += 5;
+      const uint8_t bits = ((ch1 & (1 << (3 + i))) != 0 ? 1 : 5);
+
+      m_auBitStream.write ((sbrDataCh1[9] >> (13 * i)) & 31, bits);
+      bitCount += bits;
       if (nb == 4)
       {
         m_auBitStream.write ((sbrDataCh1[9] >> (13 * i - 5)) & 31, 1); // TODO: VLC word

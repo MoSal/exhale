@@ -60,8 +60,8 @@ static int8_t quantizeSbrEnvelopeLevel (const uint64_t energy, const uint32_t di
 }
 
 // public SBR related functions
-int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat5b, const uint8_t tempFlat5b, const bool lowBitRateMode,
-                                const uint8_t specFlatSte, const int32_t tmpValSte, const uint32_t frameSize, int32_t* sbrArray)
+int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat5b, const uint8_t tempFlat5b, const bool lr, const bool ind,
+                                const uint8_t specFlatSte, const int32_t tmpValSte, const uint32_t frameSize, int32_t* sbrData)
 {
   const uint64_t enValue[8] = {(uint64_t) sbrLevels[22] * (uint64_t) sbrLevels[22],
                                (uint64_t) sbrLevels[23] * (uint64_t) sbrLevels[23],
@@ -104,49 +104,75 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
       tmpBest = t;
     }
   }
-  if ((errBest >> 3) > envTmp0[0]) tmpBest = (lowBitRateMode ? 2 : 3);
+  if ((errBest >> 3) > envTmp0[0]) tmpBest = (lr ? 2 : 3);
 
   if (tmpBest < tmpValSte) tmpBest = tmpValSte;
 
   /*Q*/if (tmpBest == 0)  // quantized envelopes for optimal tmp value
   {
-    sbrArray[0] = quantizeSbrEnvelopeLevel (envTmp0[0], frameSize, specFlat5b);
+    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp0[0], frameSize, specFlat5b);
   }
   else if (tmpBest == 1)
   {
-    sbrArray[0] = quantizeSbrEnvelopeLevel (envTmp1[0], frameSize, specFlat5b);
-    sbrArray[1] = quantizeSbrEnvelopeLevel (envTmp1[1], frameSize, specFlat5b);
+    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp1[0], frameSize, specFlat5b);
+    sbrData[1] = quantizeSbrEnvelopeLevel (envTmp1[1], frameSize, specFlat5b);
   }
   else if (tmpBest == 2)
   {
-    sbrArray[0] = quantizeSbrEnvelopeLevel (envTmp2[0], frameSize, specFlat5b);
-    sbrArray[1] = quantizeSbrEnvelopeLevel (envTmp2[1], frameSize, specFlat5b);
-    sbrArray[2] = quantizeSbrEnvelopeLevel (envTmp2[2], frameSize, specFlat5b);
-    sbrArray[3] = quantizeSbrEnvelopeLevel (envTmp2[3], frameSize, specFlat5b);
+    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp2[0], frameSize, specFlat5b);
+    sbrData[1] = quantizeSbrEnvelopeLevel (envTmp2[1], frameSize, specFlat5b);
+    sbrData[2] = quantizeSbrEnvelopeLevel (envTmp2[2], frameSize, specFlat5b);
+    sbrData[3] = quantizeSbrEnvelopeLevel (envTmp2[3], frameSize, specFlat5b);
   }
   else // (tmpBest == 3)
   {
-    sbrArray[0] = quantizeSbrEnvelopeLevel (envTmp3[0], frameSize, specFlat5b);
-    sbrArray[1] = quantizeSbrEnvelopeLevel (envTmp3[1], frameSize, specFlat5b);
-    sbrArray[2] = quantizeSbrEnvelopeLevel (envTmp3[2], frameSize, specFlat5b);
-    sbrArray[3] = quantizeSbrEnvelopeLevel (envTmp3[3], frameSize, specFlat5b);
-    sbrArray[4] = quantizeSbrEnvelopeLevel (envTmp3[4], frameSize, specFlat5b);
-    sbrArray[5] = quantizeSbrEnvelopeLevel (envTmp3[5], frameSize, specFlat5b);
-    sbrArray[6] = quantizeSbrEnvelopeLevel (envTmp3[6], frameSize, specFlat5b);
-    sbrArray[7] = quantizeSbrEnvelopeLevel (envTmp3[7], frameSize, specFlat5b);
+    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp3[0], frameSize, specFlat5b);
+    sbrData[1] = quantizeSbrEnvelopeLevel (envTmp3[1], frameSize, specFlat5b);
+    sbrData[2] = quantizeSbrEnvelopeLevel (envTmp3[2], frameSize, specFlat5b);
+    sbrData[3] = quantizeSbrEnvelopeLevel (envTmp3[3], frameSize, specFlat5b);
+    sbrData[4] = quantizeSbrEnvelopeLevel (envTmp3[4], frameSize, specFlat5b);
+    sbrData[5] = quantizeSbrEnvelopeLevel (envTmp3[5], frameSize, specFlat5b);
+    sbrData[6] = quantizeSbrEnvelopeLevel (envTmp3[6], frameSize, specFlat5b);
+    sbrData[7] = quantizeSbrEnvelopeLevel (envTmp3[7], frameSize, specFlat5b);
   }
 
   // quantized noise level for up to two temporal units, 30 = no noise
   t = __min (30, __max (specFlat5b, specFlatSte));
-  sbrArray[8] = ((int32_t) t << 13) | ((int32_t) t << 26);
+  sbrData[8] = ((int32_t) t << 13) | ((int32_t) t << 26);
 #if ENABLE_INTERTES
-  if ((t < 12) && (tempFlat5b > (lowBitRateMode ? 15 : 26)) && (tmpBest < 3))
+  if ((t < 12) && (tempFlat5b > (lr ? 15 : 26)) && (tmpBest < 3))
   {
-    sbrArray[8] |= (1 << (1 << tmpBest)) - 1; // TODO: inter-TES mode = inv. filter mode
+    sbrData[8] |= (1 << (1 << tmpBest)) - 1; // TODO: inter-TES mode = inv. filter mode?
   }
 #endif
   memcpy (&sbrLevels[20], &sbrLevels[10] /*last*/, 10 * sizeof (int32_t)); // update the
   memcpy (&sbrLevels[10], sbrLevels /*& current*/, 10 * sizeof (int32_t)); // delay line
+
+  tmpBest <<= 21; // config bits
+  for (t = 0; t < (1 << (tmpBest >> 21)); t++)
+  {
+    const int32_t sbrEnvel = sbrData[t] & 127;
+    const int32_t d = sbrLevels[30] - sbrEnvel; // two length-2 words!
+
+    if ((t > 0 || !ind) && (d == 0 || d == 1))
+    {
+      tmpBest |= 1 << (12 + t); // delta-time coding flag for envelope
+      sbrData[t] -= sbrEnvel;
+      sbrData[t] |= d | (d << 7) | (d << 9) | (d << 11) | (d << 13) | (d << 15);
+    }
+    sbrLevels[30] = sbrEnvel;
+  }
+  for (t = 0; t < ((tmpBest >> 21) == 0 ? 1 : 2); t++)
+  {
+    const int32_t sbrNoise = (sbrData[8] >> (13 * (t + 1))) & 31;
+
+    if ((t > 0 || !ind) && (sbrNoise == sbrLevels[31]))
+    {
+      tmpBest |= 1 << (4 + t); // and delta-time coding flag for noise
+      sbrData[8] -= sbrNoise << (13 * (t + 1));
+    }
+    sbrLevels[31] = sbrNoise;
+  }
 
   return tmpBest;
 }

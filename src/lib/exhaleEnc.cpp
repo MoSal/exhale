@@ -464,6 +464,8 @@ static const uint8_t tnsScaleFactorBandLimit[2 /*long/short*/][USAC_NUM_FREQ_TAB
 #endif
 };
 
+static const uint8_t sbrRateOffset[10] = {8, 6, 6, 8, 7, 8, 8, 8, 8, 8}; // used for scaleSBR
+
 // scale_factor_grouping map
 // group lengths based on transient location:  1133, 1115, 2114, 3113, 4112, 5111, 3311, 1331
 static const uint8_t scaleFactorGrouping[8] = {0x1B, 0x0F, 0x47, 0x63, 0x71, 0x78, 0x6C, 0x36};
@@ -767,8 +769,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const unsigned samplingRate    = toSamplingRate (m_frequencyIdx);
   const unsigned lfeChannelIndex = (m_channelConf >= CCI_6_CH ? __max (5, nChannels - 1) : USAC_MAX_NUM_CHANNELS);
   const bool     useMaxBandwidth = (samplingRate < 37566 || m_shiftValSBR > 0);
-  const uint32_t maxSfbLong      = (useMaxBandwidth ? m_numSwbLong : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
-  const uint32_t scaleSBR        = (m_shiftValSBR > 0 || m_nonMpegExt ? (m_bitRateMode == 0 ? 8 : 6 + ((m_bitRateMode + 2 - samplingRate/24000) >> 2)) : 0); // -25% rate
+  const uint8_t  maxSfbLong      = (useMaxBandwidth ? m_numSwbLong : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
+  const uint16_t scaleSBR        = (m_shiftValSBR > 0 || m_nonMpegExt ? sbrRateOffset[m_bitRateMode] : 0); // -25% rate
   const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3 << m_shiftValSBR, m_bitRateMode)
                                                          : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
   const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 3 + (samplingRate >> 10) + (samplingRate >> 13) - (nChannels >> 1))
@@ -972,7 +974,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                                                                       : brModeAndFsToMaxSfbShort (m_bitRateMode, samplingRate)) : maxSfbLong);
           const bool keepMaxSfbCurr = ((samplingRate < 37566) || (samplingRate >= 46009 && samplingRate < 55426 && eightShorts));
           const uint8_t numSwbFrame = __min ((numSwbCh * ((maxSfbCh == maxSfbCurr) || (m_bitRateMode <= 2) || (m_shiftValSBR > 0) ? 4u : 3u)) >> 2,
-                                      (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || keepMaxSfbCurr ? 0 : 1));
+                                      (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || keepMaxSfbCurr ? 0u : 1u));
 #ifndef NO_DTX_MODE
           if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713) && eightShorts)
           {
@@ -1312,9 +1314,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
         memset (m_coreSignals[ci], 0, 10 * sizeof (int32_t));
 #if ENABLE_INTERTES
-        m_coreSignals[ci][0] = (shortWinPrev ? 0x40000000 : 0x40100000); // freq_res, interTes
-#else
-        m_coreSignals[ci][0] = (shortWinPrev ? 0 : 1) << 20; // bs_freq_res = low resp. high
+        m_coreSignals[ci][0] = 0x40000000; // bs_interTes = 1 for all frames
 #endif
         m_coreSignals[ci][0] |= 4 - int32_t (sqrt (0.75 * msfVal)); // filter mode, 0 = none
 
@@ -1326,11 +1326,12 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
         }
         m_coreSignals[ci][0] |= getSbrEnvelopeAndNoise (&m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame], msfVal,
                                                         __max (m_meanTempPrev[ci], meanTempFlat[ci]) >> 3, m_bitRateMode == 0,
-                                                        msfSte, tmpValSynch, nSamplesInFrame, &m_coreSignals[ci][1]) << 21;
+                                                        m_indepFlag, msfSte, tmpValSynch, nSamplesInFrame, &m_coreSignals[ci][1]);
         if (ch + 1 == nrChannels) // update the flatness histories
         {
           m_meanSpecPrev[ci] = meanSpecFlat[ci];  m_meanSpecPrev[s] = meanSpecFlat[s];
           m_meanTempPrev[ci] = meanTempFlat[ci];  m_meanTempPrev[s] = meanTempFlat[s];
+          // TODO: coupling (m_coreSignals[ci][0] |= 1 << 23;)
         }
       }
       ci++;

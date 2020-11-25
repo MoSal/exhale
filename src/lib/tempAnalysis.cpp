@@ -31,10 +31,10 @@ static const int16_t lpfc34[128] = { // 25% low-pass filter coefficients
 };
 
 // static helper functions
-static unsigned updateAbsStats (const int32_t* const chSig, const int nSamples, unsigned* const maxAbsVal, int16_t* const maxAbsIdx)
+static uint64_t updateAbsStats (const int32_t* const chSig, const int nSamples, unsigned* const maxAbsVal, int16_t* const maxAbsIdx)
 {
   const int32_t* const chSigM1 = chSig - 1; // for first-order high-pass
-  unsigned sumAbs = 0;
+  uint64_t sumAbs = 0;
 
   for (int s = nSamples - 1; s >= 0; s--)
   {
@@ -51,12 +51,12 @@ static unsigned updateAbsStats (const int32_t* const chSig, const int nSamples, 
   return sumAbs;
 }
 
-static unsigned applyPitchPred (const int32_t* const chSig, const int nSamples, const int pitchLag, const int pitchSign = 1)
+static uint64_t applyPitchPred (const int32_t* const chSig, const int nSamples, const int pitchLag, const int pitchSign = 1)
 {
   const int32_t* const chSigM1 = chSig - 1; // for first-order high-pass
   const int32_t* const plSig   = chSig - pitchLag; // & pitch prediction
   const int32_t* const plSigM1 = plSig - 1;
-  unsigned sumAbs = 0;
+  uint64_t sumAbs = 0;
 
   for (int s = nSamples - 1; s >= 0; s--)
   {
@@ -66,8 +66,8 @@ static unsigned applyPitchPred (const int32_t* const chSig, const int nSamples, 
   return sumAbs;
 }
 
-static inline uint32_t packAvgTempAnalysisStats (const unsigned avgAbsHpL,  const unsigned avgAbsHpR, const unsigned avgAbsHpP,
-                                                 const unsigned avgAbsPpLR, const unsigned maxAbsHpLR)
+static inline uint32_t packAvgTempAnalysisStats (const uint64_t avgAbsHpL,  const uint64_t avgAbsHpR, const unsigned avgAbsHpP,
+                                                 const uint64_t avgAbsPpLR, const unsigned maxAbsHpLR)
 {
   // spectral flatness, normalized for a value of 256 for noise-like, spectrally flat waveform
   const unsigned flatSpec = 256 - int ((int64_t (avgAbsPpLR/*L+R sum*/ + TA_EPS) * 256) / (int64_t (avgAbsHpL + avgAbsHpR + TA_EPS)));
@@ -145,7 +145,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
     const int32_t* const chSigM1 = chSig - 1; // for first-order high-pass
     const int32_t* const chSigPH = chSig + halfFrameOffset;
 // --- get L1 norm and pitch lag of both sides
-    unsigned sumAbsValL = 0,  sumAbsValR = 0;
+    uint64_t sumAbsValL = 0,  sumAbsValR = 0;
     unsigned maxAbsValL = 0,  maxAbsValR = 0;
     int32_t  maxHfrLevL = 0,  maxHfrLevR = 0;
     int16_t  maxAbsIdxL = 0,  maxAbsIdxR = 0;
@@ -193,7 +193,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         const unsigned numUnits = nSamplesInFrame >> (sbrShift + 7);
         int32_t* const hfrLevel = &lrCoreTimeSignals[ch][(resamplerOffset + nSamplesInFrame) >> sbrShift];
 
-        for (u = numUnits; u > 0; /*u*/)
+        for (u = numUnits; u > 0;  )
         {
           ue[8] += ue[--u];
           hfrLevel[numUnits - u] = int32_t (0.5 + sqrt ((double) ue[u]));
@@ -276,8 +276,8 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
     else // nonzero signal in the current frame
     {
       const int maxAbsIdxP = __max ((int) m_maxIdxHpPrev[ch] - nSamplesInFrame, 1 - (int) lookaheadOffset);
-      unsigned   sumAbsHpL = sumAbsValL,  sumAbsHpR = sumAbsValR; // after high-pass filter
-      unsigned   sumAbsPpL = sumAbsValL,  sumAbsPpR = sumAbsValR; // after pitch prediction
+      uint64_t   sumAbsHpL = sumAbsValL,  sumAbsHpR = sumAbsValR; // after high-pass filter
+      uint64_t   sumAbsPpL = sumAbsValL,  sumAbsPpR = sumAbsValR; // after pitch prediction
       int pLag,  pLagBestR = 0,  pSgn;
 
       // test left-side pitch lag on this frame
@@ -344,7 +344,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       m_tempAnaStats[ch] = packAvgTempAnalysisStats (sumAbsHpL,  sumAbsHpR,  m_avgAbsHpPrev[ch],
                                                      sumAbsPpL + sumAbsPpR,  maxAbsValL + maxAbsValR);
       u = maxAbsValR;
-      if ((m_maxHfLevPrev[ch] < (maxHfrLevL >> 4)) || (maxHfrLevL < (maxHfrLevR >> 4))) // transient
+      if ((m_maxHfLevPrev[ch] < (maxHfrLevL >> 4)) || (maxHfrLevL < (maxHfrLevR >> 4))) // HF
       {
         maxAbsValL = maxHfrLevL;
         maxAbsValR = maxHfrLevR;
@@ -353,7 +353,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       m_transientLoc[ch] = packTransLocWithPitchLag (maxAbsValL, maxAbsValR, m_maxAbsHpPrev[ch],
                                                      maxAbsIdxL, maxAbsIdxR, __max (1, pLagBestR));
       // update stats history for this channel
-      m_avgAbsHpPrev[ch] = sumAbsHpR;
+      m_avgAbsHpPrev[ch] = (unsigned) sumAbsHpR;
       m_maxAbsHpPrev[ch] = u;
       m_maxIdxHpPrev[ch] = (unsigned) maxAbsIdxR;
       m_pitchLagPrev[ch] = (unsigned) pLagBestR;
