@@ -435,7 +435,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
     const SfbGroupData& grpData = *groupData[ch];
     const uint32_t maxSfbInCh = __min (MAX_NUM_SWB_LONG, grpData.sfbsPerGroup);
     const bool    eightShorts = (grpData.numWindowGroups != 1);
-    const bool  lowRateTuning = (samplingRate >= 27713) && (sfm[ch] <= (SCHAR_MAX >> 1));
+    const bool  lowRateTuning = (samplingRate >= 25495) && (sfm[ch] <= (SCHAR_MAX >> 1));
     const uint32_t*   rms = grpData.sfbRmsValues;
     uint32_t*   stepSizes = &sfbStepSizes[ch * numSwbShort * NUM_WINDOW_GROUPS];
 

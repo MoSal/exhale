@@ -20,7 +20,7 @@ void OutputStream::reset () // clear writer states and byte buffer
 
 void OutputStream::write (const uint32_t bitChunk, const uint8_t bitCount)
 {
-  if (bitCount > 32) return; // only a maximum of 32 bits is writable at once
+  if (bitCount == 0) return; // nothing to do for length 0, max. length is 32
 
   const uint8_t totalBitCount   = bitCount + heldBitCount;
   const uint8_t totalByteCount  = totalBitCount >> 3;  // to be written

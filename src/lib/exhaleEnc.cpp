@@ -464,7 +464,7 @@ static const uint8_t tnsScaleFactorBandLimit[2 /*long/short*/][USAC_NUM_FREQ_TAB
 #endif
 };
 
-static const uint8_t sbrRateOffset[10] = {8, 6, 6, 8, 7, 8, 8, 8, 8, 8}; // used for scaleSBR
+static const uint8_t sbrRateOffset[10] = {7, 6, 6, 8, 7, 8, 8, 8, 8, 8}; // used for scaleSBR
 
 // scale_factor_grouping map
 // group lengths based on transient location:  1133, 1115, 2114, 3113, 4112, 5111, 3311, 1331
@@ -773,7 +773,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const uint16_t scaleSBR        = (m_shiftValSBR > 0 || m_nonMpegExt ? sbrRateOffset[m_bitRateMode] : 0); // -25% rate
   const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3 << m_shiftValSBR, m_bitRateMode)
                                                          : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
-  const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 3 + (samplingRate >> 10) + (samplingRate >> 13) - (nChannels >> 1))
+  const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 17u + (((samplingRate + (1 << 11)) >> 12) << 1) - (nChannels >> 1))
                                    : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1)) + scaleSBR;
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];

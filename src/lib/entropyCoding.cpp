@@ -282,8 +282,11 @@ static inline unsigned arithGetPkIndex (const unsigned ctx) // cumul. frequency 
 
 static inline unsigned writeSymbol (OutputStream* const stream, const bool leadingBitIs1, const uint16_t trailingBits)
 {
+  const uint8_t lowBits = trailingBits & 0x1F;
+
   stream->write (leadingBitIs1 ? 1 : 0, 1);
-  stream->write (leadingBitIs1 ? 0 : (1u << trailingBits) - 1, (uint8_t) trailingBits);
+  stream->write (leadingBitIs1 ? 0 : UINT_MAX, trailingBits & 0x20);
+  stream->write (leadingBitIs1 ? 0 : (1u << lowBits) - 1u, lowBits);
 
   return trailingBits + 1; // count
 }

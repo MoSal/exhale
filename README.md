@@ -31,10 +31,10 @@ License
 -------
 
 exhale is being made available under an open-source license which is
-similar to the 3-clause BSD license but modified to address specific
+based on the 3-clause BSD license but modified to address particular
 aspects dictated by the nature and the output of this application.
 
-The license text and release notes for the current version 1.1RC can
+The license text and release notes for the current version 1.1.0 can
 be found in the `include` subdirectory of the exhale distribution.
 
 
