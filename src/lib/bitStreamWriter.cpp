@@ -516,7 +516,8 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
   const IcsInfo& icsInfo1 = elData.icsInfoCurr[1];
   const TnsData& tnsData0 = elData.tnsData[0];
   const TnsData& tnsData1 = elData.tnsData[1];
-  const unsigned nWinGrps = elData.groupingData[0].numWindowGroups;
+  const uint16_t nWinGrps = elData.groupingData[0].numWindowGroups;
+  const bool eightShorts0 = (icsInfo0.windowSequence == EIGHT_SHORT);
   unsigned bitCount = 2, g, b;
 
   m_auBitStream.write (elData.tnsActive ? 1 : 0, 1); // tns_active
@@ -524,7 +525,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
   if (elData.commonWindow)
   {
     const unsigned maxSfbSte = __max (icsInfo0.maxSfb, icsInfo1.maxSfb);
-    const unsigned  sfb1Bits = (icsInfo1.windowSequence == EIGHT_SHORT ? 4 : 6);
+    const unsigned  sfb1Bits = (eightShorts0 ? 4 : 6);
     const uint8_t msMaskMode = getOptMsMaskModeValue (elData.stereoDataCurr, nWinGrps, m_numSwbShort, elData.stereoMode, maxSfbSte);
 
     bitCount += writeChannelWiseIcsInfo (icsInfo0);  // ics_info()
@@ -578,6 +579,16 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
           m_auBitStream.write (elData.stereoConfig & 4 ? 1 : 0, 1);
           bitCount++;
         }
+#ifndef NO_WORKAROUND_FOR_APPLE_ISSUE_FB8928108
+        if ((eightShorts0 && elData.icsInfoPrev[0].windowSequence != EIGHT_SHORT) ||  // first ch. in CPE
+            (elData.icsInfoPrev[0].windowSequence == EIGHT_SHORT && !eightShorts0) ||
+            (eightShorts0 && elData.icsInfoPrev[1].windowSequence != EIGHT_SHORT) || // second ch. in CPE
+            (elData.icsInfoPrev[1].windowSequence == EIGHT_SHORT && !eightShorts0))
+        {
+          deltaCodeTime = 0;
+        }
+        else
+#endif
         deltaCodeTime = getDeltaCodeTimeFlag (elData.stereoDataCurr, nWinGrps, m_numSwbShort, elData.stereoDataPrev, maxSfbSte, entrCoder, complexCoef);
         m_auBitStream.write (deltaCodeTime, 1);
         bitCount++;
@@ -650,7 +661,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
     bitCount++;
     if (commonTns)
     {
-      bitCount += writeChannelWiseTnsData (tnsData0, icsInfo0.windowSequence == EIGHT_SHORT);
+      bitCount += writeChannelWiseTnsData (tnsData0, eightShorts0);
     }
     else  // tns_present_both and tns_data_present[1]
     {
