@@ -88,9 +88,13 @@ static int32_t packSbr3BandQuantLevels (const uint64_t enBlock, const uint32_t d
   if (valMax <= val[1]) { iMax = 1; valMax = val[1]; }
   if (valMax <= val[2]) { iMax = 2; valMax = val[2]; }
 
-  if ((val[3] > valMax) || (val[3] < __min (val[0], __min (val[1], val[2]))) || (enBlock <= (enFrame >> 1)) || ((enBlock >> 1) >= enFrame))
+  if ((val[3] > valMax) || (enBlock <= (enFrame >> 2)) || ((enBlock >> 2) >= enFrame))
   {
     return int32_t (val[3]) | (int32_t (val[3]) << 8) | (int32_t (val[3]) << 16);
+  }
+  if ((enBlock <= (enFrame >> 1)) || ((enBlock >> 1) >= enFrame))
+  {
+    val[0] = (val[0] + val[3]) >> 1;  val[1] = (val[1] + val[3]) >> 1;  val[2] = (val[2] + val[3]) >> 1;
   }
 
   if (iMax > 0) // limit delta-value increases below peak band
@@ -186,7 +190,7 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
 #if ENABLE_INTERTES
   if ((noiseLevel < 12) && (tempFlat5b > (lr ? 15 : 26)) && (tmpBest < 3))
   {
-    sbrData[8] |= (1 << (1 << tmpBest)) - 1; // TODO: inter-TES mode = inv. filter mode?
+    sbrData[8] |= (1 << (1 << tmpBest)) - 1;
   }
 #endif
   memcpy (&sbrLevels[20], &sbrLevels[10] /*last*/, 10 * sizeof (int32_t)); // update the
@@ -200,25 +204,24 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
     const int32_t prev = sbrLevels[30];
     const int32_t p[3] = {prev & SCHAR_MAX, (prev >> 8) & SCHAR_MAX, (prev >> 16) & SCHAR_MAX};
 
-    diff = 1; // NOTE: this could be 7, but delta-time coding is buggy
-    // and diff=1 doesn't trigger the bug (but wastes bits, of course)
-    if ((t > 0 || !ind) && (abs (c[0] - p[0]) < diff) && (abs (c[1] - p[1]) < diff) && (abs (c[2] - p[2]) < diff))
+    if ((t > 0 || !ind) && (getSbrDeltaBitCount (c[0] - p[0], true) + getSbrDeltaBitCount (c[1] - p[1], true) +
+                            getSbrDeltaBitCount (c[2] - p[2], true) < 12)) // approximate!
     {
       tmpBest |= 1 << (12 + t); // delta-time coding flag for envelope
 
       diff = c[0] - p[0];
       sbrData[t]  = getSbrDeltaHuffCode (diff, true );  bitCount = 8; // see bitStreamWriter.cpp, lines 186 and 213
-      diff = c[1] - p[1];
-      sbrData[t] |= getSbrDeltaHuffCode (diff, true ) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true);
       diff = c[2] - p[2];
-      sbrData[t] |= getSbrDeltaHuffCode (diff, true ) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true);
+      sbrData[t] |= getSbrDeltaHuffCode (diff, true ) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true );
+      diff = c[1] - p[1];
+      sbrData[t] |= getSbrDeltaHuffCode (diff, true ) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true );
     }
     else // delta-frequency coding
     {
       sbrData[t] = c[0];  bitCount = 8; // first envelope is PCM coded
-      diff = c[1] - c[0];
-      sbrData[t] |= getSbrDeltaHuffCode (diff, false) << bitCount;  bitCount += getSbrDeltaBitCount (diff, false);
       diff = c[2] - c[1];
+      sbrData[t] |= getSbrDeltaHuffCode (diff, false) << bitCount;  bitCount += getSbrDeltaBitCount (diff, false);
+      diff = c[1] - c[0];
       sbrData[t] |= getSbrDeltaHuffCode (diff, false) << bitCount;  bitCount += getSbrDeltaBitCount (diff, false);
     }
     sbrData[t] |= 1 << bitCount; // MSB delimiter for bitstream writer
