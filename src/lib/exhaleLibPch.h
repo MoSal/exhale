@@ -14,7 +14,7 @@
 #include <limits.h> // for .._MAX, .._MIN
 #include <math.h>   // for pow, sin, sqrt
 #include <stdint.h> // for (u)int8_t, (u)int16_t, (u)int32_t, (u)int64_t
-#include <stdlib.h> // for abs, div, calloc, malloc, free, (__)max, (__)min, (s)rand
+#include <stdlib.h> // for abs, calloc, malloc, free, (__)max, (__)min
 #include <string.h> // for memcpy, memset
 #include <vector>   // for std::vector <>
 
@@ -67,10 +67,10 @@
 typedef enum ELEM_TYPE : int8_t
 {
   ID_EL_UNDEF = -1,
-  ID_USAC_SCE = 0, // single-channel element (CCI_1_CH)
-  ID_USAC_CPE = 1, // channel-pair element (CCI_2_CH)
-  ID_USAC_LFE = 2, // low-frequency effects element (CCI_1_CH) with ONLY_LONG_SEQUENCE, no TNS
-  ID_USAC_EXT = 3  // extension element (not to be used here!)
+  ID_USAC_SCE = 0, // single-channel element
+  ID_USAC_CPE = 1, // channel-pair element
+  ID_USAC_LFE = 2, // low-frequency effects element with ONLY_LONG_SEQUENCE, no TNS
+  ID_USAC_EXT = 3  // extension element, not used
 } ELEM_TYPE;
 
 // window_sequence defines for ICS
@@ -199,6 +199,8 @@ const uint8_t oneTwentyEightOver[14] = {0, 128, 64, 43, 32, 26, 22, 19, 16, 15, 
 // public SBR related functions
 int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat5b, const uint8_t tempFlat5b, const bool lr, const bool ind,
                                 const uint8_t specFlatSte, const int32_t tmpValSte, const uint32_t frameSize, int32_t* sbrData);
+inline uint64_t square (const int64_t i) { return i * i; }
+
 // public sampling rate functions
 int8_t toSamplingFrequencyIndex (const unsigned samplingRate);
 unsigned toSamplingRate (const int8_t samplingFrequencyIndex);

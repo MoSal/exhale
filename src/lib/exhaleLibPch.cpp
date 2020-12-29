@@ -52,25 +52,79 @@ static const unsigned allowedSamplingRates[USAC_NUM_SAMPLE_RATES] = {
   57600, 51200, 40000, 38400, 34150, 28800, 25600, 20000, 19200, 17075, 14400, 12800, 9600 // USAC
 };
 
-static int8_t quantizeSbrEnvelopeLevel (const uint64_t energy, const uint32_t divisor, const uint8_t noiseLevel)
+// ISO/IEC 14496-3, Annex 4.A.6.1
+static const uint8_t deltaHuffSbrF[14] = {0xFB, 0x7C, 0x3C, 0x1C, 0x0C, 0x05, 0x01, 0x00, 0x04, 0x0D, 0x1D, 0x3D, 0xFA, 0xFC};
+static const uint8_t deltaHuffSbrT[14] = {0xFD, 0x7D, 0x3D, 0x1D, 0x0D, 0x05, 0x01, 0x00, 0x04, 0x0C, 0x1C, 0x3C, 0x7C, 0xFC};
+
+// static SBR related functions
+static int32_t getSbrDeltaBitCount (const int32_t delta, const bool dt)
 {
-  const double ener = (double) energy / (double) divisor;
+  return (delta == 5 && !dt ? 8 : abs (delta) + 2 + (delta >> 31));
+}
+
+static int32_t getSbrDeltaHuffCode (const int32_t delta, const bool dt)
+{
+  const unsigned u = __max (-7, __min (6, delta)) + 7;
+
+  return int32_t (dt ? deltaHuffSbrT[u] : deltaHuffSbrF[u]);
+}
+
+static int8_t getSbrQuantizedLevel (const double energy, const uint32_t divisor, const uint8_t noiseLevel)
+{
+  const double ener = energy / divisor;
 
   return (ener > 8192.0 ? int8_t (1.375 - 0.03125 * noiseLevel + 6.64385619 * log10 (ener)) - 26 : 0);
+}
+
+static int32_t packSbr3BandQuantLevels (const uint64_t energy, const uint32_t divisor, const uint8_t noiseLevel,
+                                        const uint32_t ratioL, const uint32_t ratioM, const uint32_t ratioH)
+{
+  int8_t val[4] = {getSbrQuantizedLevel (ratioL * (double) energy, divisor * 6144, noiseLevel),
+                   getSbrQuantizedLevel (ratioM * (double) energy, divisor * 6144, noiseLevel),
+                   getSbrQuantizedLevel (ratioH * (double) energy, divisor * 6144, noiseLevel), 0};
+  unsigned iMax = 0;
+
+  val[3] = val[0]; // find last peak band having maximum value
+  if (val[3] <= val[1]) { iMax = 1; val[3] = val[1]; }
+  if (val[3] <= val[2]) { iMax = 2; }
+
+  if (iMax > 0) // limit delta-value increases below peak band
+  {
+    if (val[iMax - 1] + 6 < val[iMax]) val[iMax - 1] = val[iMax] - 6;
+    if ((iMax == 2) && (val[0] + 6 < val[1])) val[0] = val[1] - 6;
+  }
+  if (iMax < 2) // limit delta-value decreases above peak band
+  {
+    if (val[iMax + 1] + 7 < val[iMax]) val[iMax + 1] = val[iMax] - 7;
+    if ((iMax == 0) && (val[2] + 7 < val[1])) val[2] = val[1] - 7;
+  }
+  val[1] = __max (val[1], __min (val[0], val[2]));
+
+  return int32_t (val[0]) | (int32_t (val[1]) << 8) | (int32_t (val[2]) << 16);
+}
+
+static bool useSbr3BandDeltaTimeCoding (const int32_t dataCurr, const int32_t dataPrev)
+{
+  const int8_t curr[3] = {dataCurr & SCHAR_MAX, (dataCurr >> 8) & SCHAR_MAX, (dataCurr >> 16) & SCHAR_MAX};
+  const int8_t prev[3] = {dataPrev & SCHAR_MAX, (dataPrev >> 8) & SCHAR_MAX, (dataPrev >> 16) & SCHAR_MAX};
+  int32_t bDf = 7, bDt = 0;
+
+  for (unsigned u = 0; u < 3; u++) // check delta range, count
+  {
+    if ((curr[u] > prev[u] + 6) || (curr[u] < prev[u] - 7)) return false;
+    if (u > 0) bDf += getSbrDeltaBitCount (curr[u] - curr[u - 1], false);
+    /*deltaT*/ bDt += getSbrDeltaBitCount (curr[u] - prev[u], true);
+  }
+
+  return (bDf > bDt);
 }
 
 // public SBR related functions
 int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat5b, const uint8_t tempFlat5b, const bool lr, const bool ind,
                                 const uint8_t specFlatSte, const int32_t tmpValSte, const uint32_t frameSize, int32_t* sbrData)
 {
-  const uint64_t enValue[8] = {(uint64_t) sbrLevels[22] * (uint64_t) sbrLevels[22],
-                               (uint64_t) sbrLevels[23] * (uint64_t) sbrLevels[23],
-                               (uint64_t) sbrLevels[24] * (uint64_t) sbrLevels[24],
-                               (uint64_t) sbrLevels[25] * (uint64_t) sbrLevels[25],
-                               (uint64_t) sbrLevels[26] * (uint64_t) sbrLevels[26],
-                               (uint64_t) sbrLevels[27] * (uint64_t) sbrLevels[27],
-                               (uint64_t) sbrLevels[28] * (uint64_t) sbrLevels[28],
-                               (uint64_t) sbrLevels[11] * (uint64_t) sbrLevels[11]};
+  const uint64_t enValue[8] = {square (sbrLevels[21]), square (sbrLevels[22]), square (sbrLevels[23]), square (sbrLevels[24]),
+                               square (sbrLevels[25]), square (sbrLevels[26]), square (sbrLevels[27]), square (sbrLevels[10])};
   const uint64_t envTmp0[1] = { enValue[0] + enValue[1] + enValue[2] + enValue[3] +
                                 enValue[4] + enValue[5] + enValue[6] + enValue[7]};
   const uint64_t envTmp1[2] = {(enValue[0] + enValue[1] + enValue[2] + enValue[3]) << 1,
@@ -79,9 +133,12 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
                                (enValue[4] + enValue[5]) << 2, (enValue[6] + enValue[7]) << 2};
   const uint64_t envTmp3[8] = { enValue[0] << 3, enValue[1] << 3, enValue[2] << 3, enValue[3] << 3,
                                 enValue[4] << 3, enValue[5] << 3, enValue[6] << 3, enValue[7] << 3};
+  const uint32_t env3BandsL = sbrLevels[28] & USHRT_MAX;
+  const uint32_t env3BandsM = sbrLevels[28] >> 16;
+  const uint32_t env3BandsH = sbrLevels[29] & USHRT_MAX;
   uint64_t errTmp[4] = {0, 0, 0, 0};
   uint64_t errBest;
-  int32_t  tmpBest;
+  int32_t  tmpBest, bitCount, diff;
   uint8_t  t;
 
   for (t = 0; t < 8; t++) // get energy errors due to temporal merging
@@ -110,30 +167,28 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
 
   /*Q*/if (tmpBest == 0)  // quantized envelopes for optimal tmp value
   {
-    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp0[0], frameSize, specFlat5b);
+    sbrData[0] = packSbr3BandQuantLevels (envTmp0[0], frameSize, specFlat5b, env3BandsL, env3BandsM, env3BandsH);
   }
   else if (tmpBest == 1)
   {
-    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp1[0], frameSize, specFlat5b);
-    sbrData[1] = quantizeSbrEnvelopeLevel (envTmp1[1], frameSize, specFlat5b);
+    for (t = 0; t < 2; t++)
+    {
+      sbrData[t] = packSbr3BandQuantLevels (envTmp1[t], frameSize, specFlat5b, env3BandsL, env3BandsM, env3BandsH);
+    }
   }
   else if (tmpBest == 2)
   {
-    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp2[0], frameSize, specFlat5b);
-    sbrData[1] = quantizeSbrEnvelopeLevel (envTmp2[1], frameSize, specFlat5b);
-    sbrData[2] = quantizeSbrEnvelopeLevel (envTmp2[2], frameSize, specFlat5b);
-    sbrData[3] = quantizeSbrEnvelopeLevel (envTmp2[3], frameSize, specFlat5b);
+    for (t = 0; t < 4; t++)
+    {
+      sbrData[t] = packSbr3BandQuantLevels (envTmp2[t], frameSize, specFlat5b, env3BandsL, env3BandsM, env3BandsH);
+    }
   }
   else // (tmpBest == 3)
   {
-    sbrData[0] = quantizeSbrEnvelopeLevel (envTmp3[0], frameSize, specFlat5b);
-    sbrData[1] = quantizeSbrEnvelopeLevel (envTmp3[1], frameSize, specFlat5b);
-    sbrData[2] = quantizeSbrEnvelopeLevel (envTmp3[2], frameSize, specFlat5b);
-    sbrData[3] = quantizeSbrEnvelopeLevel (envTmp3[3], frameSize, specFlat5b);
-    sbrData[4] = quantizeSbrEnvelopeLevel (envTmp3[4], frameSize, specFlat5b);
-    sbrData[5] = quantizeSbrEnvelopeLevel (envTmp3[5], frameSize, specFlat5b);
-    sbrData[6] = quantizeSbrEnvelopeLevel (envTmp3[6], frameSize, specFlat5b);
-    sbrData[7] = quantizeSbrEnvelopeLevel (envTmp3[7], frameSize, specFlat5b);
+    for (t = 0; t < 8; t++)
+    {
+      sbrData[t] = packSbr3BandQuantLevels (envTmp3[t], frameSize, specFlat5b, env3BandsL, env3BandsM, env3BandsH);
+    }
   }
 
   // quantized noise level for up to two temporal units, 30 = no noise
@@ -151,16 +206,30 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
   tmpBest <<= 21; // config bits
   for (t = 0; t < (1 << (tmpBest >> 21)); t++)
   {
-    const int32_t sbrEnvel = sbrData[t] & 127;
-    const int32_t d = sbrLevels[30] - sbrEnvel; // two length-2 words!
+    const int32_t curr = sbrData[t], prev = sbrLevels[30];
 
-    if ((t > 0 || !ind) && (d == 0 || d == 1))
+    if ((t > 0 /*|| !ind*/) && useSbr3BandDeltaTimeCoding (curr, prev))
     {
       tmpBest |= 1 << (12 + t); // delta-time coding flag for envelope
-      sbrData[t] -= sbrEnvel;
-      sbrData[t] |= d | (d << 7) | (d << 9) | (d << 11) | (d << 13) | (d << 15);
+
+      diff = (curr & SCHAR_MAX) - (prev & SCHAR_MAX);
+      sbrData[t] = getSbrDeltaHuffCode (diff, true);  bitCount = 8; // see bitStreamWriter.cpp, ll. 186, 213
+      diff = ((curr >> 8) & SCHAR_MAX) - ((prev >> 8) & SCHAR_MAX);
+      sbrData[t] |= getSbrDeltaHuffCode (diff, true) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true);
+      diff = ((curr >> 16) & SCHAR_MAX) - ((prev >> 16) & SCHAR_MAX);
+      sbrData[t] |= getSbrDeltaHuffCode (diff, true) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true);
     }
-    sbrLevels[30] = sbrEnvel;
+    else // delta-frequency coding
+    {
+      diff = curr & SCHAR_MAX;
+      sbrData[t] = diff;  bitCount = 8; // first envelope is PCM coded
+      diff = ((curr >> 8) & SCHAR_MAX) - (curr & SCHAR_MAX);
+      sbrData[t] |= getSbrDeltaHuffCode (diff, false) << bitCount;  bitCount += getSbrDeltaBitCount (diff, false);
+      diff = ((curr >> 16) & SCHAR_MAX) - ((curr >> 8) & SCHAR_MAX);
+      sbrData[t] |= getSbrDeltaHuffCode (diff, false) << bitCount;  bitCount += getSbrDeltaBitCount (diff, false);
+    }
+    sbrData[t] |= 1 << bitCount; // MSB delimiter for bitstream writer
+    sbrLevels[30] = curr;
   }
   for (t = 0; t < ((tmpBest >> 21) == 0 ? 1 : 2); t++)
   {

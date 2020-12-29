@@ -27,6 +27,7 @@ private:
   int32_t  m_maxHfLevPrev[USAC_MAX_NUM_CHANNELS];
   unsigned m_maxIdxHpPrev[USAC_MAX_NUM_CHANNELS];
   unsigned m_pitchLagPrev[USAC_MAX_NUM_CHANNELS];
+  int64_t  m_filtSampPrev[USAC_MAX_NUM_CHANNELS][6]; // for SBR subband calculation (NOTE: only approximate)
   uint32_t m_tempAnaStats[USAC_MAX_NUM_CHANNELS];
   int16_t  m_transientLoc[USAC_MAX_NUM_CHANNELS];
 

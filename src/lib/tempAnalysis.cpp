@@ -102,6 +102,8 @@ TempAnalyzer::TempAnalyzer ()
     m_pitchLagPrev[ch] = 0;
     m_tempAnaStats[ch] = 0;
     m_transientLoc[ch] = -1;
+
+    memset (m_filtSampPrev[ch], 0, 6 * sizeof (int64_t));
   }
 }
 
@@ -163,6 +165,8 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
       /*LF*/int32_t* lrSig = &lrCoreTimeSignals[ch][resamplerOffset >> sbrShift];
       const int32_t* hrSig = &timeSignals[ch][resamplerOffset];
       /*MF*/uint64_t ue[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; // unit energies
+      int64_t* const rPrev = m_filtSampPrev[ch];
+      uint64_t     subSumL = 0, subSumM = 0, subSumH = 0;
 
       for (int i = nSamplesInFrame >> sbrShift; i > 0; i--, lrSig++, hrSig += 2)
       {
@@ -184,7 +188,15 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
           for (s = 127; s > 0; s--/*u = s*/) r += (hrSig[-s] + (int64_t) hrSig[s]) * lpfc34[s];
 
           r = (r + (1 << 17)) >> 18; // SBR env. band-pass at quarter rate
-          ue[i >> 7] += uint64_t (r * r);
+          ue[i >> 7] += square (r);
+
+          // calculate 3 SBR subband envelope energies (low, mid and high)
+          subSumL += square ((6 * rPrev[2] + 5 * (rPrev[1] + rPrev[3]) + 3 * (rPrev[0] + rPrev[4]) + (r + rPrev[5]) + 8) >> 4);
+          subSumM += square ((2 * rPrev[2] - (rPrev[0] + rPrev[4]) + 2) >> 2);
+          subSumH += square ((6 * rPrev[2] - 5 * (rPrev[1] + rPrev[3]) + 3 * (rPrev[0] + rPrev[4]) - (r + rPrev[5]) + 8) >> 4);
+
+          rPrev[5] = rPrev[4];  rPrev[4] = rPrev[3];  rPrev[3] = rPrev[2];
+          rPrev[2] = rPrev[1];  rPrev[1] = rPrev[0];  rPrev[0] = r;
         }
       }
 
@@ -196,13 +208,17 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         for (u = numUnits; u > 0;  )
         {
           ue[8] += ue[--u];
-          hfrLevel[numUnits - u] = int32_t (0.5 + sqrt ((double) ue[u]));
+          hfrLevel[numUnits - 1 - u] = int32_t (0.5 + sqrt ((double) ue[u]));
         }
-        hfrLevel[0] = int32_t (0.5 + sqrt ((double) ue[8]));
 
-        // stabilize transient detection below
-        for (u = numUnits >> 1; u > 0; u--)
+        if (ue[8] < 1) ue[8] = 1;  // low, mid, high subband energy ratios
+        hfrLevel[numUnits]   = int32_t (0.5 + __min (USHRT_MAX, (16384.0 * subSumL) / ue[8]));
+        hfrLevel[numUnits]  |= int32_t (0.5 + __min ( SHRT_MAX, (16384.0 * subSumM) / ue[8])) << 16;
+        hfrLevel[numUnits+1] = int32_t (0.5 + __min (USHRT_MAX, (16384.0 * subSumH) / ue[8]));
+
+        for (u = numUnits >> 1; u > 0;  ) // stabilize transient detection
         {
+          u--;
           if (maxHfrLevL < hfrLevel[u]) /* update max. */ maxHfrLevL = hfrLevel[u];
           if (maxHfrLevR < hfrLevel[u + (numUnits >> 1)]) maxHfrLevR = hfrLevel[u + (numUnits >> 1)];
         }
