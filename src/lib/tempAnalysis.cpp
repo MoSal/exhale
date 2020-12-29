@@ -212,9 +212,9 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         }
 
         if (ue[8] < 1) ue[8] = 1;  // low, mid, high subband energy ratios
-        hfrLevel[numUnits]   = int32_t (0.5 + __min (USHRT_MAX, (16384.0 * subSumL) / ue[8]));
-        hfrLevel[numUnits]  |= int32_t (0.5 + __min ( SHRT_MAX, (16384.0 * subSumM) / ue[8])) << 16;
-        hfrLevel[numUnits+1] = int32_t (0.5 + __min (USHRT_MAX, (16384.0 * subSumH) / ue[8]));
+        hfrLevel[numUnits]   = int32_t (0.5 + __min (USHRT_MAX, (21845.3 * subSumL) / ue[8]));
+        hfrLevel[numUnits]  |= int32_t (0.5 + __min ( SHRT_MAX, (21845.3 * subSumM) / ue[8])) << 16;
+        hfrLevel[numUnits+1] = int32_t (0.5 + __min (USHRT_MAX, (21845.3 * subSumH) / ue[8]));
 
         for (u = numUnits >> 1; u > 0;  ) // stabilize transient detection
         {
