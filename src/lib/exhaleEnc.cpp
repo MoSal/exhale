@@ -1789,9 +1789,9 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
             ((winSeq1 == EIGHT_SHORT) == (coreConfig.icsInfoPrev[1].windowSequence == EIGHT_SHORT)) && (coreConfig.stereoMode > 0))
         {
           const unsigned lastGrpOffset = (coreConfig.icsInfoPrev[0].windowSequence == EIGHT_SHORT ? m_numSwbShort * (NUM_WINDOW_GROUPS - 1) : 0);
-          const unsigned maxSfbStePrev = __max (coreConfig.icsInfoPrev[0].maxSfb, coreConfig.icsInfoPrev[1].maxSfb);
+          const unsigned maxSfbStePrev = __max (coreConfig.icsInfoPrev[0].maxSfb, coreConfig.icsInfoPrev[1].maxSfb) + 1u; // for safety
 
-          memcpy (coreConfig.stereoDataPrev, &coreConfig.stereoDataCurr[lastGrpOffset], (maxSfbStePrev + 1) * sizeof (uint8_t));
+          memcpy (coreConfig.stereoDataPrev, &coreConfig.stereoDataCurr[lastGrpOffset], __min (60 - lastGrpOffset, maxSfbStePrev) * sizeof (uint8_t));
         }
       } // if nrChannels > 1
     }
@@ -1837,11 +1837,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
     m_channelConf = CCI_2_CHM; // passing numChannels = 0 to ExhaleEncoder is interpreted as 2-ch dual-mono
   }
   m_numElements  = elementCountConfig[m_channelConf % USAC_MAX_NUM_ELCONFIGS]; // used in UsacDecoderConfig
-#if 1
   m_shiftValSBR  = (frameLength >= 1536 ? 1 : 0);
-#else
-  m_shiftValSBR  = 0;
-#endif
   m_frameCount   = 0;
   m_frameLength  = USAC_CCFL (frameLength >> m_shiftValSBR); // ccfl signaled using coreSbrFrameLengthIndex
   m_frequencyIdx = toSamplingFrequencyIndex (sampleRate >> m_shiftValSBR); // as usacSamplingFrequencyIndex

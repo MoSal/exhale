@@ -121,7 +121,8 @@ the window content changed, on `Add New`. Then select `Custom` under
 
 - *Encoder file:* exhale.exe (including path to the executable)
 - *Extension:* m4a
-- *Parameters:* # %d (where # is the bit-rate mode, i.e. 0...9)
+- *Parameters:* # %d (where # is the bit-rate mode, i.e., 0...9 when
+                      SBR is disabled, or a...g when SBR is enabled)
 - *Format is:* lossy
 - *Highest BPS mode supported:* 24 (or 32, doesn't matter much)
 - *Encoder name:* xHE-AAC (exhale)
