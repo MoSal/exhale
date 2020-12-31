@@ -12,8 +12,7 @@ the generated MPEG-4 files according to the ISO/IEC 23003-4, Dynamic
 Range Control (DRC) specification for use by decoders providing DRC.
 
 exhale currently makes use of all frequency-domain (FD) coding tools
-in the scalefactor based MDCT processing path, except for predictive
-joint stereo, which is still being integrated. Its objective is high
+in the scalefactor based MDCT processing path. Its objective is high
 quality mono, stereo, and multichannel coding at medium and high bit
 rates, so the lower-rate USAC coding tools (ACELP, TCX, Enhanced SBR
 and MPEG Surround with Unified Stereo coding) won't be integrated.
