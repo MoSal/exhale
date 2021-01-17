@@ -205,7 +205,7 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
     const int32_t p[3] = {prev & SCHAR_MAX, (prev >> 8) & SCHAR_MAX, (prev >> 16) & SCHAR_MAX};
 
     if ((t > 0 || !ind) && (getSbrDeltaBitCount (c[0] - p[0], true) + getSbrDeltaBitCount (c[1] - p[1], true) +
-                            getSbrDeltaBitCount (c[2] - p[2], true) < 12)) // approximate!
+                            getSbrDeltaBitCount (c[2] - p[2], true) < 13)) // approximate!
     {
       tmpBest |= 1 << (12 + t); // delta-time coding flag for envelope
 

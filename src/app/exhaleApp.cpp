@@ -5,7 +5,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleAppPch.h"
@@ -683,7 +683,11 @@ int main (const int argc, char* argv[])
 #endif
     // allocate dynamic frame memory buffers
     inPcmData = (int32_t*) malloc (inFrameSize * numChannels); // max frame in size
+#ifdef NO_PREROLL_DATA
     outAuData = (uint8_t*) malloc ((6144 >> 3) * numChannels); // max frame AU size
+#else
+    outAuData = (uint8_t*) malloc ((9216 >> 3) * numChannels); // max frame AU size
+#endif
     if ((inPcmData == nullptr) || (outAuData == nullptr))
     {
       fprintf_s (stderr, " ERROR while trying to allocate dynamic memory! Not enough free RAM available!\n\n");
@@ -736,12 +740,14 @@ int main (const int argc, char* argv[])
       memset (outAuData, 0, 108 * sizeof (uint8_t));  // max. allowed ASC + UC size
       i = exhaleEnc.initEncoder (outAuData, &bw); // bw stores actual ASC + UC size
 
+      if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength
 #if ENABLE_SIMPLE_SBR
-      if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength + (coreSbrFrameLengthIndex >= 3 ? 962 : 0),
-#else
-      if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength,
+                                + (coreSbrFrameLengthIndex >= 3 ? 962 : 0)
 #endif
-                                indepPeriod, outAuData, bw, (time (nullptr) + 2082844800) & UINT_MAX, (char) variableCoreBitRateMode)) != 0)
+#ifndef NO_PREROLL_DATA
+                                - frameLength
+#endif
+                              , indepPeriod, outAuData, bw, (time (nullptr) + 2082844800) & UINT_MAX, (char) variableCoreBitRateMode)) != 0)
       {
         fprintf_s (stderr, " ERROR while trying to initialize xHE-AAC encoder: error value %d was returned!\n\n", i);
         i <<= 2; // return value
@@ -804,17 +810,26 @@ int main (const int argc, char* argv[])
 #endif
         goto mainFinish; // coder-time error
       }
+#ifdef NO_PREROLL_DATA
       if (bwMax < bw) bwMax = bw;
       // write first AU, add frame to header
       if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
       {
-#if USE_EXHALELIB_DLL
+# if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
-#endif
+# endif
         goto mainFinish;   // writeout error
       }
       byteCount += bw;
-
+#else
+      if (loudnessEst.addNewPcmData (frameLength))
+      {
+# if USE_EXHALELIB_DLL
+        exhaleDelete (&exhaleEnc);
+# endif
+        goto mainFinish; // estimation error
+      }
+#endif
 #if ENABLE_RESAMPLING
       while (wavReader.read (inPcmData, (frameLength * resampRatio) >> resampShift) > 0) // read a new audio frame
 #else

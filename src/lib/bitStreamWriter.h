@@ -5,7 +5,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #ifndef _BIT_STREAM_WRITER_H_
@@ -68,7 +68,7 @@ public:
                               const bool usacIndependencyFlag,    const uint8_t numElements,
                               const uint8_t numSwbShort,          uint8_t* const tempBuffer,
 #if !RESTRICT_TO_AAC
-                              const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
+                              const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling, const bool ipf,
 #endif
                               const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                               unsigned char* const accessUnit,    const unsigned nSamplesInFrame = 1024);

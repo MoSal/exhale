@@ -5,7 +5,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -739,8 +739,16 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
   m_auBitStream.write (usfi, 5); // usacSamplingFrequencyIndex (after SBR dec.!)
   m_auBitStream.write (shortFrameLength ? 0 : fli, 3);// coreSbrFrameLengthIndex
   m_auBitStream.write (chConfigurationIndex, 5);    // channelConfigurationIndex
+#ifdef NO_PREROLL_DATA
   m_auBitStream.write (numElements - 1, 4);  // numElements in UsacDecoderConfig
+#else
+  m_auBitStream.write (numElements, 4); // 4bit numElements in UsacDecoderConfig
 
+  m_auBitStream.write (ID_USAC_EXT, 2); // usacElementType[0] = 3, for IPF stuff
+  m_auBitStream.write (3, 4); // UsacExtElementConfig(), ID_EXT_ELE_AUDIOPREROLL
+  m_auBitStream.write (0, 6); // usacExtElementConfigLength = 0, rest of config.
+  bitCount += 12;
+#endif
   for (unsigned el = 0; el < numElements; el++) // el element loop
   {
     m_auBitStream.write ((unsigned) elementType[el], 2);  // usacElementType[el]
@@ -802,7 +810,7 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
   bitCount += (8 - m_auBitStream.heldBitCount) & 7;
   writeByteAlignment ();  // flush bytes
 
-  memcpy (audioConfig, &m_auBitStream.stream.front (), __min (15u + fli, bitCount >> 3));
+  memcpy (audioConfig, &m_auBitStream.stream.front (), __min (17u + fli, bitCount >> 3));
 
   return (bitCount >> 3);  // byte count
 }
@@ -812,7 +820,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
                                             const bool usacIndependencyFlag,    const uint8_t numElements,
                                             const uint8_t numSwbShort,          uint8_t* const tempBuffer,
 #if !RESTRICT_TO_AAC
-                                            const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
+                                            const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling, const bool ipf,
 #endif
                                             const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                                             unsigned char* const accessUnit,    const unsigned nSamplesInFrame /*= 1024*/)
@@ -822,19 +830,45 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
   if ((elementData == nullptr) || (entropyCoder == nullptr) || (tempBuffer == nullptr) || (sbrInfoAndData == nullptr) ||
       (mdctSignals == nullptr) || (mdctQuantMag == nullptr) || (accessUnit == nullptr) || (nSamplesInFrame > 2048) ||
 #if !RESTRICT_TO_AAC
-      (noiseFilling == nullptr) || (tw_mdct == nullptr) ||
+      (noiseFilling == nullptr) || (tw_mdct == nullptr) || (ipf && !usacIndependencyFlag) ||
 #endif
       (numElements == 0) || (numElements > USAC_MAX_NUM_ELEMENTS) || (numSwbShort < MIN_NUM_SWB_SHORT) || (numSwbShort > MAX_NUM_SWB_SHORT))
   {
     return 0; // invalid arguments error
   }
-
+#ifndef NO_PREROLL_DATA
+  if (ipf) // save last AU for ext. data
+  {
+    bitCount = __min (65532, (uint32_t) m_auBitStream.stream.size ());
+    memcpy (tempBuffer, &m_auBitStream.stream.front (), bitCount);
+  }
+#endif
   m_auBitStream.reset ();
   m_frameLength = nSamplesInFrame;
   m_numSwbShort = numSwbShort;
   m_uCharBuffer = tempBuffer;
   m_auBitStream.write (usacIndependencyFlag ? 1 : 0, 1);
 
+#ifndef NO_PREROLL_DATA
+  m_auBitStream.write (ipf ? 1 : 0, 1); // UsacExtElement, usacExtElementPresent
+  if (ipf)
+  {
+    const unsigned payloadLength = bitCount + 3; // ext. payload size, in bytes!
+
+    m_auBitStream.write (0, 1); // usacExtElementUseDefaultLength = 0 (variable)
+    m_auBitStream.write (CLIP_UCHAR (payloadLength), 8);
+    if (payloadLength > 254) m_auBitStream.write (payloadLength - 253, 16); // valueAdd
+
+    m_auBitStream.write (0, 6); // start AudioPreRoll - configLen = reserved = 0
+    m_auBitStream.write (1, 2); // numPreRollFrames, only one supported for now!
+    m_auBitStream.write (bitCount, 16); // auLen
+
+    while (ci < bitCount) m_auBitStream.write (tempBuffer[ci++], 8); // write AU
+    ci = 0;
+    bitCount = (payloadLength > 254 ? 26 : 10) + (payloadLength << 3); // for ext. bits
+  }
+  bitCount++; // for ElementPresent flag
+#endif
   for (unsigned el = 0; el < numElements; el++) // el element loop
   {
     const CoreCoderData* const elData = elementData[el];
@@ -935,7 +969,10 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
   bitCount += (8 - m_auBitStream.heldBitCount) & 7;
   writeByteAlignment ();  // flush bytes
 
+#if RESTRICT_TO_AAC
   memcpy (accessUnit, &m_auBitStream.stream.front (), __min (768 * ci, bitCount >> 3));
-
+#else
+  memcpy (accessUnit, &m_auBitStream.stream.front (), __min (ci * (ipf ? 1152 : 768), bitCount >> 3));
+#endif
   return (bitCount >> 3);  // byte count
 }

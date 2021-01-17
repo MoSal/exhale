@@ -5,7 +5,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -773,7 +773,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
   const uint16_t scaleSBR        = (m_shiftValSBR > 0 || m_nonMpegExt ? sbrRateOffset[m_bitRateMode] : 0); // -25% rate
   const uint64_t scaleSr         = (samplingRate < 27713 ? (samplingRate < 23004 ? 32 : 34) - __min (3 << m_shiftValSBR, m_bitRateMode)
                                                          : (samplingRate < 37566 && m_bitRateMode != 3u ? 36 : 37)) - (nChannels >> 1);
-  const uint64_t scaleBr         = (m_bitRateMode == 0 ? __min (32, 17u + (((samplingRate + (1 << 11)) >> 12) << 1) - (nChannels >> 1))
+  const uint64_t scaleBr         = (m_bitRateMode == 0 || m_frameCount <= 1 ? __min (32, 17u + (((samplingRate + (1 << 11)) >> 12) << 1) - (nChannels >> 1))
                                    : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1)) + scaleSBR;
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
@@ -1174,7 +1174,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong  - 6 + (meanSpecFlat[ci] >> 5)) +
                                             (shortWinCurr ? -3 + (((1 << 5) + meanTempFlat[ci]) >> 6) : -7 + (((1 << 4) + meanTempFlat[ci]) >> 5));
-          const unsigned targetBitCount25 = ((60000 + 20000 * (m_bitRateMode + m_shiftValSBR)) * nSamplesInFrame) /
+          const unsigned targetBitCount25 = ((60000 + 20000 * ((m_bitRateMode + m_shiftValSBR) >> (m_frameCount <= 1 ? 2 : 0))) * nSamplesInFrame) /
                                             (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
           unsigned b = grpData.sfbsPerGroup - 1;
 
@@ -1184,7 +1184,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 #if EC_TRELLIS_OPT_CODING
           if (grpLength == 1) // finalize bit count estimate, RDOC
           {
-            estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, __min (estimBitCount + 2, targetBitCount25),
+            estimBitCount = m_sfbQuantizer.quantizeSpecRDOC (entrCoder, grpScaleFacs, estimBitCount + 2u,
                                                              grpOff, grpRms, grpData.sfbsPerGroup, m_mdctQuantMag[ci]);
             for (b = 1; b < grpData.sfbsPerGroup; b++)
             {
@@ -1327,11 +1327,10 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
         m_coreSignals[ci][0] |= getSbrEnvelopeAndNoise (&m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame], msfVal,
                                                         __max (m_meanTempPrev[ci], meanTempFlat[ci]) >> 3, m_bitRateMode == 0,
                                                         m_indepFlag, msfSte, tmpValSynch, nSamplesInFrame, &m_coreSignals[ci][1]);
-        if (ch + 1 == nrChannels) // update the flatness histories
+        if (ch + 1 == nrChannels) // update flatness histories - TODO: coupling
         {
           m_meanSpecPrev[ci] = meanSpecFlat[ci];  m_meanSpecPrev[s] = meanSpecFlat[s];
           m_meanTempPrev[ci] = meanTempFlat[ci];  m_meanTempPrev[s] = meanTempFlat[s];
-          // TODO: coupling (m_coreSignals[ci][0] |= 1 << 23;)
         }
       }
       ci++;
@@ -1341,7 +1340,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
   return (errorValue > 0 ? 0 : m_outStream.createAudioFrame (m_elementData, m_entropyCoder, m_mdctSignals, m_mdctQuantMag, m_indepFlag,
                                                              m_numElements, m_numSwbShort, (uint8_t* const) m_tempIntBuf,
 #if !RESTRICT_TO_AAC
-                                                             m_timeWarping, m_noiseFilling,
+                                                             m_timeWarping, m_noiseFilling, (m_frameCount == 2),
 #endif
                                                              m_shiftValSBR, m_coreSignals, m_outAuData, nSamplesInFrame)); // returns AU size
 }

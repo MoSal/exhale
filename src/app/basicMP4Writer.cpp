@@ -6,7 +6,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleAppPch.h"
@@ -364,7 +364,11 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
   /* NOTE: the following condition is, as far as I can tell, correct, but some decoders with DRC processing
   may decode too few samples with it. Hence, I disabled it. See also corresponding NOTE in exhaleApp.cpp */
   const bool flushFrameUsed = true; // ((audioLength + m_pregapLength) % m_frameLength) > 0;
+#ifdef NO_PREROLL_DATA
   const unsigned frameCount = ((audioLength + m_frameLength - 1) / m_frameLength) + (flushFrameUsed ? 2 : 1);
+#else
+  const unsigned frameCount = ((audioLength + m_frameLength - 1) / m_frameLength) + (flushFrameUsed ? 1 : 0);
+#endif
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
   const unsigned finalChunk = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
 #ifndef NO_FIX_FOR_ISSUE_1

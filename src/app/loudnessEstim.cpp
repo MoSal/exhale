@@ -13,16 +13,16 @@
 
 #if LE_ACCURATE_CALC
 static const int64_t kFilterCoeffs[4][8] = { // first 4: numerator (16->-32 bit), last 4: denominator (32 bit)
-  { -974848000, 1329463296, -808124416, 185073664,  -946145519, 1253229559, -741406502, 165888314}, // <=32 k
-  {-1001717760, 1403125760, -874840064, 204996608,  -980574000, 1345222905, -822320842, 189236866}, // 44.1 k
-  {-1007550464, 1419378688, -889847808, 209584128,  -988032194, 1365543311, -840618073, 194671779}, // 48.0 k
-  {-1024000000, 1465647104, -933036032, 222953472, -1009281050, 1424244875, -894338686, 210939497}  // >=64 k
+  { -974848000, 1329463296, -808124416, 185073664,  -946145519, 1253229559, -741406502, 165888314}, // <=32k
+  {-1001717760, 1403125760, -874840064, 204996608,  -980574000, 1345222905, -822320842, 189236866}, // 44.1k
+  {-1007550464, 1419378688, -889847808, 209584128,  -988032194, 1365543311, -840618073, 194671779}, // 48.0k
+  {-1024000000, 1465647104, -933036032, 222953472, -1009281050, 1424244875, -894338686, 210939497}  // >=64k
 };
 #endif
 
 // constructor
-LoudnessEstimator::LoudnessEstimator (int32_t* const inputPcmData,           const unsigned bitDepth /*= 24*/,
-                                      const unsigned sampleRate /*= 44100*/, const unsigned numChannels /*= 2*/)
+LoudnessEstimator::LoudnessEstimator (int32_t* const inputPcmData,         const unsigned bitDepth /*= 24*/,
+                                      const unsigned sampleRate /*= 44k*/, const unsigned numChannels /*= 2*/)
 {
 #if LE_ACCURATE_CALC
   m_filterCoeffs  = kFilterCoeffs[sampleRate <= 44100 ? (sampleRate <= 32000 ? 0 : 1) : (sampleRate <= 48000 ? 2 : 3)];
@@ -161,7 +161,7 @@ uint32_t LoudnessEstimator::getStatistics (const bool includeWarmUp /*= false*/)
   }
   if (zg < LE_THRESH_ABS) return peakValue16Bits;
 
-  zg = LE_LUFS_OFFSET + 10.0f * log10 (zg / (normFac * numBlocks * (float) m_inputMaxValue * (float) m_inputMaxValue));
+  zg = LE_LUFS_OFFSET + 10.0f * (float) log10 (zg / (normFac * numBlocks * (float) m_inputMaxValue * (float) m_inputMaxValue));
 #if LE_ACCURATE_CALC
   zg -= m_filterFactor * 0.046875f; // for sample rates other than 48 kHz
 #endif
