@@ -97,7 +97,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const uint32_t stscAtomSize = STSX_BSIZE + (numFramesFinalPeriod == 0 ? 12 : 24);
   const uint32_t stcoAtomSize = STSX_BSIZE + (uint32_t) m_rndAccOffsets.size () * 4;
 #ifndef NO_FIX_FOR_ISSUE_1
-# ifndef NO_FIX_FOR_ISSUE_13
+# if !defined (NO_FIX_FOR_ISSUE_13) && defined (NO_PREROLL_DATA)
   const uint32_t chunkCount   = (m_frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod;
   const uint32_t stssAtomSize = STSX_BSIZE + chunkCount * 4; // NOTE: must equal stcoAtomSize
 # else
@@ -241,7 +241,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x73); // stss
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-# ifndef NO_FIX_FOR_ISSUE_13
+# if !defined (NO_FIX_FOR_ISSUE_13) && defined (NO_PREROLL_DATA)
   m_dynamicHeader.push_back ((chunkCount >> 24) & UCHAR_MAX);
   m_dynamicHeader.push_back ((chunkCount >> 16) & UCHAR_MAX);
   m_dynamicHeader.push_back ((chunkCount >>  8) & UCHAR_MAX);
@@ -373,7 +373,7 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
   const unsigned finalChunk = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
 #ifndef NO_FIX_FOR_ISSUE_1
   const unsigned smpGrpSize = 10 /*sgpd*/ + (m_rndAccPeriod > UINT8_MAX ? 10 : 9) + ((m_rndAccPeriod + 1) >> 1) /*csgp*/;
-# ifndef NO_FIX_FOR_ISSUE_13
+# if !defined (NO_FIX_FOR_ISSUE_13) && defined (NO_PREROLL_DATA)
   const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6+4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 6 + smpGrpSize + chunkCount * 4 /*stss*/ +
 # else
   const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6+4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 6 + smpGrpSize + 4 /*stss*/ +
