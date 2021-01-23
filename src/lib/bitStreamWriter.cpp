@@ -1,5 +1,5 @@
 /* bitStreamWriter.cpp - source file for class with basic bit-stream writing capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -10,6 +10,13 @@
 
 #include "exhaleLibPch.h"
 #include "bitStreamWriter.h"
+
+#ifndef NO_PREROLL_DATA
+static const uint8_t zeroAu[2][14] = { // single-element AUs incl. SBR for digital silence
+  {132,   0,  2, 0, 8, 0, 0,  0, 0, 0, 0, 0, 0, 0}, // SCE, 8 bytes
+  {132, 129, 16, 0, 8, 0, 0, 32, 0, 0, 0, 0, 0, 0} // CPE, 14 bytes
+};
+#endif
 
 // static helper functions
 static inline int getPredCoefPrevGrp (const uint8_t aqIdxPrevGrp)
@@ -820,11 +827,19 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
                                             const bool usacIndependencyFlag,    const uint8_t numElements,
                                             const uint8_t numSwbShort,          uint8_t* const tempBuffer,
 #if !RESTRICT_TO_AAC
-                                            const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling, const bool ipf,
+                                            const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
+                                            const uint32_t frameCount,          const uint32_t indepPeriod,
 #endif
                                             const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                                             unsigned char* const accessUnit,    const unsigned nSamplesInFrame /*= 1024*/)
 {
+#ifndef NO_PREROLL_DATA
+# if RESTRICT_TO_AAC
+  const uint8_t ipf = 0;
+# else
+  const uint8_t ipf = (frameCount == 1 ? 2 : ((frameCount % indepPeriod) == 1 ? 1 : 0));
+# endif
+#endif
   unsigned bitCount = 1, ci = 0;
 
   if ((elementData == nullptr) || (entropyCoder == nullptr) || (tempBuffer == nullptr) || (sbrInfoAndData == nullptr) ||
@@ -853,7 +868,9 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
   m_auBitStream.write (ipf ? 1 : 0, 1); // UsacExtElement, usacExtElementPresent
   if (ipf)
   {
-    const unsigned payloadLength = bitCount + 3; // ext. payload size, in bytes!
+    const uint16_t idxPreRollExt = (uint16_t) elementData[0]->elementType;
+    const bool lowRatePreRollExt = (ipf == 1 && numElements == 1 && idxPreRollExt < ID_USAC_LFE);
+    const unsigned payloadLength = (lowRatePreRollExt ? 8 + idxPreRollExt * 6 : bitCount) + 3; // in bytes!
 
     m_auBitStream.write (0, 1); // usacExtElementUseDefaultLength = 0 (variable)
     m_auBitStream.write (CLIP_UCHAR (payloadLength), 8);
@@ -861,9 +878,16 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
 
     m_auBitStream.write (0, 6); // start AudioPreRoll - configLen = reserved = 0
     m_auBitStream.write (1, 2); // numPreRollFrames, only one supported for now!
-    m_auBitStream.write (bitCount, 16); // auLen
+    m_auBitStream.write (payloadLength - 3, 16); // auLen
 
-    while (ci < bitCount) m_auBitStream.write (tempBuffer[ci++], 8); // write AU
+    if (lowRatePreRollExt)
+    {
+      while (ci < payloadLength - 3) m_auBitStream.write (zeroAu[idxPreRollExt][ci++], 8);
+    }
+    else
+    {
+      while (ci < bitCount) m_auBitStream.write (tempBuffer[ci++], 8); // write last AU
+    }
     ci = 0;
     bitCount = (payloadLength > 254 ? 26 : 10) + (payloadLength << 3); // for ext. bits
   }

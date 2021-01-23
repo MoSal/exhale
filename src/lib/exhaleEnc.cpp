@@ -1,5 +1,5 @@
 /* exhaleEnc.cpp - source file for class providing Extended HE-AAC encoding capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -1327,7 +1327,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
         m_coreSignals[ci][0] |= getSbrEnvelopeAndNoise (&m_coreSignals[ci][nSamplesTempAna - 64 + nSamplesInFrame], msfVal,
                                                         __max (m_meanTempPrev[ci], meanTempFlat[ci]) >> 3, m_bitRateMode == 0,
                                                         m_indepFlag, msfSte, tmpValSynch, nSamplesInFrame, &m_coreSignals[ci][1]);
-        if (ch + 1 == nrChannels) // update flatness histories - TODO: coupling
+        if (ch + 1 == nrChannels) // update the flatness histories
         {
           m_meanSpecPrev[ci] = meanSpecFlat[ci];  m_meanSpecPrev[s] = meanSpecFlat[s];
           m_meanTempPrev[ci] = meanTempFlat[ci];  m_meanTempPrev[s] = meanTempFlat[s];
@@ -1340,7 +1340,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
   return (errorValue > 0 ? 0 : m_outStream.createAudioFrame (m_elementData, m_entropyCoder, m_mdctSignals, m_mdctQuantMag, m_indepFlag,
                                                              m_numElements, m_numSwbShort, (uint8_t* const) m_tempIntBuf,
 #if !RESTRICT_TO_AAC
-                                                             m_timeWarping, m_noiseFilling, (m_frameCount == 2),
+                                                             m_timeWarping, m_noiseFilling, m_frameCount - 1u, m_indepPeriod,
 #endif
                                                              m_shiftValSBR, m_coreSignals, m_outAuData, nSamplesInFrame)); // returns AU size
 }
@@ -1841,7 +1841,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
   m_frameLength  = USAC_CCFL (frameLength >> m_shiftValSBR); // ccfl signaled using coreSbrFrameLengthIndex
   m_frequencyIdx = toSamplingFrequencyIndex (sampleRate >> m_shiftValSBR); // as usacSamplingFrequencyIndex
   m_indepFlag    = true; // usacIndependencyFlag in UsacFrame(), will be set per frame, true in first frame
-  m_indepPeriod  = (indepPeriod == 0 ? UINT_MAX : indepPeriod); // RAP, signaled using usacIndependencyFlag
+  m_indepPeriod  = (indepPeriod == 0 ? USHRT_MAX : indepPeriod); // RAP signaled using usacIndependencyFlag
 #if !RESTRICT_TO_AAC
   m_nonMpegExt   = useEcodisExt;
 #endif

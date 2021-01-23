@@ -1,5 +1,5 @@
 /* bitStreamWriter.h - header file for class with basic bit-stream writing capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -68,7 +68,8 @@ public:
                               const bool usacIndependencyFlag,    const uint8_t numElements,
                               const uint8_t numSwbShort,          uint8_t* const tempBuffer,
 #if !RESTRICT_TO_AAC
-                              const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling, const bool ipf,
+                              const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
+                              const uint32_t frameCount,          const uint32_t indepPeriod,
 #endif
                               const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                               unsigned char* const accessUnit,    const unsigned nSamplesInFrame = 1024);

@@ -1,5 +1,5 @@
 /* exhaleApp.cpp - source file with main() routine for exhale application executable
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -362,7 +362,7 @@ int main (const int argc, char* argv[])
   // check arg. list, print usage if needed
   if ((argc < 3) || (argc > 4) || (argc > 1 && argv[1][1] != 0))
   {
-    fprintf_s (stdout, " Copyright 2018-2020 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
+    fprintf_s (stdout, " Copyright 2018-2021 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
     fprintf_s (stdout, " This software is made available under the exhale Copyright License and comes\n");
     fprintf_s (stdout, " with ABSOLUTELY NO WARRANTY. This software may be subject to other third-party\n");

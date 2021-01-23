@@ -1,5 +1,5 @@
 /* basicMP4Writer.cpp - source file for class with basic MPEG-4 file writing capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  * pre-roll serializer and related code added by J. Calhoun in 2020, see merge request 4
  *
  * The copyright in this software is being made available under the exhale Copyright License
