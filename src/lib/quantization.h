@@ -27,7 +27,7 @@
 #define SFB_QUANT_OFFSET 0.405396 // 1 - 0.5^(3/4)
 #endif
 
-// class for xHE-AAC quantization
+// class for BL USAC quantization
 class SfbQuantizer
 {
 private:

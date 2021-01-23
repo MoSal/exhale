@@ -1,5 +1,5 @@
 /* exhaleEnc.h - header file for class providing Extended HE-AAC encoding capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -56,7 +56,7 @@ typedef enum USAC_CCFL : short
   CCFL_1024  = 1024 // LC
 } USAC_CCFL;
 
-// overall xHE-AAC encoding class
+// overall BL USAC encoding class
 class ExhaleEncoder : public ExhaleEncAPI
 {
 private:

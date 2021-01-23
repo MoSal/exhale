@@ -100,7 +100,7 @@ to print out usage information. As an example, the following command
 `exhale.exe 5 C:\Music\Input.wav C:\Music\Output.m4a`
 
 converts file Input.wav to file Output.m4a at roughly 128 kbit/s (if
-the input signal is two-channel stereo) and in xHE-AAC audio format.
+the input signal is 2-channel stereo) and in Extended HE-AAC format.
 Note that, when calling the exhale application with a path (such as,
 e.g., `bin/exhale` or `bin\exhale.exe`), but specifying the input or
 output file without a file path (e.g., `Input.wav`), those files are
@@ -124,7 +124,7 @@ the window content changed, on `Add New`. Then select `Custom` under
                       SBR is disabled, or a...g when SBR is enabled)
 - *Format is:* lossy
 - *Highest BPS mode supported:* 24 (or 32, doesn't matter much)
-- *Encoder name:* xHE-AAC (exhale)
+- *Encoder name:* Extended HE-AAC (exhale)
 - *Bitrate (kbps):* (depends on bit-rate mode, see Usage above)
 - *Settings:* CVBR mode # (where # equals that in *Parameters*)
 

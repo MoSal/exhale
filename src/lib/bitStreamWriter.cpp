@@ -657,7 +657,7 @@ unsigned BitStreamWriter::writeStereoCoreToolInfo (const CoreCoderData& elData, 
 #if !RESTRICT_TO_AAC
   if (timeWarping)
   {
-    m_auBitStream.write (0, 1); // common_tw not needed in xHE-AAC
+    m_auBitStream.write (0, 1); // common_tw not needed in BL USAC
     bitCount++;
   } // tw_mdct
 #endif
@@ -852,9 +852,9 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
     return 0; // invalid arguments error
   }
 #ifndef NO_PREROLL_DATA
-  if (ipf) // save last AU for ext. data
+  if ((ipf == 2) || (ipf == 1 && (numElements > 1 || !noiseFilling[0]))) // previous AU
   {
-    bitCount = __min (65532, (uint32_t) m_auBitStream.stream.size ());
+    bitCount = __min (nSamplesInFrame << 2, (uint32_t) m_auBitStream.stream.size ());
     memcpy (tempBuffer, &m_auBitStream.stream.front (), bitCount);
   }
 #endif
@@ -868,9 +868,9 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
   m_auBitStream.write (ipf ? 1 : 0, 1); // UsacExtElement, usacExtElementPresent
   if (ipf)
   {
-    const uint16_t idxPreRollExt = (uint16_t) elementData[0]->elementType;
-    const bool lowRatePreRollExt = (ipf == 1 && numElements == 1 && idxPreRollExt < ID_USAC_LFE);
-    const unsigned payloadLength = (lowRatePreRollExt ? 8 + idxPreRollExt * 6 : bitCount) + 3; // in bytes!
+    const uint16_t idxPreRollExt = elementData[0]->elementType & 1;
+    const bool lowRatePreRollExt = (ipf == 1 && numElements == 1 && noiseFilling[0]);
+    const unsigned payloadLength = (lowRatePreRollExt ? (8 + idxPreRollExt * 6) >> (sbrRatioShiftValue > 0 ? 0 : 1) : bitCount) + 3; // in bytes!
 
     m_auBitStream.write (0, 1); // usacExtElementUseDefaultLength = 0 (variable)
     m_auBitStream.write (CLIP_UCHAR (payloadLength), 8);
@@ -882,12 +882,17 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
 
     if (lowRatePreRollExt)
     {
-      while (ci < payloadLength - 3) m_auBitStream.write (zeroAu[idxPreRollExt][ci++], 8);
+      bitCount = payloadLength - 3;
+      memcpy (tempBuffer, zeroAu[idxPreRollExt], bitCount);
+      if (elementData[0]->elementType < ID_USAC_LFE)  // correct window_sequence
+      {
+        const USAC_WSEQ wsPrev0 = elementData[0]->icsInfoPrev[0].windowSequence;
+        const uint8_t wsPreRoll = uint8_t (wsPrev0 == EIGHT_SHORT || wsPrev0 == STOP_START ? LONG_START : wsPrev0);
+        // SCE/CPE: window_sequence at byte index 2/0, left-shifted by value 2/0
+        tempBuffer[2 - 2 * idxPreRollExt] |= wsPreRoll << (2 - 2 * idxPreRollExt);
+      }
     }
-    else
-    {
-      while (ci < bitCount) m_auBitStream.write (tempBuffer[ci++], 8); // write last AU
-    }
+    while (ci < bitCount) m_auBitStream.write (tempBuffer[ci++], 8); // write AU
     ci = 0;
     bitCount = (payloadLength > 254 ? 26 : 10) + (payloadLength << 3); // for ext. bits
   }
