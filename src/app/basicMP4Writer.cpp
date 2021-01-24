@@ -273,7 +273,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x02);
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
   m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
+  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (m_frameLength > 1024 ? 0x02 : 0x01); // roll_distance
   m_dynamicHeader.push_back ((csgpAtomSize >> 24) & UCHAR_MAX);
   m_dynamicHeader.push_back ((csgpAtomSize >> 16) & UCHAR_MAX);
   m_dynamicHeader.push_back ((csgpAtomSize >>  8) & UCHAR_MAX);
