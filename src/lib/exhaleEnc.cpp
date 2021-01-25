@@ -1640,10 +1640,10 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
   m_tempAnalyzer.getTempAnalysisStats (m_tempAnaNext, nChannels);
   m_tempAnalyzer.getTransientAndPitch (m_tranLocNext, nChannels);
 
-#ifndef NO_FIX_FOR_ISSUE_1
-  m_indepFlag = (((m_frameCount++) % m_indepPeriod) <= 1); // configure usacIndependencyFlag
-#else
+#ifdef NO_PREROLL_DATA
   m_indepFlag = (((m_frameCount++) % m_indepPeriod) == 0); // configure usacIndependencyFlag
+#else
+  m_indepFlag = (((m_frameCount++) % m_indepPeriod) <= 1); // configure usacIndependencyFlag
 #endif
 
   for (unsigned el = 0; el < m_numElements; el++)  // element loop
@@ -1841,7 +1841,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
   m_frameLength  = USAC_CCFL (frameLength >> m_shiftValSBR); // ccfl signaled using coreSbrFrameLengthIndex
   m_frequencyIdx = toSamplingFrequencyIndex (sampleRate >> m_shiftValSBR); // as usacSamplingFrequencyIndex
   m_indepFlag    = true; // usacIndependencyFlag in UsacFrame(), will be set per frame, true in first frame
-  m_indepPeriod  = (indepPeriod == 0 ? USHRT_MAX : indepPeriod); // RAP signaled using usacIndependencyFlag
+  m_indepPeriod  = (indepPeriod == 0 ? USHRT_MAX : __min (USHRT_MAX, indepPeriod)); // random-access period
 #if !RESTRICT_TO_AAC
   m_nonMpegExt   = useEcodisExt;
 #endif

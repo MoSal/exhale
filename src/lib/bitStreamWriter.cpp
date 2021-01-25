@@ -834,25 +834,24 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
                                             unsigned char* const accessUnit,    const unsigned nSamplesInFrame /*= 1024*/)
 {
 #ifndef NO_PREROLL_DATA
-# if RESTRICT_TO_AAC
-  const uint8_t ipf = 0;
-# else
-  const uint8_t ipf = (frameCount == 1 ? 2 : ((frameCount % indepPeriod) == 1 ? 1 : 0));
-# endif
+  const uint8_t ipf = (frameCount == 1 ? 2 : ((frameCount % (indepPeriod << 1)) == 1 ? 1 : 0));
 #endif
   unsigned bitCount = 1, ci = 0;
 
   if ((elementData == nullptr) || (entropyCoder == nullptr) || (tempBuffer == nullptr) || (sbrInfoAndData == nullptr) ||
       (mdctSignals == nullptr) || (mdctQuantMag == nullptr) || (accessUnit == nullptr) || (nSamplesInFrame > 2048) ||
 #if !RESTRICT_TO_AAC
-      (noiseFilling == nullptr) || (tw_mdct == nullptr) || (ipf && !usacIndependencyFlag) ||
+      (noiseFilling == nullptr) || (tw_mdct == nullptr) ||
+# ifndef NO_PREROLL_DATA
+      (ipf && !usacIndependencyFlag) ||
+# endif
 #endif
       (numElements == 0) || (numElements > USAC_MAX_NUM_ELEMENTS) || (numSwbShort < MIN_NUM_SWB_SHORT) || (numSwbShort > MAX_NUM_SWB_SHORT))
   {
     return 0; // invalid arguments error
   }
 #ifndef NO_PREROLL_DATA
-  if ((ipf == 2) || (ipf == 1 && (numElements > 1 || !noiseFilling[0]))) // previous AU
+  if ((ipf == 2) || (ipf == 1 && (numElements > 1 || !noiseFilling[0])))
   {
     bitCount = __min (nSamplesInFrame << 2, (uint32_t) m_auBitStream.stream.size ());
     memcpy (tempBuffer, &m_auBitStream.stream.front (), bitCount);
@@ -874,7 +873,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
 
     m_auBitStream.write (0, 1); // usacExtElementUseDefaultLength = 0 (variable)
     m_auBitStream.write (CLIP_UCHAR (payloadLength), 8);
-    if (payloadLength > 254) m_auBitStream.write (payloadLength - 253, 16); // valueAdd
+    if (payloadLength > 254) m_auBitStream.write (payloadLength - 253, 16);
 
     m_auBitStream.write (0, 6); // start AudioPreRoll - configLen = reserved = 0
     m_auBitStream.write (1, 2); // numPreRollFrames, only one supported for now!
@@ -894,10 +893,10 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
     }
     while (ci < bitCount) m_auBitStream.write (tempBuffer[ci++], 8); // write AU
     ci = 0;
-    bitCount = (payloadLength > 254 ? 26 : 10) + (payloadLength << 3); // for ext. bits
+    bitCount = (payloadLength > 254 ? 26 : 10) + (payloadLength << 3); // for PR
   }
   bitCount++; // for ElementPresent flag
-#endif
+#endif // !NO_PREROLL_DATA
   for (unsigned el = 0; el < numElements; el++) // el element loop
   {
     const CoreCoderData* const elData = elementData[el];
@@ -998,7 +997,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
   bitCount += (8 - m_auBitStream.heldBitCount) & 7;
   writeByteAlignment ();  // flush bytes
 
-#if RESTRICT_TO_AAC
+#if RESTRICT_TO_AAC || defined (NO_PREROLL_DATA)
   memcpy (accessUnit, &m_auBitStream.stream.front (), __min (768 * ci, bitCount >> 3));
 #else
   memcpy (accessUnit, &m_auBitStream.stream.front (), __min (ci * (ipf ? 1152 : 768), bitCount >> 3));
