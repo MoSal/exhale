@@ -1,11 +1,11 @@
 /* stereoProcessing.cpp - source file for class providing M/S stereo coding functionality
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -96,7 +96,6 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
                                                 uint32_t* const sfbStepSize1, uint32_t* const sfbStepSize2)
 {
   const bool applyPredSte = (sfbStereoData != nullptr); // use real-valued predictive stereo
-  const bool alterPredDir = (applyPredSte && reversePredDir); // predict mid from side band?
   const SfbGroupData& grp = groupingData1;
   const bool  eightShorts = (grp.numWindowGroups > 1);
   const uint8_t maxSfbSte = (eightShorts ? __min (numSwbFrame, __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) + 1) : numSwbFrame);
@@ -104,6 +103,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 #if SP_OPT_ALPHA_QUANT
   const bool  quantDither = ((bitRateMode >= 4) && !eightShorts); // quantization dithering?
 #endif
+  bool       alterPredDir = (applyPredSte && reversePredDir); // predict mid from side band?
   uint32_t rmsSfbL[2] = {0, 0}, rmsSfbR[2] = {0, 0};
   uint32_t  numSfbPredSte = 0; // counter
 #if SP_SFB_WISE_STEREO
@@ -125,6 +125,19 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
     if (applyPredSte) memset (sfbStereoData, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
 
     return 0; // zeroed ms_used, no pred.
+  }
+#endif
+#if SP_MDST_PRED
+  if (applyPredSte && (bitRateMode > 4) && !eightShorts && !reversePredDir) // pred_dir test
+  {
+    uint64_t sumRealM = 0, sumRealS = 0;
+
+    for (uint16_t s = grp.sfbOffsets[numSwbFrame] - 1; s > 0; s--)
+    {
+      sumRealM += abs (mdctSpectrum1[s] + mdctSpectrum2[s]); // i.e., 2*mid,
+      sumRealS += abs (mdctSpectrum1[s] - mdctSpectrum2[s]); // i.e., 2*side
+    }
+    alterPredDir = (sumRealS * 2 > sumRealM * 3);
   }
 #endif
 
@@ -633,7 +646,11 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
       if (grpLength == 1) n++;
     } // for gr
 
+#if SP_MDST_PRED
+    numSfbPredSte = (applyPredSte && (alterPredDir != reversePredDir) ? 4 /*pred_dir=1*/ : 2);
+#else
     numSfbPredSte = 2;
+#endif
   }
 
   return numSfbPredSte; // no error
