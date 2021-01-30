@@ -64,6 +64,15 @@ static uint16_t toUShortValue (const uint8_t hiByte, const uint8_t loByte)
   return ((uint16_t) hiByte << 8) | (uint16_t) loByte;
 }
 
+// private helper function
+void BasicMP4Writer::push32BitValue (const uint32_t value) // push to dynamic header
+{
+  m_dynamicHeader.push_back ((value >> 24) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((value >> 16) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((value >>  8) & UCHAR_MAX);
+  m_dynamicHeader.push_back ((value      ) & UCHAR_MAX);
+}
+
 // public functions
 int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteCount)
 {
@@ -73,10 +82,7 @@ int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteCount
   }
 
   // add frame byte-size, in Big Endian format, to frame size list (stsz)
-  m_dynamicHeader.push_back ((byteCount >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((byteCount >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((byteCount >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( byteCount        & UCHAR_MAX);
+  push32BitValue (byteCount);
 
   if (((m_frameCount++) % m_rndAccPeriod) == 0) // add RAP to list (stco)
   {
@@ -102,16 +108,13 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const uint32_t preRollCount = (m_frameCount + (m_rndAccPeriod << 1) - 1) / (m_rndAccPeriod << 1);
   const uint32_t stssAtomSize = STSX_BSIZE + preRollCount * 4;
 #endif
-  // The following code creates a 'prol' sample group with a repeating pattern of membership,
-  // indicating that the first sample in each increment of m_rndAccPeriod samples is a member
-  // and therefore an independent frame (IF), and the remainder are not.
-  // If the encoder is changed to signal the locations of IFs by some other means or in some
-  // other arrangement, either the code that creates the 'csgp' atom below must be modified
-  // accordingly or new code that creates an 'sbgp' atom instead must be substituted.
+  /* The following code creates a 'prol' sample group with a repeating pattern of membership,
+  indicating that the first sample in each increment of m_rndAccPeriod samples is a member and
+  thus an independent frame (IF) or immediate playout frame (IPF), and the remainder are not. */
   const uint32_t sgpdAtomSize = STSX_BSIZE + 4 /*defaultLength == 2*/ + 4 /*entryCount == 1*/ + 2 /*rollDistance*/;
-  const uint32_t patternLengthSize = (m_rndAccPeriod > UINT8_MAX ? 2 : 1);
-  const uint32_t compPatternLength = (m_rndAccPeriod + 1) >> 1; // 4 bits per index, padded for byte alignment
-  const uint32_t sampleCountSize   = (m_frameCount  > UINT16_MAX ? 4 : (m_frameCount > UINT8_MAX ? 2 : 1));
+  const uint32_t patternLengthSize = (numFramesFirstPeriod > UINT8_MAX ? 2 : 1);
+  const uint32_t compPatternLength = (numFramesFirstPeriod + 1) >> 1; // 4 bit per index with byte alignment
+  const uint32_t sampleCountSize   = (m_frameCount > UINT16_MAX ? 4 : (m_frameCount > UINT8_MAX ? 2 : 1));
   const uint32_t csgpAtomSize = STSX_BSIZE + 4 /*patternCount == 1*/ + patternLengthSize + sampleCountSize + compPatternLength;
   const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize + stssAtomSize + sgpdAtomSize + csgpAtomSize;
   const uint32_t moovAtomSize = toBigEndian (toUShortValue (MOOV_BSIZE) + stblIncrSize);
@@ -174,119 +177,69 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.at (m_ascSizeM5 + 24) = ((m_frameCount >>  8) & UCHAR_MAX);
   m_dynamicHeader.at (m_ascSizeM5 + 25) = ( m_frameCount        & UCHAR_MAX);
 
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (stscAtomSize);
+  push32BitValue (stscAtomSize);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x63); // stsc
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (numFramesFinalPeriod == 0 ? 1 : 2);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);  // 1st
-  m_dynamicHeader.push_back ((numFramesFirstPeriod >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((numFramesFirstPeriod >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((numFramesFirstPeriod >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( numFramesFirstPeriod        & UCHAR_MAX);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);  // idx
+  push32BitValue (0);
+  push32BitValue (numFramesFinalPeriod == 0 ? 1 : 2);
+  push32BitValue (1); // 1st
+  push32BitValue (numFramesFirstPeriod);
+  push32BitValue (1); // idx
 
   if (numFramesFinalPeriod > 0)
   {
-    m_dynamicHeader.push_back ((m_rndAccOffsets.size () >> 24) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((m_rndAccOffsets.size () >> 16) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((m_rndAccOffsets.size () >>  8) & UCHAR_MAX);
-    m_dynamicHeader.push_back ( m_rndAccOffsets.size ()        & UCHAR_MAX);
-    m_dynamicHeader.push_back ((numFramesFinalPeriod >> 24) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((numFramesFinalPeriod >> 16) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((numFramesFinalPeriod >>  8) & UCHAR_MAX);
-    m_dynamicHeader.push_back ( numFramesFinalPeriod        & UCHAR_MAX);
-    m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-    m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);// idx
+    push32BitValue ((uint32_t) m_rndAccOffsets.size ());
+    push32BitValue (numFramesFinalPeriod);
+    push32BitValue (1);
   }
 
-  m_dynamicHeader.push_back ((stcoAtomSize >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((stcoAtomSize >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((stcoAtomSize >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( stcoAtomSize        & UCHAR_MAX);
+  push32BitValue (stcoAtomSize);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74);
   m_dynamicHeader.push_back (0x63); m_dynamicHeader.push_back (0x6F); // stco
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back ((m_rndAccOffsets.size () >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((m_rndAccOffsets.size () >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((m_rndAccOffsets.size () >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( m_rndAccOffsets.size ()        & UCHAR_MAX);
+  push32BitValue (0);
+  push32BitValue ((uint32_t) m_rndAccOffsets.size ());
 
   // add header size corrected random-access offsets to file
   for (uint32_t i = 0; i < (uint32_t) m_rndAccOffsets.size (); i++)
   {
-    const uint32_t rndAccOffset = m_rndAccOffsets.at (i) + m_mediaOffset;
-
-    m_dynamicHeader.push_back ((rndAccOffset >> 24) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((rndAccOffset >> 16) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((rndAccOffset >>  8) & UCHAR_MAX);
-    m_dynamicHeader.push_back ( rndAccOffset        & UCHAR_MAX);
+    push32BitValue (m_rndAccOffsets.at (i) + m_mediaOffset);
   }
 
-  m_dynamicHeader.push_back ((stssAtomSize >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((stssAtomSize >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((stssAtomSize >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( stssAtomSize        & UCHAR_MAX);
+  push32BitValue (stssAtomSize);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x73); // stss
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  push32BitValue (0);
 #ifdef NO_PREROLL_DATA
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01); // 1 entry
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01); // 1st AU
+  push32BitValue (1); // 1st
+  push32BitValue (1); // AU!
 #else
-  m_dynamicHeader.push_back ((preRollCount >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((preRollCount >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((preRollCount >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( preRollCount        & UCHAR_MAX);
+  push32BitValue (preRollCount);
   for (uint32_t i = 1; i <= m_frameCount; i += (m_rndAccPeriod << 1))
   {
-    m_dynamicHeader.push_back ((i >> 24) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((i >> 16) & UCHAR_MAX);
-    m_dynamicHeader.push_back ((i >>  8) & UCHAR_MAX);
-    m_dynamicHeader.push_back ( i        & UCHAR_MAX);
+    push32BitValue (i);
   }
 #endif
-  m_dynamicHeader.push_back ((sgpdAtomSize >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((sgpdAtomSize >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((sgpdAtomSize >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( sgpdAtomSize        & UCHAR_MAX);
+  push32BitValue (sgpdAtomSize);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x67);
   m_dynamicHeader.push_back (0x70); m_dynamicHeader.push_back (0x64); // sgpd
-  m_dynamicHeader.push_back (0x01); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  push32BitValue (1 << 24);
   m_dynamicHeader.push_back (0x70); m_dynamicHeader.push_back (0x72);
   m_dynamicHeader.push_back (0x6F); m_dynamicHeader.push_back (0x6C); // prol
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x02);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (m_frameLength > 1024 ? 0x02 : 0x01); // roll_distance
-  m_dynamicHeader.push_back ((csgpAtomSize >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((csgpAtomSize >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((csgpAtomSize >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( csgpAtomSize        & UCHAR_MAX);
+  push32BitValue (2);
+  push32BitValue (1);
+  m_dynamicHeader.push_back (0);  m_dynamicHeader.push_back (m_frameLength > 1024 ? 2 : 1); // roll_distance
+  push32BitValue (csgpAtomSize);
   m_dynamicHeader.push_back (0x63); m_dynamicHeader.push_back (0x73);
   m_dynamicHeader.push_back (0x67); m_dynamicHeader.push_back (0x70); // csgp
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back ((__min (3, patternLengthSize) << 4) | (__min (3, sampleCountSize) << 2));
+  push32BitValue ((__min (3, patternLengthSize) << 4) | (__min (3, sampleCountSize) << 2));
   m_dynamicHeader.push_back (0x70); m_dynamicHeader.push_back (0x72);
   m_dynamicHeader.push_back (0x6F); m_dynamicHeader.push_back (0x6C); // prol
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x01);
+  push32BitValue (1);
   if (patternLengthSize > 1)
   {
-    m_dynamicHeader.push_back ((m_rndAccPeriod >>  8) & UCHAR_MAX);
+    m_dynamicHeader.push_back ((numFramesFirstPeriod >> 8) & UCHAR_MAX);
   }
-  m_dynamicHeader.push_back   ( m_rndAccPeriod        & UCHAR_MAX);
+  m_dynamicHeader.push_back   ( numFramesFirstPeriod       & UCHAR_MAX);
   if (sampleCountSize > 2)
   {
     m_dynamicHeader.push_back ((m_frameCount >> 24) & UCHAR_MAX);
@@ -298,10 +251,10 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   }
   m_dynamicHeader.push_back   ( m_frameCount        & UCHAR_MAX);
 
-  m_dynamicHeader.push_back ( (0x01 << 4) | 0x00 ); // the first frame is a member of the 'prol' group and the remainder are not
+  m_dynamicHeader.push_back ((1 << 4) | 0); // first frame is a member of 'prol' group and remainder are not
   for (uint32_t pNdx = 1; pNdx < compPatternLength; pNdx++)
   {
-    m_dynamicHeader.push_back (0x00); // remaining 4-bit pairs of non-members
+    m_dynamicHeader.push_back (0); // remaining 4-bit pairs of nonmembers
   }
 
   const uint32_t moovAndMdatOverhead = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + 8;
@@ -316,12 +269,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
     m_mediaSize += headerPaddingLength;
   }
 
-  const uint32_t mdatAtomSize = m_mediaSize + 8;
-
-  m_dynamicHeader.push_back ((mdatAtomSize >> 24) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((mdatAtomSize >> 16) & UCHAR_MAX);
-  m_dynamicHeader.push_back ((mdatAtomSize >>  8) & UCHAR_MAX);
-  m_dynamicHeader.push_back ( mdatAtomSize        & UCHAR_MAX);
+  push32BitValue (m_mediaSize + 8);
   m_dynamicHeader.push_back (0x6D); m_dynamicHeader.push_back (0x64);
   m_dynamicHeader.push_back (0x61); m_dynamicHeader.push_back (0x74); // mdat
   for (uint32_t pNdx = 0; pNdx < headerPaddingLength; pNdx++)
@@ -342,7 +290,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
     }
     else
     {
-      m_dynamicHeader.push_back (0x00); // add padding bytes
+      m_dynamicHeader.push_back (0); // add one padding byte
     }
   }
 
@@ -365,15 +313,16 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for
   const unsigned frameCount = ((audioLength + m_frameLength - 1) / m_frameLength) + (flushFrameUsed ? 1 : 0);
 #endif
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
-  const unsigned finalChunk = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
-  const unsigned smpGrpSize = 10 /*sgpd*/ + (m_rndAccPeriod > UINT8_MAX ? 10 : 9) + ((m_rndAccPeriod + 1) >> 1) /*csgp*/;
+  const unsigned numFramesFirstPeriod = __min (frameCount, m_rndAccPeriod);
+  const unsigned numFramesFinalPeriod = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
+  const unsigned smpGrpSize = 10 /*sgpd*/ + (numFramesFirstPeriod > UINT8_MAX ? 10 : 9) + ((numFramesFirstPeriod + 1) >> 1) /*csgp*/;
   const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6 + 4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 6 + smpGrpSize +
 #ifdef NO_PREROLL_DATA
                               4 /*minimum stss*/ +
 #else
                               ((chunkCount + 1) >> 1) * 4 /*stss*/ +
 #endif
-                              (finalChunk == 0 ? 12 : 24) /*stsc*/ + chunkCount * 4 /*stco*/ + 8 /*mdat*/;
+                              (numFramesFinalPeriod == 0 ? 12 : 24) /*stsc*/ + chunkCount * 4 /*stco*/ + 8 /*mdat*/;
   int bytesWritten = 0;
 
   for (int i = estimHeaderSize; i > 0; i -= STAT_HEADER_SIZE)
@@ -426,7 +375,7 @@ unsigned BasicMP4Writer::open (const int mp4FileHandle, const unsigned sampleRat
   m_staticHeader[523] = (sampleRate >> 16) & UCHAR_MAX; // ?
   m_staticHeader[524] = (sampleRate >>  8) & UCHAR_MAX;
   m_staticHeader[525] = sampleRate & UCHAR_MAX;
-  m_staticHeader[556] = (uint8_t) numChannels * 3; // 6144 bit/chan
+  m_staticHeader[556] = (uint8_t) numChannels * 3; // = 6144 bits/channel
 
   memcpy (&m_staticHeader[571], ascBuf, 5 * sizeof (uint8_t));
 
@@ -454,16 +403,12 @@ unsigned BasicMP4Writer::open (const int mp4FileHandle, const unsigned sampleRat
   m_dynamicHeader.push_back (0x06); m_dynamicHeader.push_back (0x80); // esds
   m_dynamicHeader.push_back (0x80); m_dynamicHeader.push_back (0x80);
   m_dynamicHeader.push_back (0x01); m_dynamicHeader.push_back (0x02);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00); // + 4N
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (STSX_BSIZE + 4);
+  push32BitValue (STSX_BSIZE + 4); // + 4count
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x7A); // stsz
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00); // := N
-  m_dynamicHeader.push_back (0x00); m_dynamicHeader.push_back (0x00);
+  push32BitValue (0);
+  push32BitValue (0);
+  push32BitValue (0);
 
   return 0; // correct operation
 }

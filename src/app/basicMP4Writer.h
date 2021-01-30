@@ -1,11 +1,11 @@
 /* basicMP4Writer.h - header file for class with basic MPEG-4 file writing capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #ifndef _BASIC_MP4_WRITER_H_
@@ -43,6 +43,9 @@ private:
   uint8_t  m_staticHeader[STAT_HEADER_SIZE]; // fixed-size
   std::vector <uint8_t> m_dynamicHeader; // variable-sized
   std::vector <uint32_t> m_rndAccOffsets; // random access
+
+  // helper function
+  void push32BitValue (const uint32_t value); // to header
 
 public:
 
