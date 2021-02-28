@@ -16,8 +16,8 @@
 
 // constants, experimental macros
 #define CORE_MODE_FD            0
-#define ID_EXT_LOUDNESS_INFO    2
 #define ID_EXT_ELE_FILL         0
+#define ID_EXT_LOUDNESS_INFO    2
 #define SFB_PER_PRED_BAND       2
 
 // output bit-stream writer class
@@ -30,6 +30,10 @@ private:
   uint32_t     m_frameLength; // number of samples in full frame
   uint8_t      m_numSwbShort; // max. SFB count in short windows
   uint8_t*     m_uCharBuffer; // temporary buffer for ungrouping
+#ifndef NO_PREROLL_DATA
+  uint8_t      m_usacConfig[20]; // buffer for UsacConfig in IPF
+  uint16_t     m_usacConfigLen; // length of UsacConfig in bytes
+#endif
 
   // helper functions
   void     writeByteAlignment (); // write 0s for byte alignment
@@ -52,7 +56,8 @@ private:
 public:
 
   // constructor
-  BitStreamWriter () { m_auBitStream.reset (); m_frameLength = 0; m_numSwbShort = 0; m_uCharBuffer = nullptr; }
+  BitStreamWriter () { m_auBitStream.reset ();  m_frameLength = 0;  m_numSwbShort = 0;  m_uCharBuffer = nullptr;
+                       memset (m_usacConfig, 0, 20u);  m_usacConfigLen = 0; }
   // destructor
   ~BitStreamWriter() { m_auBitStream.reset (); }
   // public functions

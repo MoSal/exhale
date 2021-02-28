@@ -230,6 +230,33 @@ static void eaApplyDownsampler (int32_t* const pcmBuffer, int32_t* const resampl
 }
 #endif // ENABLE_RESAMPLING
 
+static uint32_t eaInitLoudnessInfo (const uint32_t defaultLoudStats, const bool loudnessInfoProvided,
+#ifdef EXHALE_APP_WCHAR
+                                    const wchar_t* const strings[])
+#else
+                                    const char* const strings[])
+#endif
+{
+  float loudnessInfo[2];
+  uint32_t qLoud, qPeak;
+
+  if (!loudnessInfoProvided) return defaultLoudStats;
+
+  for (int i = 0; i < 2; i++)
+  {
+    char cString[8];
+
+    for (int c = 0; c < 8; c++) cString[c] = char (strings[i][c]); // make sure string is of type char
+    cString[7] = '\0';
+    loudnessInfo[i] = (float) atof (cString);
+  }
+
+  qLoud = uint32_t (4.0f  * __max (0.0f, loudnessInfo[0] + 57.75f) + 0.5f); // quantize LUFS to 8 bits
+  qPeak = uint32_t (32.0f * __max (0.0f, 20.0f - loudnessInfo[1]) + 0.5f); // quantize peak to 12 bits
+
+  return EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11u;  // measurementSystem = 2, reliability = 3
+}
+
 // main routine
 #ifdef EXHALE_APP_WCHAR
 # ifdef __MINGW32__
@@ -242,7 +269,7 @@ int main (const int argc, char* argv[])
 {
   if (argc <= 0) return argc; // for safety
 
-  const bool readStdin = (argc == 3);
+  const bool readStdin = (argc == 3 || argc == 5);
   BasicWavReader wavReader;
   int32_t* inPcmData = nullptr;  // 24-bit WAVE audio input buffer
 #if ENABLE_RESAMPLING
@@ -360,7 +387,7 @@ int main (const int argc, char* argv[])
   fprintf_s (stdout, "  ---------------------------------------------------------------------\n\n");
 
   // check arg. list, print usage if needed
-  if ((argc < 3) || (argc > 4) || (argc > 1 && argv[1][1] != 0))
+  if ((argc < 3) || (argc > 6) || (argc > 1 && argv[1][1] != 0))
   {
     fprintf_s (stdout, " Copyright 2018-2021 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
@@ -481,12 +508,12 @@ int main (const int argc, char* argv[])
     inFileHandle = fileno (stdin);
 #endif
   }
-  else // argc = 4, open input file
+  else // argc = 4/6, open WAV file
   {
 #ifdef EXHALE_APP_WCHAR
-    const wchar_t* inFileName = argv[2];
+    const wchar_t* inFileName = argv[argc - 2];
 #else
-    const char* inFileName = argv[2];
+    const char* inFileName = argv[argc - 2];
 #endif
     uint16_t    inPathEnd  = 0;
 
@@ -510,11 +537,11 @@ int main (const int argc, char* argv[])
 #ifdef EXHALE_APP_WCHAR
       inFileName = (const wchar_t*) malloc ((exePathEnd + i + 1) * sizeof (wchar_t));  // 0-terminated
       memcpy ((void*) inFileName, argv[0], exePathEnd * sizeof (wchar_t));  // prepend executable path
-      memcpy ((void*)(inFileName + exePathEnd), argv[2], (i + 1) * sizeof (wchar_t));  // to file name
+      memcpy ((void*)(inFileName + exePathEnd), argv[argc - 2], (i + 1) * sizeof (wchar_t));// to name
 #else
       inFileName = (const char*) malloc ((exePathEnd + i + 1) * sizeof (char)); // 0-terminated string
       memcpy ((void*) inFileName, argv[0], exePathEnd * sizeof (char)); // prepend executable path ...
-      memcpy ((void*)(inFileName + exePathEnd), argv[2], (i + 1) * sizeof (char)); // ... to file name
+      memcpy ((void*)(inFileName + exePathEnd), argv[argc - 2], (i + 1) * sizeof (char)); //...to name
 #endif
     }
 
@@ -716,7 +743,7 @@ int main (const int argc, char* argv[])
 #endif
       const unsigned indepPeriod = (sampleRate < 48000 ? (sampleRate - 320) / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
       const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
-      uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
+      uint32_t byteCount = 0, bw = (numChannels < 7 ? eaInitLoudnessInfo (loudStats, argc > 4, &argv[2]) : 0);
       uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
       uint32_t headerRes = 0;
       // initialize LoudnessEstimator object
@@ -739,6 +766,7 @@ int main (const int argc, char* argv[])
       // init encoder, generate UsacConfig()
       memset (outAuData, 0, 108 * sizeof (uint8_t));  // max. allowed ASC + UC size
       i = exhaleEnc.initEncoder (outAuData, &bw); // bw stores actual ASC + UC size
+      if ((i == 256) && (argc > 4)) i = 0; // clear LUFS warning
 
       if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength
 #if ENABLE_SIMPLE_SBR
@@ -984,7 +1012,7 @@ int main (const int argc, char* argv[])
         const uint32_t qPeak = uint32_t (32.0f * (20.0f - 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) - EA_PEAK_NORM) + 0.5f);
 
         // recreate ASC + UC + loudness data
-        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11; // measurementSystem
+        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11u;
         memset (outAuData, 0, 108 * sizeof (uint8_t)); // max allowed ASC + UC size
         i = exhaleEnc.initEncoder (outAuData, &bw); // with finished loudnessInfo()
       }
@@ -1049,12 +1077,12 @@ mainFinish:
       {
         fprintf_s (stderr, " ERROR while trying to close stdin stream! Has it already been closed?\n\n");
       }
-      else  // argc = 4, file
+      else // argc = 4/6, WAV
       {
 #ifdef EXHALE_APP_WCHAR
-        fwprintf_s (stderr, L" ERROR while trying to close input file %s! Does it still exist?\n\n", argv[2]);
+        fwprintf_s (stderr, L" ERROR while trying to close input file %s! Does it still exist?\n\n", argv[argc - 2]);
 #else
-        fprintf_s (stderr, " ERROR while trying to close input file %s! Does it still exist?\n\n", argv[2]);
+        fprintf_s (stderr, " ERROR while trying to close input file %s! Does it still exist?\n\n", argv[argc - 2]);
 #endif
       }
     }
