@@ -1686,7 +1686,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         const unsigned  plNext = abs (m_tranLocNext[ci]) & ((1024 << m_shiftValSBR) - 1);
         const unsigned  sfNext = (m_tempAnaNext[ci] >> 24) & UCHAR_MAX;
         const unsigned  tfNext = (m_tempAnaNext[ci] >> 16) & UCHAR_MAX;
-        const unsigned tThresh = UCHAR_MAX * (__max (plCurr, plNext) < 614 /*0.6 * 1024*/ ? 16 : 15 - (m_bitRateMode >> 2));
+        const unsigned tThresh = UCHAR_MAX * (__max (plCurr, plNext) < 614 /*0.6 * 1024*/ ? 16 : 15 - (m_bitRateMode >> 3));
 
         tsCurr[ch] = (m_tempAnaCurr[ci] /*R*/) & UCHAR_MAX;
         tsNext[ch] = (m_tempAnaNext[ci] >>  8) & UCHAR_MAX;

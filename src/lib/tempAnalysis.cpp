@@ -1,11 +1,11 @@
 /* tempAnalysis.cpp - source file for class providing temporal analysis of PCM signals
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -154,6 +154,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
     int      splitPtL   = 0;
     int      splitPtC   = halfFrameOffset;
     int      splitPtR   = nSamplesInFrame;
+    uint64_t ue[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; // sub-fr. unit energies
     unsigned uL0 = abs (chSig[splitPtL    ] - chSigM1[splitPtL    ]);
     unsigned uL1 = abs (chSig[splitPtC - 1] - chSigM1[splitPtC - 1]);
     unsigned uR0 = abs (chSig[splitPtC    ] - chSigM1[splitPtC    ]);
@@ -164,7 +165,6 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
     {
       /*LF*/int32_t* lrSig = &lrCoreTimeSignals[ch][resamplerOffset >> sbrShift];
       const int32_t* hrSig = &timeSignals[ch][resamplerOffset];
-      /*MF*/uint64_t ue[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; // unit energies
       int64_t* const rPrev = m_filtSampPrev[ch];
       uint64_t     subSumL = 0, subSumM = 0, subSumH = 0;
 
@@ -366,6 +366,18 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
         maxAbsValR = maxHfrLevR;
         m_maxAbsHpPrev[ch] = m_maxHfLevPrev[ch];
       }
+      else
+      {
+        memset (ue, 0, 8 * sizeof (uint64_t));
+        for (u = nSamplesInFrame - 1; u > 0; u--) ue[u >> 8] += abs (chSig[u] - chSigM1[u]);
+
+        sumAbsValL = ue[0];
+        sumAbsValR = (uint64_t) maxAbsValL + (uint64_t) maxAbsValR;
+        for (u = (nSamplesInFrame >> 8) - 1; u > 0; u--) sumAbsValL = __min (sumAbsValL, ue[u]);
+
+        u = maxAbsValR;
+        if (sumAbsValL < sumAbsValR * (1u + (nSamplesInFrame >> 10)) && m_maxAbsHpPrev[ch] > TA_EPS) m_maxAbsHpPrev[ch] = TA_EPS;
+      }
       m_transientLoc[ch] = packTransLocWithPitchLag (maxAbsValL, maxAbsValR, m_maxAbsHpPrev[ch],
                                                      maxAbsIdxL, maxAbsIdxR, __max (1, pLagBestR));
       // update stats history for this channel
@@ -376,7 +388,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
     } // if sumAbsValL == 0 && sumAbsValR == 0
 
     if (applyResampler) m_maxHfLevPrev[ch] = maxHfrLevR;
-  } // for ch
+  } // ch
 
   return 0; // no error
 }

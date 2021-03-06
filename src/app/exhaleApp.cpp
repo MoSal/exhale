@@ -677,8 +677,7 @@ int main (const int argc, char* argv[])
 
   // enforce executable specific constraints
   i = __min (USHRT_MAX, wavReader.getSampleRate ());
-  if ((wavReader.getNumChannels () > 3 || coreSbrFrameLengthIndex >= 3) && (i == 57600 || i == 51200 || i == 40000 || i == 38400 ||
-      i == 34150 || i == 28800 || i == 25600 || i == 20000 || i == 19200 || i == 17075 || i == 14400 || i == 12800 || i == 9600))
+  if ((wavReader.getNumChannels () > 3 || coreSbrFrameLengthIndex >= 3) && (i == 57600 || i == 38400 || i == 19200)) // BL USAC
   {
     fprintf_s (stderr, " ERROR: exhale does not support %d-channel coding with %d Hz sampling rate.\n\n", wavReader.getNumChannels (), i);
 

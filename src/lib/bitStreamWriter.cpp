@@ -821,7 +821,7 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
   writeByteAlignment ();  // flush bytes
   auLen = __min (18u + fli, bitCount >> 3);
 #ifndef NO_PREROLL_DATA
-  m_usacConfigLen = uint16_t (__max (9, auLen - ucOffset)); // excl. ASC payload
+  m_usacConfigLen = uint16_t (__max (15, auLen - ucOffset)); // excl ASC payload
   memcpy (m_usacConfig, &m_auBitStream.stream.at (ucOffset), auLen - ucOffset);
 #endif
   memcpy (audioConfig,  &m_auBitStream.stream.front (), auLen);
