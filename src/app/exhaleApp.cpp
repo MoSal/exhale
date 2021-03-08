@@ -1016,6 +1016,13 @@ int main (const int argc, char* argv[])
         bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11u;
         memset (outAuData, 0, 108 * sizeof (uint8_t)); // max allowed ASC + UC size
         i = exhaleEnc.initEncoder (outAuData, &bw); // with finished loudnessInfo()
+#ifndef NO_PREROLL_DATA
+        if (i == 0)
+        {
+          i = __min (USHRT_MAX, wavReader.getSampleRate ());
+          i = (uint16_t) mp4Writer.updateIPFs (outAuData, bw, (i == 57600 || i == 38400 || i == 19200 /*BL USAC*/ ? 6 : 3));
+        }
+#endif
       }
       // mean & max. bit-rate of encoded AUs
       br = uint32_t (((actualLength >> 1) + 8 * (byteCount + 4 * (int64_t) mp4Writer.getFrameCount ()) * sampleRate) / actualLength);

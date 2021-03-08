@@ -87,6 +87,20 @@ int BasicMP4Writer::addFrameAU (const uint8_t* byteBuf, const uint32_t byteCount
   if (((m_frameCount++) % m_rndAccPeriod) == 0) // add RAP to list (stco)
   {
     m_rndAccOffsets.push_back (m_mediaSize);
+#ifndef NO_PREROLL_DATA
+    if (((m_frameCount - 1u) % (m_rndAccPeriod << 1)) == 0)  // every 2nd
+    {
+      if ((byteBuf[0] & 0xE0) == 0xC0) // IPF?
+      {
+        // byte-offset of UsacConfig() in AU (excl. first 5 config bits!)
+        m_ipfCfgOffsets.push_back (byteBuf[0] == 0xDF && (byteBuf[1] & 0xE0) == 0xE0 ? 5 : 3);
+      }
+      else // 3-bit ID is missing, not an IPF!
+      {
+        m_ipfCfgOffsets.push_back (0);
+      }
+    }
+#endif
   }
   m_mediaSize += byteCount;
 
@@ -425,6 +439,37 @@ void BasicMP4Writer::reset (const unsigned frameLength /*= 0*/, const unsigned p
   m_sampleRate   = 0;
   m_dynamicHeader.clear ();
   m_rndAccOffsets.clear ();
+#ifndef NO_PREROLL_DATA
+  m_ipfCfgOffsets.clear ();
+#endif
 
   if (m_fileHandle != -1) _SEEK (m_fileHandle, 0, 0 /*SEEK_SET*/);
 }
+
+#ifndef NO_PREROLL_DATA
+int BasicMP4Writer::updateIPFs (const uint8_t* ascUcBuf, const uint32_t ascUcLength, const uint32_t ucOffset)
+{
+  const uint8_t bw = uint8_t (ascUcLength - ucOffset);
+  int bytesWritten = 0, configsWritten = 0;
+
+  if ((m_fileHandle == -1) || (ascUcBuf == nullptr) || (ascUcLength == 0) || (ascUcLength <= ucOffset))
+  {
+    return 1; // invalid file handle or IPF config parameter
+  }
+
+  // write updated UsacConfig() to AudioPreRoll() extensions
+  for (uint32_t i = 0; i < (uint32_t) m_ipfCfgOffsets.size (); i++)
+  {
+    const uint32_t configOffset = m_ipfCfgOffsets.at (i);
+
+    if (configOffset > 0) // this AU is an IPF
+    {
+      _SEEK (m_fileHandle, m_rndAccOffsets.at (i << 1) + m_mediaOffset + configOffset, 0 /*SEEK_SET*/);
+      bytesWritten += _WRITE (m_fileHandle, &ascUcBuf[ucOffset], bw);
+      configsWritten++;
+    }
+  }
+
+  return (bytesWritten != configsWritten * bw ? 1 : 0);
+}
+#endif
