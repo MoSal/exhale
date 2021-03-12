@@ -15,5 +15,5 @@
 # define EXHALELIB_VERSION_MINOR "1"
 #endif
 #ifndef EXHALELIB_VERSION_BUGFIX
-# define EXHALELIB_VERSION_BUGFIX ".3" // "RC" or ".0", ".1", ...
+# define EXHALELIB_VERSION_BUGFIX ".4" // "RC" or ".0", ".1", ...
 #endif

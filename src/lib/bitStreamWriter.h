@@ -32,9 +32,8 @@ private:
   uint8_t*     m_uCharBuffer; // temporary buffer for ungrouping
 #ifndef NO_PREROLL_DATA
   uint8_t      m_usacConfig[20]; // buffer for UsacConfig in IPF
-  uint16_t     m_usacConfigLen; // length of UsacConfig in bytes
+  uint16_t     m_usacConfigLen;
 #endif
-
   // helper functions
   void     writeByteAlignment (); // write 0s for byte alignment
   unsigned writeChannelWiseIcsInfo (const IcsInfo& icsInfo); // ics_info()
@@ -57,7 +56,10 @@ public:
 
   // constructor
   BitStreamWriter () { m_auBitStream.reset ();  m_frameLength = 0;  m_numSwbShort = 0;  m_uCharBuffer = nullptr;
-                       memset (m_usacConfig, 0, 20u);  m_usacConfigLen = 0; }
+#ifndef NO_PREROLL_DATA
+                       memset (m_usacConfig, 0, 20);  m_usacConfigLen = 0;
+#endif
+    }
   // destructor
   ~BitStreamWriter() { m_auBitStream.reset (); }
   // public functions

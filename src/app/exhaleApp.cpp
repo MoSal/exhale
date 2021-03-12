@@ -46,7 +46,7 @@
 
 // constants, experimental macros
 #if LE_ACCURATE_CALC
-#define EA_LOUD_INIT  16384u  // for methodDefinition = program loudness
+#define EA_LOUD_INIT  16384u  // bsSamplePeakLevel = 0 & methodValue = 0
 #else
 #define EA_LOUD_INIT  16399u  // bsSamplePeakLevel = 0 & methodValue = 0
 #endif
@@ -230,33 +230,6 @@ static void eaApplyDownsampler (int32_t* const pcmBuffer, int32_t* const resampl
 }
 #endif // ENABLE_RESAMPLING
 
-static uint32_t eaInitLoudnessInfo (const uint32_t defaultLoudStats, const bool loudnessInfoProvided,
-#ifdef EXHALE_APP_WCHAR
-                                    const wchar_t* const strings[])
-#else
-                                    const char* const strings[])
-#endif
-{
-  float loudnessInfo[2];
-  uint32_t qLoud, qPeak;
-
-  if (!loudnessInfoProvided) return defaultLoudStats;
-
-  for (int i = 0; i < 2; i++)
-  {
-    char cString[8];
-
-    for (int c = 0; c < 8; c++) cString[c] = char (strings[i][c]); // make sure string is of type char
-    cString[7] = '\0';
-    loudnessInfo[i] = (float) atof (cString);
-  }
-
-  qLoud = uint32_t (4.0f * __max (0.0f, __min (63.75f, 57.75f + loudnessInfo[0])) + 0.5f);  // 8b LUFS
-  qPeak = uint32_t (32.f * __max (0.0f, __min (127.97f, 20.0f - loudnessInfo[1])) + 0.5f); // 12b dBFS
-
-  return EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11u;  // measurementSystem = 2, reliability = 3
-}
-
 // main routine
 #ifdef EXHALE_APP_WCHAR
 # ifdef __MINGW32__
@@ -269,7 +242,7 @@ int main (const int argc, char* argv[])
 {
   if (argc <= 0) return argc; // for safety
 
-  const bool readStdin = (argc == 3 || argc == 5);
+  const bool readStdin = (argc == 3);
   BasicWavReader wavReader;
   int32_t* inPcmData = nullptr;  // 24-bit WAVE audio input buffer
 #if ENABLE_RESAMPLING
@@ -387,7 +360,7 @@ int main (const int argc, char* argv[])
   fprintf_s (stdout, "  ---------------------------------------------------------------------\n\n");
 
   // check arg. list, print usage if needed
-  if ((argc < 3) || (argc > 6) || (argc > 1 && argv[1][1] != 0))
+  if ((argc < 3) || (argc > 4) || (argc > 1 && argv[1][1] != 0))
   {
     fprintf_s (stdout, " Copyright 2018-2021 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
@@ -401,9 +374,9 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, EXHALE_TEXT_BLUE " Usage:\t" EXHALE_TEXT_INIT);
 #endif
 #ifdef EXHALE_APP_WCHAR
-    fwprintf_s (stdout, L"%s preset [LUFS dBFS] [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
+    fwprintf_s (stdout, L"%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
 #else
-    fprintf_s (stdout, "%s preset [LUFS dBFS] [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
+    fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
 #endif
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
     fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
@@ -420,8 +393,6 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, " \t     (a-g)  low-complexity compliant xHE-AAC with SBR at 12*#+36 kbit/s\n");
 # endif
 #endif
-    fprintf_s (stdout, "\n LUFS               BS.1770 program loudness level in range -57.75..6, optional\n");
-    fprintf_s (stdout, "\n dBFS               sample (not true) peak level in range -107.97..20, optional\n");
     fprintf_s (stdout, "\n inputWaveFile.wav  lossless WAVE audio input, read from stdin if not specified\n\n");
     fprintf_s (stdout, " outputMP4File.m4a  encoded MPEG-4 bit-stream, extension should be .m4a or .mp4\n\n\n");
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
@@ -510,7 +481,7 @@ int main (const int argc, char* argv[])
     inFileHandle = fileno (stdin);
 #endif
   }
-  else // argc = 4/6, open WAV file
+  else // argc = 4, open input file
   {
 #ifdef EXHALE_APP_WCHAR
     const wchar_t* inFileName = argv[argc - 2];
@@ -744,7 +715,7 @@ int main (const int argc, char* argv[])
 #endif
       const unsigned indepPeriod = (sampleRate < 48000 ? (sampleRate - 320) / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
       const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
-      uint32_t byteCount = 0, bw = (numChannels < 7 ? eaInitLoudnessInfo (loudStats, argc > 4, &argv[2]) : 0);
+      uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
       uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
       uint32_t headerRes = 0;
       // initialize LoudnessEstimator object
@@ -767,7 +738,6 @@ int main (const int argc, char* argv[])
       // init encoder, generate UsacConfig()
       memset (outAuData, 0, 108 * sizeof (uint8_t));  // max. allowed ASC + UC size
       i = exhaleEnc.initEncoder (outAuData, &bw); // bw stores actual ASC + UC size
-      if ((i == 256) && (argc > 4)) i = 0; // clear LUFS warning
 
       if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength, startLength
 #if ENABLE_SIMPLE_SBR
@@ -1013,7 +983,7 @@ int main (const int argc, char* argv[])
         const uint32_t qPeak = uint32_t (32.0f * (20.0f - 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) - EA_PEAK_NORM) + 0.5f);
 
         // recreate ASC + UC + loudness data
-        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11u;
+        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11; // measurementSystem
         memset (outAuData, 0, 108 * sizeof (uint8_t)); // max allowed ASC + UC size
         i = exhaleEnc.initEncoder (outAuData, &bw); // with finished loudnessInfo()
 #ifndef NO_PREROLL_DATA
@@ -1085,7 +1055,7 @@ mainFinish:
       {
         fprintf_s (stderr, " ERROR while trying to close stdin stream! Has it already been closed?\n\n");
       }
-      else // argc = 4/6, WAV
+      else  // argc = 4, file
       {
 #ifdef EXHALE_APP_WCHAR
         fwprintf_s (stderr, L" ERROR while trying to close input file %s! Does it still exist?\n\n", argv[argc - 2]);
