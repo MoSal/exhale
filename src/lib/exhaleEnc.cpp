@@ -1691,7 +1691,6 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         tsCurr[ch] = (m_tempAnaCurr[ci] /*R*/) & UCHAR_MAX;
         tsNext[ch] = (m_tempAnaNext[ci] >>  8) & UCHAR_MAX;
         // save maximum spectral flatness of current and neighboring frames for quantization
-     // m_specFlatPrev[ci] = __max (m_specFlatPrev[ci], (m_specAnaCurr[ci] >> 16) & UCHAR_MAX);
         m_tempAnaCurr [ci] = (m_tempAnaCurr[ci] & 0xFFFFFF) | (__max (sfCurr, __max (m_specFlatPrev[ci], sfNext)) << 24);
         m_specFlatPrev[ci] = (uint8_t) sfCurr;
 
@@ -2155,7 +2154,9 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   if ((errorValue == 0) && (audioConfigBuffer != nullptr)) // save UsacConfig() for writeout
   {
     const uint32_t loudnessInfo = (audioConfigBytes ? *audioConfigBytes : 0);
-
+#if 1 //FULL_FRM_LOOKAHEAD
+    if (*audioConfigBuffer > 0) m_frameCount--; // to skip 1 frame
+#endif
     errorValue = m_outStream.createAudioConfig (m_frequencyIdx, m_frameLength != CCFL_1024, chConf, m_numElements,
                                                 elementTypeConfig[chConf], loudnessInfo,
 #if !RESTRICT_TO_AAC

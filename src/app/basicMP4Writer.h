@@ -53,7 +53,7 @@ private:
 public:
 
   // constructor
-  BasicMP4Writer () { m_fileHandle = -1;  reset (); }
+  BasicMP4Writer () { m_fileHandle = -1;  reset (0, 0, 0, 0); }
   // destructor
 #ifdef NO_PREROLL_DATA
   ~BasicMP4Writer() { m_dynamicHeader.clear (); m_rndAccOffsets.clear (); }
@@ -65,12 +65,12 @@ public:
   int finishFile (const unsigned avgBitrate, const unsigned maxBitrate, const uint32_t audioLength,
                   const uint32_t modifTime = 0, const uint8_t* ascBuf = nullptr);
   unsigned getFrameCount () const { return m_frameCount; }
-  int initHeader (const uint32_t audioLength);
+  int initHeader (const uint32_t audioLength, const unsigned extraDelay);
   unsigned open  (const int mp4FileHandle, const unsigned sampleRate,  const unsigned numChannels,
                   const unsigned bitDepth, const unsigned frameLength, const unsigned pregapLength,
                   const unsigned raPeriod, const uint8_t* ascBuf,      const unsigned ascSize,
                   const uint32_t creatTime = 0, const char vbrQuality = 0);
-  void     reset (const unsigned frameLength = 0, const unsigned pregapLength = 0, const unsigned raPeriod = 0);
+  void     reset (const unsigned frameLength, const unsigned pregapLength, const unsigned raPeriod, const unsigned sampleRate);
 #ifndef NO_PREROLL_DATA
   int updateIPFs (const uint8_t* ascUcBuf, const uint32_t ascUcLength, const uint32_t ucOffset);
 #endif

@@ -316,16 +316,9 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   return bytesWritten;
 }
 
-int BasicMP4Writer::initHeader (const uint32_t audioLength) // reserve bytes for header in file
+int BasicMP4Writer::initHeader (const uint32_t audioLength, const unsigned extraDelay)
 {
-  /* NOTE: the following condition is, as far as I can tell, correct, but some decoders with DRC processing
-  may decode too few samples with it. Hence, I disabled it. See also corresponding NOTE in exhaleApp.cpp */
-  const bool flushFrameUsed = true; // ((audioLength + m_pregapLength) % m_frameLength) > 0;
-#ifdef NO_PREROLL_DATA
-  const unsigned frameCount = ((audioLength + m_frameLength - 1) / m_frameLength) + (flushFrameUsed ? 2 : 1);
-#else
-  const unsigned frameCount = ((audioLength + m_frameLength - 1) / m_frameLength) + (flushFrameUsed ? 1 : 0);
-#endif
+  const unsigned frameCount = (audioLength + m_pregapLength - extraDelay + m_sampleRate / 200u + m_frameLength - 1u) / m_frameLength;
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
   const unsigned numFramesFirstPeriod = __min (frameCount, m_rndAccPeriod);
   const unsigned numFramesFinalPeriod = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
@@ -366,7 +359,7 @@ unsigned BasicMP4Writer::open (const int mp4FileHandle, const unsigned sampleRat
   }
 
   m_fileHandle = mp4FileHandle;
-  reset (frameLength, pregapLength, __min (USHRT_MAX, raPeriod));
+  reset (frameLength, pregapLength, __min (USHRT_MAX, raPeriod), sampleRate);
 
   // create fixed-length 576-byte part of MPEG-4 file header
   memcpy (m_staticHeader, staticHeaderTemplate, STAT_HEADER_SIZE * sizeof (uint8_t));
@@ -427,7 +420,7 @@ unsigned BasicMP4Writer::open (const int mp4FileHandle, const unsigned sampleRat
   return 0; // correct operation
 }
 
-void BasicMP4Writer::reset (const unsigned frameLength /*= 0*/, const unsigned pregapLength /*= 0*/, const unsigned raPeriod /*= 0*/)
+void BasicMP4Writer::reset (const unsigned frameLength, const unsigned pregapLength, const unsigned raPeriod, const unsigned sampleRate)
 {
   m_ascSizeM5    = 0;
   m_frameCount   = 0;
@@ -436,7 +429,7 @@ void BasicMP4Writer::reset (const unsigned frameLength /*= 0*/, const unsigned p
   m_mediaSize    = 0; // total length of 'mdat' (access unit) payload in file
   m_pregapLength = pregapLength;
   m_rndAccPeriod = raPeriod;
-  m_sampleRate   = 0;
+  m_sampleRate   = sampleRate;
   m_dynamicHeader.clear ();
   m_rndAccOffsets.clear ();
 #ifndef NO_PREROLL_DATA

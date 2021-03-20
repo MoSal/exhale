@@ -118,9 +118,10 @@ unsigned BasicWavReader::readDataFloat16 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
+  const unsigned rest = ((frameCount >> (BWR_READ_FRACT - 1)) << (BWR_READ_FRACT - 1)) < frameCount ? 1 : 0;
   unsigned framesRead = 0;
 
-  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const int16_t* fBuf = (const int16_t*) tempBuf; // words
     const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
@@ -168,9 +169,10 @@ unsigned BasicWavReader::readDataFloat32 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
+  const unsigned rest = ((frameCount >> (BWR_READ_FRACT - 1)) << (BWR_READ_FRACT - 1)) < frameCount ? 1 : 0;
   unsigned framesRead = 0;
 
-  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const float*   fBuf = (const float*) tempBuf; // 4 bytes
     const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
@@ -216,9 +218,10 @@ unsigned BasicWavReader::readDataLnPcm08 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
+  const unsigned rest = ((frameCount >> (BWR_READ_FRACT - 1)) << (BWR_READ_FRACT - 1)) < frameCount ? 1 : 0;
   unsigned framesRead = 0;
 
-  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const uint8_t* iBuf = (const uint8_t*) tempBuf; // 1b
     const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
@@ -254,9 +257,10 @@ unsigned BasicWavReader::readDataLnPcm16 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
+  const unsigned rest = ((frameCount >> (BWR_READ_FRACT - 1)) << (BWR_READ_FRACT - 1)) < frameCount ? 1 : 0;
   unsigned framesRead = 0;
 
-  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const int16_t* iBuf = (const int16_t*) tempBuf; // words
     const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
@@ -292,9 +296,10 @@ unsigned BasicWavReader::readDataLnPcm24 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
+  const unsigned rest = ((frameCount >> (BWR_READ_FRACT - 1)) << (BWR_READ_FRACT - 1)) < frameCount ? 1 : 0;
   unsigned framesRead = 0;
 
-  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const uint8_t* iBuf = (const uint8_t*) tempBuf; // 3b
     const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
@@ -332,9 +337,10 @@ unsigned BasicWavReader::readDataLnPcm32 (const int fileHandle, int32_t* frameBu
                                           const unsigned chanCount, void* tempBuf)
 {
 #if BWR_BUFFERED_READ
+  const unsigned rest = ((frameCount >> (BWR_READ_FRACT - 1)) << (BWR_READ_FRACT - 1)) < frameCount ? 1 : 0;
   unsigned framesRead = 0;
 
-  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT); fract++)
+  for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const int32_t* iBuf = (const int32_t*) tempBuf; // dword
     const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
