@@ -764,7 +764,7 @@ int main (const int argc, char* argv[])
 
       if (!readStdin) // reserve space for MP4 file header. TODO: nasty, avoid this
       {
-        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, expectLength)), sbrEncDelay)) < 666)
+        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, expectLength)), sbrEncDelay >> 1)) < 666)
         {
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
           i = 3; // return value
@@ -910,14 +910,14 @@ int main (const int argc, char* argv[])
 # else
       const unsigned flushLength = (inFileLength - (enableUpsampler ? 32 : 0)) % inFrmLength;
 # endif
-      if ((flushLength == 0) || (flushLength + ((startLength * resampRatio) >> resampShift) - inFrmLength // flush
-                              + (enableUpsampler ? 32 : 0) + wavReader.getSampleRate () / 200 > inFrmLength))
+      if ((flushLength + ((startLength * resampRatio) >> resampShift) - inFrmLength + (enableUpsampler ? 32 : 0) + wavReader.getSampleRate () / 200 > inFrmLength
 #else
       const int64_t actualLength = wavReader.getDataBytesRead () / int64_t ((numChannels * inSampDepth) >> 3);
       const unsigned flushLength = actualLength % frameLength;
 
-      if ((flushLength == 0) || (flushLength + startLength - frameLength + sampleRate/200 > frameLength)) // flush
+      if ((flushLength + startLength - frameLength + sampleRate / 200 > frameLength
 #endif
+        - (sbrEncDelay >> 1)) || (flushLength == 0))  // flush trailing PCM samples
       {
         memset (inPcmData, 0, inFrameSize * numChannels);
 #if ENABLE_RESAMPLING
@@ -952,7 +952,7 @@ int main (const int argc, char* argv[])
       {
         int64_t pos = _SEEK (outFileHandle, 0, 1 /*SEEK_CUR*/);
 
-        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, actualLength)), sbrEncDelay)) < 666)
+        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, actualLength)), sbrEncDelay >> 1)) < 666)
         {
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
           i = 3; // return value
