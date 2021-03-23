@@ -764,7 +764,7 @@ int main (const int argc, char* argv[])
 
       if (!readStdin) // reserve space for MP4 file header. TODO: nasty, avoid this
       {
-        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, expectLength)), sbrEncDelay >> 1)) < 666)
+        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, expectLength)), sbrEncDelay >> 2)) < 666)
         {
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
           i = 3; // return value
@@ -905,19 +905,21 @@ int main (const int argc, char* argv[])
       const int64_t actualLength = (wavReader.getDataBytesRead () << resampShift) / int64_t ((numChannels * inSampDepth * resampRatio) >> 3);
       const int64_t inFileLength = wavReader.getDataBytesRead () / int64_t ((numChannels * inSampDepth) >> 3);
       const unsigned inFrmLength = (frameLength * resampRatio) >> resampShift;
+      const unsigned resampDelay = (enableUpsampler ? 32 : (enableResampler ? 64 : 0));
 # ifdef FULL_FRM_LOOKAHEAD
-      const unsigned flushLength = (inFileLength - (enableUpsampler ? 32 : 0) + inPadLength) % inFrmLength;
+      const unsigned flushLength = (inFileLength - resampDelay + inPadLength) % inFrmLength;
 # else
-      const unsigned flushLength = (inFileLength - (enableUpsampler ? 32 : 0)) % inFrmLength;
+      const unsigned flushLength = (inFileLength - resampDelay) % inFrmLength;
 # endif
-      if ((flushLength + ((startLength * resampRatio) >> resampShift) - inFrmLength + (enableUpsampler ? 32 : 0) + wavReader.getSampleRate () / 200 > inFrmLength
+      if ((flushLength + ((startLength * resampRatio) >> resampShift) - inFrmLength + resampDelay
+        - (resampDelay >> 6)/*rnd*/+ wavReader.getSampleRate () / 200 > inFrmLength
 #else
       const int64_t actualLength = wavReader.getDataBytesRead () / int64_t ((numChannels * inSampDepth) >> 3);
       const unsigned flushLength = actualLength % frameLength;
 
       if ((flushLength + startLength - frameLength + sampleRate / 200 > frameLength
 #endif
-        - (sbrEncDelay >> 1)) || (flushLength == 0))  // flush trailing PCM samples
+        - ((2 + sbrEncDelay * 3) >> 2)) || (flushLength == 0))  // flush last frame
       {
         memset (inPcmData, 0, inFrameSize * numChannels);
 #if ENABLE_RESAMPLING
@@ -952,7 +954,7 @@ int main (const int argc, char* argv[])
       {
         int64_t pos = _SEEK (outFileHandle, 0, 1 /*SEEK_CUR*/);
 
-        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, actualLength)), sbrEncDelay >> 1)) < 666)
+        if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, actualLength)), sbrEncDelay >> 2)) < 666)
         {
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
           i = 3; // return value
