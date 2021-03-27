@@ -31,6 +31,7 @@
 #include <share.h>
 #endif
 
+#define EXHALE_APP_WIN
 #if defined (_MSC_VER) || defined (__INTEL_COMPILER) || defined (__MINGW32__) // || defined (__GNUC__)
 #define EXHALE_APP_WCHAR
 #define _GETCWD _wgetcwd
@@ -61,7 +62,7 @@
 #define EA_LOUD_NORM -42.25f  // -100 + 57.75 of ISO 23003-4, Table A.48
 #define EA_PEAK_NORM -96.33f  // 20 * log10(2^-16), 16-bit normalization
 #define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
-#define EA_USE_WORK_DIR    (defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64))  // 1: use working instead of app directory
+#define EA_USE_WORK_DIR    1  // 1: use working instead of app directory
 #define ENABLE_RESAMPLING  1  // 1: automatic input up- and downsampling
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 #if ENABLE_RESAMPLING
@@ -240,10 +241,7 @@ static void eaApplyDownsampler (int32_t* const pcmBuffer, int32_t* const resampl
 
 // main routine
 #ifdef EXHALE_APP_WCHAR
-# ifdef __MINGW32__
-extern "C"
-# endif
-int wmain (const int argc, wchar_t* argv[])
+extern "C" int wmain (const int argc, wchar_t* argv[])
 #else
 int main (const int argc, char* argv[])
 #endif
@@ -274,16 +272,16 @@ int main (const int argc, char* argv[])
   uint16_t compatibleExtensionFlag = 0; // 0: disabled, 1: enabled
   uint16_t coreSbrFrameLengthIndex = 1; // 0: 768, 1: 1024 samples
   uint16_t variableCoreBitRateMode = 3; // 0: lowest... 9: highest
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
   const HANDLE hConsole = GetStdHandle (STD_OUTPUT_HANDLE);
   CONSOLE_SCREEN_BUFFER_INFO csbi;
 #endif
 
   for (i = 0; (exePath[i] != 0) && (i < USHRT_MAX); i++)
   {
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
     if (exePath[i] == '\\') exePathEnd = i + 1;
-#else // Linux, MacOS, Unix
+#else
     if (exePath[i] == '/' ) exePathEnd = i + 1;
 #endif
   }
@@ -335,7 +333,7 @@ int main (const int argc, char* argv[])
   // print program header with compile info
   fprintf_s (stdout, "\n  ---------------------------------------------------------------------\n");
   fprintf_s (stdout, " | ");
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
   GetConsoleScreenBufferInfo (hConsole, &csbi); // save the text color
   SetConsoleTextAttribute (hConsole, EXHALE_TEXT_PINK); fprintf_s (stdout, "exhale");
   SetConsoleTextAttribute (hConsole, csbi.wAttributes); fprintf_s (stdout, " - ");
@@ -351,7 +349,7 @@ int main (const int argc, char* argv[])
   SetConsoleTextAttribute (hConsole, csbi.wAttributes); fprintf_s (stdout, "ow-complexity ");
   SetConsoleTextAttribute (hConsole, EXHALE_TEXT_PINK); fprintf_s (stdout, "e");
   SetConsoleTextAttribute (hConsole, csbi.wAttributes); fprintf_s (stdout, "ncoder |\n");
-#else // Linux, MacOS, Unix
+#else
   fprintf_s (stdout, EXHALE_TEXT_PINK "exhale");
   fprintf_s (stdout, EXHALE_TEXT_INIT " - ");
   fprintf_s (stdout, EXHALE_TEXT_PINK "e");
@@ -386,7 +384,7 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, " This software is made available under the exhale Copyright License and comes\n");
     fprintf_s (stdout, " with ABSOLUTELY NO WARRANTY. This software may be subject to other third-party\n");
     fprintf_s (stdout, " rights, including patent rights. No such rights are granted under this License.\n\n");
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
     SetConsoleTextAttribute (hConsole, EXHALE_TEXT_BLUE); fprintf_s (stdout, " Usage:\t");
     SetConsoleTextAttribute (hConsole, csbi.wAttributes);
 #else
@@ -397,7 +395,7 @@ int main (const int argc, char* argv[])
 #else
     fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
 #endif
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
     fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
 # if XHE_AAC_LOW_DELAY
     fprintf_s (stdout, " \t     (A-J)  41ms low-delay compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
@@ -414,7 +412,7 @@ int main (const int argc, char* argv[])
 #endif
     fprintf_s (stdout, "\n inputWaveFile.wav  lossless WAVE audio input, read from stdin if not specified\n\n");
     fprintf_s (stdout, " outputMP4File.m4a  encoded MPEG-4 bit-stream, extension should be .m4a or .mp4\n\n\n");
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
     SetConsoleTextAttribute (hConsole, EXHALE_TEXT_BLUE); fprintf_s (stdout, " Notes:\t");
     SetConsoleTextAttribute (hConsole, csbi.wAttributes);
 #else
@@ -424,13 +422,13 @@ int main (const int argc, char* argv[])
 #if !EA_USE_WORK_DIR
     if (exePathEnd > 0)
     {
-# if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+# ifdef EXHALE_APP_WIN
 #  ifdef EXHALE_APP_WCHAR
       fwprintf_s (stdout, L" \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", exePath);
 #  else
       fprintf_s (stdout, " \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", exePath);
 #  endif
-# else // Linux, MacOS, Unix
+# else
       fprintf_s (stdout, " \tUse filename prefix ./ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", exePath);
 # endif
     }
@@ -477,7 +475,7 @@ int main (const int argc, char* argv[])
 
   if (readStdin) // configure stdin
   {
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
     inFileHandle = _fileno (stdin);
     if (_setmode (inFileHandle, _O_RDONLY | _O_BINARY) == -1)
     {
@@ -486,7 +484,7 @@ int main (const int argc, char* argv[])
 
       goto mainFinish; // stdin setup error
     }
-#else // Linux, MacOS, Unix
+#else
     inFileHandle = fileno (stdin);
 #endif
   }
@@ -501,9 +499,9 @@ int main (const int argc, char* argv[])
 
     for (i = 0; (inFileName[i] != 0) && (i < USHRT_MAX); i++)
     {
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
       if (inFileName[i] == '\\') inPathEnd = i + 1;
-#else // Linux, MacOS, Unix
+#else
       if (inFileName[i] == '/' ) inPathEnd = i + 1;
 #endif
     }
@@ -521,9 +519,9 @@ int main (const int argc, char* argv[])
       {
         exePath = currPath;
         exePathEnd = (uint16_t) __min (USHRT_MAX - 1, _STRLEN (currPath));
-# if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+# ifdef EXHALE_APP_WIN
         if (currPath[exePathEnd] != '\\') currPath[exePathEnd++] = '\\';
-# else // Linux, MacOS, Unix
+# else
         if (currPath[exePathEnd] != '/' ) currPath[exePathEnd++] = '/';
 # endif
       }
@@ -539,9 +537,9 @@ int main (const int argc, char* argv[])
 #endif
     }
 
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
     if (_SOPENS (&inFileHandle, inFileName, _O_RDONLY | _O_SEQUENTIAL | _O_BINARY, _SH_DENYWR, _S_IREAD) != 0)
-#else // Linux, MacOS, Unix
+#else
     if ((inFileHandle = ::open (inFileName, O_RDONLY, 0666)) == -1)
 #endif
     {
@@ -558,9 +556,9 @@ int main (const int argc, char* argv[])
     if (inPathEnd == 0) free ((void*) inFileName);
   }
 
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
   if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : _filelengthi64 (inFileHandle)) != 0) ||
-#else // Linux, MacOS, Unix
+#else
   if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : lseek (inFileHandle, 0, 2 /*SEEK_END*/)) != 0) ||
 #endif
       (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && coreSbrFrameLengthIndex >= 3) || (wavReader.getNumChannels () >= 7))
@@ -586,9 +584,9 @@ int main (const int argc, char* argv[])
 
     for (i = 0; (outFileName[i] != 0) && (i < USHRT_MAX); i++)
     {
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
       if (outFileName[i] == '\\') outPathEnd = i + 1;
-#else // Linux, MacOS, Unix
+#else
       if (outFileName[i] == '/' ) outPathEnd = i + 1;
 #endif
     }
@@ -630,9 +628,9 @@ int main (const int argc, char* argv[])
       {
         exePath = currPath;
         exePathEnd = (uint16_t) __min (USHRT_MAX - 1, _STRLEN (currPath));
-# if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+# ifdef EXHALE_APP_WIN
         if (currPath[exePathEnd] != '\\') currPath[exePathEnd++] = '\\';
-# else // Linux, MacOS, Unix
+# else
         if (currPath[exePathEnd] != '/' ) currPath[exePathEnd++] = '/';
 # endif
       }
@@ -649,9 +647,9 @@ int main (const int argc, char* argv[])
     }
 
     i = (readStdin ? O_RDWR : O_WRONLY);
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
     if (_SOPENS (&outFileHandle, outFileName, i | _O_SEQUENTIAL | _O_CREAT | _O_EXCL | _O_BINARY, _SH_DENYRD, _S_IWRITE) != 0)
-#else // Linux, MacOS, Unix
+#else
     if ((outFileHandle = ::open (outFileName, i | O_CREAT | O_EXCL, 0666)) == -1)
 #endif
     {
@@ -798,7 +796,7 @@ int main (const int argc, char* argv[])
       }
       if (!readStdin && (mod3Percent > 0))
       {
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#ifdef EXHALE_APP_WIN
         SetConsoleTextAttribute (hConsole, EXHALE_TEXT_BLUE);
         fprintf_s (stdout, " Progress: ");
         SetConsoleTextAttribute (hConsole, csbi.wAttributes); // initial text color
