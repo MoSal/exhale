@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <time.h>
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#include <direct.h>
 #include <windows.h>
 #ifdef __MINGW32__
 #include <share.h>
@@ -32,13 +33,20 @@
 
 #if defined (_MSC_VER) || defined (__INTEL_COMPILER) || defined (__MINGW32__) // || defined (__GNUC__)
 #define EXHALE_APP_WCHAR
+#define _GETCWD _wgetcwd
 #define _SOPENS _wsopen_s
+#define _STRLEN  wcslen
 #else
+#define _GETCWD  _getcwd
 #define _SOPENS  _sopen_s
+#define _STRLEN  strlen
 #endif
 #define EXHALE_TEXT_BLUE  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_GREEN)
 #define EXHALE_TEXT_PINK  (FOREGROUND_INTENSITY | FOREGROUND_BLUE | FOREGROUND_RED)
 #else // Linux, MacOS, Unix
+#define _GETCWD  getcwd
+#define _STRLEN  strlen
+
 #define EXHALE_TEXT_INIT  "\x1b[0m"
 #define EXHALE_TEXT_BLUE  "\x1b[36m"
 #define EXHALE_TEXT_PINK  "\x1b[35m"
@@ -53,6 +61,7 @@
 #define EA_LOUD_NORM -42.25f  // -100 + 57.75 of ISO 23003-4, Table A.48
 #define EA_PEAK_NORM -96.33f  // 20 * log10(2^-16), 16-bit normalization
 #define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
+#define EA_USE_WORK_DIR    (defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64))  // 1: use working instead of app directory
 #define ENABLE_RESAMPLING  1  // 1: automatic input up- and downsampling
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 #if ENABLE_RESAMPLING
@@ -250,6 +259,17 @@ int main (const int argc, char* argv[])
   uint8_t* outAuData = nullptr;  // access unit (AU) output buffer
   int   inFileHandle = -1, outFileHandle = -1;
   uint32_t loudStats = EA_LOUD_INIT;  // valid empty loudness data
+#ifdef EXHALE_APP_WCHAR
+# if EA_USE_WORK_DIR
+  wchar_t*      currPath = nullptr;
+# endif
+  const wchar_t* exePath = argv[0];
+#else
+# if EA_USE_WORK_DIR
+  char*         currPath = nullptr;
+# endif
+  const char*    exePath = argv[0];
+#endif
   uint16_t i, exePathEnd = 0;
   uint16_t compatibleExtensionFlag = 0; // 0: disabled, 1: enabled
   uint16_t coreSbrFrameLengthIndex = 1; // 0: 768, 1: 1024 samples
@@ -259,18 +279,18 @@ int main (const int argc, char* argv[])
   CONSOLE_SCREEN_BUFFER_INFO csbi;
 #endif
 
-  for (i = 0; (argv[0][i] != 0) && (i < USHRT_MAX); i++)
+  for (i = 0; (exePath[i] != 0) && (i < USHRT_MAX); i++)
   {
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-    if (argv[0][i] == '\\') exePathEnd = i + 1;
+    if (exePath[i] == '\\') exePathEnd = i + 1;
 #else // Linux, MacOS, Unix
-    if (argv[0][i] == '/' ) exePathEnd = i + 1;
+    if (exePath[i] == '/' ) exePathEnd = i + 1;
 #endif
   }
 #ifdef EXHALE_APP_WCHAR
-  const wchar_t* const exeFileName = argv[0] + exePathEnd;
+  const wchar_t* const exeFileName = exePath + exePathEnd;
 #else
-  const char* const exeFileName = argv[0] + exePathEnd;
+  const char* const exeFileName = exePath + exePathEnd;
 #endif
   if ((exeFileName[0] == 0) || (i == USHRT_MAX))
   {
@@ -401,18 +421,20 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, EXHALE_TEXT_BLUE " Notes:\t" EXHALE_TEXT_INIT);
 #endif
     fprintf_s (stdout, "The above bit-rates are for stereo and change for mono or multichannel.\n");
+#if !EA_USE_WORK_DIR
     if (exePathEnd > 0)
     {
-#if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
-# ifdef EXHALE_APP_WCHAR
-      fwprintf_s (stdout, L" \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", argv[0]);
-# else
-      fprintf_s (stdout, " \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", argv[0]);
+# if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+#  ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stdout, L" \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", exePath);
+#  else
+      fprintf_s (stdout, " \tUse filename prefix .\\ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", exePath);
+#  endif
+# else // Linux, MacOS, Unix
+      fprintf_s (stdout, " \tUse filename prefix ./ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", exePath);
 # endif
-#else // Linux, MacOS, Unix
-      fprintf_s (stdout, " \tUse filename prefix ./ for the current directory if this executable was\n\tcalled with a path (call: %s).\n", argv[0]);
-#endif
     }
+#endif
     return 0;  // no arguments, which is OK
   }
 
@@ -494,13 +516,25 @@ int main (const int argc, char* argv[])
 
     if (inPathEnd == 0) // name has no path
     {
+#if EA_USE_WORK_DIR
+      if ((currPath == nullptr) && (currPath = _GETCWD (NULL, 1)) != nullptr)
+      {
+        exePath = currPath;
+        exePathEnd = (uint16_t) __min (USHRT_MAX - 1, _STRLEN (currPath));
+# if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+        if (currPath[exePathEnd] != '\\') currPath[exePathEnd++] = '\\';
+# else // Linux, MacOS, Unix
+        if (currPath[exePathEnd] != '/' ) currPath[exePathEnd++] = '/';
+# endif
+      }
+#endif
 #ifdef EXHALE_APP_WCHAR
       inFileName = (const wchar_t*) malloc ((exePathEnd + i + 1) * sizeof (wchar_t));  // 0-terminated
-      memcpy ((void*) inFileName, argv[0], exePathEnd * sizeof (wchar_t));  // prepend executable path
+      memcpy ((void*) inFileName, exePath, exePathEnd * sizeof (wchar_t));  // prepend executable path
       memcpy ((void*)(inFileName + exePathEnd), argv[argc - 2], (i + 1) * sizeof (wchar_t));// to name
 #else
       inFileName = (const char*) malloc ((exePathEnd + i + 1) * sizeof (char)); // 0-terminated string
-      memcpy ((void*) inFileName, argv[0], exePathEnd * sizeof (char)); // prepend executable path ...
+      memcpy ((void*) inFileName, exePath, exePathEnd * sizeof (char)); // prepend executable path ...
       memcpy ((void*)(inFileName + exePathEnd), argv[argc - 2], (i + 1) * sizeof (char)); //...to name
 #endif
     }
@@ -591,13 +625,25 @@ int main (const int argc, char* argv[])
 
     if (outPathEnd == 0) // name has no path
     {
+#if EA_USE_WORK_DIR
+      if ((currPath != exePath) && (currPath = _GETCWD (NULL, 1)) != nullptr)
+      {
+        exePath = currPath;
+        exePathEnd = (uint16_t) __min (USHRT_MAX - 1, _STRLEN (currPath));
+# if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
+        if (currPath[exePathEnd] != '\\') currPath[exePathEnd++] = '\\';
+# else // Linux, MacOS, Unix
+        if (currPath[exePathEnd] != '/' ) currPath[exePathEnd++] = '/';
+# endif
+      }
+#endif
 #ifdef EXHALE_APP_WCHAR
       outFileName = (const wchar_t*) malloc ((exePathEnd + i + 1) * sizeof (wchar_t));  // 0-terminated
-      memcpy ((void*) outFileName, argv[0], exePathEnd * sizeof (wchar_t));  // prepend executable path
+      memcpy ((void*) outFileName, exePath, exePathEnd * sizeof (wchar_t));  // prepend executable path
       memcpy ((void*)(outFileName + exePathEnd), argv[argc - 1], (i + 1) * sizeof (wchar_t));// to name
 #else
       outFileName = (const char*) malloc ((exePathEnd + i + 1) * sizeof (char)); // 0-terminated string
-      memcpy ((void*) outFileName, argv[0], exePathEnd * sizeof (char)); // prepend executable path ...
+      memcpy ((void*) outFileName, exePath, exePathEnd * sizeof (char)); // prepend executable path ...
       memcpy ((void*)(outFileName + exePathEnd), argv[argc - 1], (i + 1) * sizeof (char)); //...to name
 #endif
     }
@@ -624,7 +670,7 @@ int main (const int argc, char* argv[])
 
   // enforce executable specific constraints
   i = __min (USHRT_MAX, wavReader.getSampleRate ());
-  if ((wavReader.getNumChannels () > 3 || coreSbrFrameLengthIndex >= 3) && (i == 57600 || i == 38400 || i == 19200)) // BL USAC
+  if ((wavReader.getNumChannels () > 3 || coreSbrFrameLengthIndex >= 3) && (i == 57600 || i == 38400 || i == 28800 || i == 19200)) // BL USAC
   {
     fprintf_s (stderr, " ERROR: exhale does not support %d-channel coding with %d Hz sampling rate.\n\n", wavReader.getNumChannels (), i);
 
@@ -1047,6 +1093,13 @@ mainFinish:
   {
     free ((void*) inPcmRsmp);
     inPcmRsmp = nullptr;
+  }
+#endif
+#if EA_USE_WORK_DIR
+  if (currPath != nullptr)
+  {
+    free ((void*) currPath);
+    currPath = nullptr;
   }
 #endif
   if (outAuData != nullptr)

@@ -87,7 +87,8 @@ Usage
 
 This section describes how to run the exhale application either from
 the command-line or using a third-party software providing WAVE data
-to exhale's standard input pipe (stdin), such as foobar2000.
+to exhale's standard input pipe (stdin), such as foobar2000. See the
+Wiki at https://gitlab.com/ecodis/exhale/-/wikis/home for more info.
 
 ### Standalone (command-line):
 
