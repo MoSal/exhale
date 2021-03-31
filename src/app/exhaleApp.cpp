@@ -34,6 +34,9 @@
 #define EXHALE_APP_WIN
 #if defined (_MSC_VER) || defined (__INTEL_COMPILER) || defined (__MINGW32__) // || defined (__GNUC__)
 #define EXHALE_APP_WCHAR
+#ifndef _O_U16TEXT
+# define _O_U16TEXT   0x20000
+#endif
 #define _GETCWD _wgetcwd
 #define _SOPENS _wsopen_s
 #define _STRLEN  wcslen
@@ -286,14 +289,19 @@ int main (const int argc, char* argv[])
 #endif
   }
 #ifdef EXHALE_APP_WCHAR
+  _setmode (_fileno (stderr), _O_U16TEXT);
+
   const wchar_t* const exeFileName = exePath + exePathEnd;
 #else
   const char* const exeFileName = exePath + exePathEnd;
 #endif
   if ((exeFileName[0] == 0) || (i == USHRT_MAX))
   {
+#ifdef EXHALE_APP_WCHAR
+    fwprintf_s (stderr, L" ERROR reading executable name or path: the string is invalid!\n\n");
+#else
     fprintf_s (stderr, " ERROR reading executable name or path: the string is invalid!\n\n");
-
+#endif
     return 32768;  // bad executable string
   }
 
@@ -479,7 +487,11 @@ int main (const int argc, char* argv[])
     inFileHandle = _fileno (stdin);
     if (_setmode (inFileHandle, _O_RDONLY | _O_BINARY) == -1)
     {
+# ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR while trying to set stdin to binary mode! Has stdin been closed?\n\n");
+# else
       fprintf_s (stderr, " ERROR while trying to set stdin to binary mode! Has stdin been closed?\n\n");
+# endif
       inFileHandle = -1;
 
       goto mainFinish; // stdin setup error
@@ -507,8 +519,11 @@ int main (const int argc, char* argv[])
     }
     if ((inFileName[0] == 0) || (i == USHRT_MAX))
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR reading input file name or path: the string is invalid!\n\n");
+#else
       fprintf_s (stderr, " ERROR reading input file name or path: the string is invalid!\n\n");
-
+#endif
       goto mainFinish;  // bad input string
     }
 
@@ -563,11 +578,18 @@ int main (const int argc, char* argv[])
 #endif
       (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && coreSbrFrameLengthIndex >= 3) || (wavReader.getNumChannels () >= 7))
   {
+#ifdef EXHALE_APP_WCHAR
+    fwprintf_s (stderr, L" ERROR while trying to open WAVE file: invalid or unsupported audio format!\n\n");
+#else
     fprintf_s (stderr, " ERROR while trying to open WAVE file: invalid or unsupported audio format!\n\n");
-
+#endif
     if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && coreSbrFrameLengthIndex >= 3)
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" The sampling rate is %d kHz but xHE-AAC with SBR requires at least 24 kHz.\n\n", wavReader.getSampleRate () / 1000);
+#else
       fprintf_s (stderr, " The sampling rate is %d kHz but xHE-AAC with SBR requires at least 24 kHz.\n\n", wavReader.getSampleRate () / 1000);
+#endif
     }
     i = 8192; // return value
 
@@ -592,8 +614,11 @@ int main (const int argc, char* argv[])
     }
     if ((outFileName[0] == 0) || (i == USHRT_MAX))
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR reading output file name or path: the string is invalid!\n\n");
+#else
       fprintf_s (stderr, " ERROR reading output file name or path: the string is invalid!\n\n");
-
+#endif
       goto mainFinish;  // bad output string
     }
 
@@ -604,7 +629,11 @@ int main (const int argc, char* argv[])
         (coreSbrFrameLengthIndex < 3))
     {
       i = (variableCoreBitRateMode > 4 ? 96 : __min (64, 32 + variableCoreBitRateMode * 12));
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR during encoding! Input sample rate must be <=%d kHz for preset mode %d!\n\n", i, variableCoreBitRateMode);
+#else
       fprintf_s (stderr, " ERROR during encoding! Input sample rate must be <=%d kHz for preset mode %d!\n\n", i, variableCoreBitRateMode);
+#endif
       i = 4096; // return value
 
       goto mainFinish; // ask for resampling
@@ -618,7 +647,11 @@ int main (const int argc, char* argv[])
       }
       else
 #endif
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" WARNING: The input sampling rate should be 32 kHz or less for preset mode %d!\n\n", variableCoreBitRateMode);
+#else
       fprintf_s (stderr, " WARNING: The input sampling rate should be 32 kHz or less for preset mode %d!\n\n", variableCoreBitRateMode);
+#endif
     }
 
     if (outPathEnd == 0) // name has no path
@@ -670,8 +703,11 @@ int main (const int argc, char* argv[])
   i = __min (USHRT_MAX, wavReader.getSampleRate ());
   if ((wavReader.getNumChannels () > 3 || coreSbrFrameLengthIndex >= 3) && (i == 57600 || i == 38400 || i == 28800 || i == 19200)) // BL USAC
   {
+#ifdef EXHALE_APP_WCHAR
+    fwprintf_s (stderr, L" ERROR: exhale does not support %d-channel coding with %d Hz sampling rate.\n\n", wavReader.getNumChannels (), i);
+#else
     fprintf_s (stderr, " ERROR: exhale does not support %d-channel coding with %d Hz sampling rate.\n\n", wavReader.getNumChannels (), i);
-
+#endif
     goto mainFinish; // encoder config error
   }
   else
@@ -710,7 +746,11 @@ int main (const int argc, char* argv[])
 #endif
     if ((inPcmData == nullptr) || (outAuData == nullptr))
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR while trying to allocate dynamic memory! Not enough free RAM available!\n\n");
+#else
       fprintf_s (stderr, " ERROR while trying to allocate dynamic memory! Not enough free RAM available!\n\n");
+#endif
       i = 2048; // return value
 
       goto mainFinish; // memory alloc error
@@ -728,7 +768,11 @@ int main (const int argc, char* argv[])
     if (wavReader.read (inPcmData, frameLength) != frameLength) // full first frame
 #endif
     {
+#ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR while trying to encode input audio data! The audio stream is too short!\n\n");
+#else
       fprintf_s (stderr, " ERROR while trying to encode input audio data! The audio stream is too short!\n\n");
+#endif
       i = 1024; // return value
 
       goto mainFinish; // audio is too short
@@ -780,7 +824,11 @@ int main (const int argc, char* argv[])
 #endif
                               , indepPeriod, outAuData, bw, (time (nullptr) + 2082844800) & UINT_MAX, (char) variableCoreBitRateMode)) != 0)
       {
+#ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L" ERROR while trying to initialize xHE-AAC encoder: error value %d was returned!\n\n", i);
+#else
         fprintf_s (stderr, " ERROR while trying to initialize xHE-AAC encoder: error value %d was returned!\n\n", i);
+#endif
         i <<= 2; // return value
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -810,7 +858,11 @@ int main (const int argc, char* argv[])
       {
         if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, expectLength)), sbrEncDelay >> 2)) < 666)
         {
+#ifdef EXHALE_APP_WCHAR
+          fwprintf_s (stderr, L"\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
+#else
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
+#endif
           i = 3; // return value
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -830,7 +882,11 @@ int main (const int argc, char* argv[])
       // initial frame, encode look-ahead AU
       if ((bw = exhaleEnc.encodeLookahead ()) < 3)
       {
+#ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L"\n ERROR while trying to create first xHE-AAC frame: error value %d was returned!\n\n", bw);
+#else
         fprintf_s (stderr, "\n ERROR while trying to create first xHE-AAC frame: error value %d was returned!\n\n", bw);
+#endif
         i = 2; // return value
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -848,7 +904,11 @@ int main (const int argc, char* argv[])
       // leading frame, actual look-ahead AU
       if ((bw = exhaleEnc.encodeFrame ()) < 3)
       {
+#ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L"\n ERROR while trying to create first xHE-AAC frame: error value %d was returned!\n\n", bw);
+#else
         fprintf_s (stderr, "\n ERROR while trying to create first xHE-AAC frame: error value %d was returned!\n\n", bw);
+#endif
         i = 2; // return value
 # if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -891,7 +951,11 @@ int main (const int argc, char* argv[])
         // frame coding loop, encode next AU
         if ((bw = exhaleEnc.encodeFrame ()) < 3)
         {
+#ifdef EXHALE_APP_WCHAR
+          fwprintf_s (stderr, L"\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
+#else
           fprintf_s (stderr, "\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
+#endif
           i = 2; // return value
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -927,7 +991,11 @@ int main (const int argc, char* argv[])
       // end of coding loop, encode final AU
       if ((bw = exhaleEnc.encodeFrame ()) < 3)
       {
+#ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L"\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
+#else
         fprintf_s (stderr, "\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
+#endif
         i = 2; // return value
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -975,7 +1043,11 @@ int main (const int argc, char* argv[])
         // flush remaining audio into new AU
         if ((bw = exhaleEnc.encodeFrame ()) < 3)
         {
+#ifdef EXHALE_APP_WCHAR
+          fwprintf_s (stderr, L"\n ERROR while trying to create last xHE-AAC frame: error value %d was returned!\n\n", bw);
+#else
           fprintf_s (stderr, "\n ERROR while trying to create last xHE-AAC frame: error value %d was returned!\n\n", bw);
+#endif
           i = 2; // return value
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -1000,7 +1072,11 @@ int main (const int argc, char* argv[])
 
         if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, actualLength)), sbrEncDelay >> 2)) < 666)
         {
+#ifdef EXHALE_APP_WCHAR
+          fwprintf_s (stderr, L"\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
+#else
           fprintf_s (stderr, "\n ERROR while trying to write MPEG-4 bit-stream header: stopped after %d bytes!\n\n", headerRes);
+#endif
           i = 3; // return value
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -1068,9 +1144,15 @@ int main (const int argc, char* argv[])
 
       if (!readStdin && (actualLength != expectLength || bw != headerRes))
       {
+#ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L" WARNING: %lld sample frames read but %lld sample frames expected!\n", (long long) actualLength, (long long) expectLength);
+        if (bw != headerRes) fwprintf_s (stderr, L"          The encoded MPEG-4 bit-stream is likely to be unreadable!\n");
+        fwprintf_s (stderr, L"\n");
+#else
         fprintf_s (stderr, " WARNING: %lld sample frames read but %lld sample frames expected!\n", (long long) actualLength, (long long) expectLength);
         if (bw != headerRes) fprintf_s (stderr, "          The encoded MPEG-4 bit-stream is likely to be unreadable!\n");
         fprintf_s (stderr, "\n");
+#endif
       }
 #if USE_EXHALELIB_DLL
       exhaleDelete (&exhaleEnc);
@@ -1112,7 +1194,11 @@ mainFinish:
     {
       if (readStdin) // stdin
       {
+#ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L" ERROR while trying to close stdin stream! Has it already been closed?\n\n");
+#else
         fprintf_s (stderr, " ERROR while trying to close stdin stream! Has it already been closed?\n\n");
+#endif
       }
       else  // argc = 4, file
       {
