@@ -1,11 +1,11 @@
 ## makefile.base - common make-file for compiling exhale on Linux and MacOS platforms
- # written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ # written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  #
  # The copyright in this software is being made available under the exhale Copyright License
  # and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  # party rights, including patent rights. No such rights are granted under this License.
  #
- # Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ # Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  ##
 
 ## verification of config parameter
@@ -50,6 +50,12 @@ ifeq ($(MM32), 1)
   CPPFLAGS+=-m32
 endif
 
+# setting of MacOSX compiler flags
+UNIVERSAL2?=0
+ifeq ($(UNIVERSAL2), 1)
+  CPPFLAGS+=-arch x86_64 -arch arm64 -mmacosx-version-min=10.9
+endif
+
 # debug and release compiler flags
 DEBUG_CPPFLAGS    = -g  -D_DEBUG
 RELEASE_CPPFLAGS  = -O3 -Wuninitialized
@@ -64,6 +70,11 @@ endif
 # setting of 32-bit linker flags
 ifeq ($(MM32), 1)
   ALL_LDFLAGS+=-m32
+endif
+
+# setting of MacOSX linker flags
+ifeq ($(UNIVERSAL2), 1)
+  ALL_LDFLAGS+=-arch x86_64 -arch arm64 -mmacosx-version-min=10.9
 endif
 
 # debug and release linker flags
