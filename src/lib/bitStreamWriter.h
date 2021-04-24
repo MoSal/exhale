@@ -16,8 +16,6 @@
 
 // constants, experimental macros
 #define CORE_MODE_FD            0
-#define ID_EXT_ELE_FILL         0
-#define ID_EXT_LOUDNESS_INFO    2
 #define SFB_PER_PRED_BAND       2
 
 // output bit-stream writer class
@@ -27,12 +25,15 @@ private:
 
   // member variables
   OutputStream m_auBitStream; // access unit bit-stream to write
-  uint32_t     m_frameLength; // number of samples in full frame
+  uint32_t     m_frameLength;
   uint8_t      m_numSwbShort; // max. SFB count in short windows
   uint8_t*     m_uCharBuffer; // temporary buffer for ungrouping
 #ifndef NO_PREROLL_DATA
   uint8_t      m_usacConfig[20]; // buffer for UsacConfig in IPF
   uint16_t     m_usacConfigLen;
+#endif
+#if !RESTRICT_TO_AAC
+  uint8_t      m_usacIpfState[6];
 #endif
   // helper functions
   void     writeByteAlignment (); // write 0s for byte alignment
@@ -43,7 +44,7 @@ private:
   unsigned writeFDChannelStream    (const CoreCoderData& elData, EntropyCoder& entrCoder, const unsigned ch,
                                     const int32_t* const mdctSignal, const uint8_t* const mdctQuantMag,
 #if !RESTRICT_TO_AAC
-                                    const bool timeWarping, const bool noiseFilling,
+                                    const bool timeWarping, const bool noiseFilling, uint8_t* ipfAuState,
 #endif
                                     const bool indepFlag = false);
   unsigned writeStereoCoreToolInfo (const CoreCoderData& elData, EntropyCoder& entrCoder,
@@ -55,9 +56,9 @@ private:
 public:
 
   // constructor
-  BitStreamWriter () { m_auBitStream.reset ();  m_frameLength = 0;  m_numSwbShort = 0;  m_uCharBuffer = nullptr;
+  BitStreamWriter () { m_auBitStream.reset (); m_frameLength = 0; m_numSwbShort = 0; m_uCharBuffer = nullptr;
 #ifndef NO_PREROLL_DATA
-                       memset (m_usacConfig, 0, 20);  m_usacConfigLen = 0;
+                       memset (m_usacConfig, 0, 20); m_usacConfigLen = 0; memset (m_usacIpfState, 0, 4);
 #endif
     }
   // destructor
@@ -79,7 +80,7 @@ public:
                               const uint32_t frameCount,          const uint32_t indepPeriod,
 #endif
                               const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
-                              unsigned char* const accessUnit,    const unsigned nSamplesInFrame = 1024);
+                              unsigned char* const accessUnit,    const unsigned nSamplesInFrame);
 }; // BitStreamWriter
 
 #endif // _BIT_STREAM_WRITER_H_

@@ -33,7 +33,7 @@ exhale is being made available under an open-source license which is
 based on the 3-clause BSD license but modified to address particular
 aspects dictated by the nature and the output of this application.
 
-The license text and release notes for the current version 1.1.4 can
+The license text and release notes for the current version 1.1.5 can
 be found in the `include` subdirectory of the exhale distribution.
 
 
@@ -115,9 +115,10 @@ the application directory (here, `./Input.wav` or `.\Input.wav`).
 After downloading from www.foobar2000.org and starting the software,
 load the desired input audio files into the playlist. Mark all files
 to be converted, rightclick on one of them, and select `Convert` ->
-`...`. In the newly opened window click on `Output format` and, once
-the window content changed, on `Add New`. Then select `Custom` under
-"Encoder" and enter the following information:
+`...`. In the newly opened window click on `Output format`. Once the
+window content changed, double-click on entry `AAC (exhale)` and set
+up the conversion. If that entry does not exist, click on `Add New`,
+select `Custom` under "Encoder" and enter the following information:
 
 - *Encoder file:* exhale.exe (including path to the executable)
 - *Extension:* m4a

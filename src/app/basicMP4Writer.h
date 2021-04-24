@@ -37,7 +37,8 @@ private:
   unsigned m_frameLength;
   uint32_t m_mediaOffset;  // offset of first mdat payload
   uint32_t m_mediaSize; // number of bytes of mdat content
-  unsigned m_pregapLength; // encoder look-ahead, pre-roll
+  unsigned m_preLength;   // encoding look-ahead, pre-roll
+  unsigned m_postLength; // decoding look-ahead, post-roll
   unsigned m_rndAccPeriod;  // random-access (RA) interval
   unsigned m_sampleRate;
   uint8_t  m_staticHeader[STAT_HEADER_SIZE]; // fixed-size

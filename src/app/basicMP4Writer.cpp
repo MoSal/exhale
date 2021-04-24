@@ -112,7 +112,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
 {
   const unsigned numFramesFirstPeriod = __min (m_frameCount, m_rndAccPeriod);
   const unsigned numFramesFinalPeriod = (m_frameCount <= m_rndAccPeriod ? 0 : m_frameCount % m_rndAccPeriod);
-  const unsigned numSamplesFinalFrame = (audioLength + m_pregapLength) % m_frameLength;
+  const unsigned numSamplesFinalFrame = (audioLength + m_preLength + m_postLength) % m_frameLength;
   const uint32_t stszAtomSize = STSX_BSIZE + 4 /*bytes for sampleSize*/ + m_frameCount * 4;
   const uint32_t stscAtomSize = STSX_BSIZE + (numFramesFinalPeriod == 0 ? 12 : 24);
   const uint32_t stcoAtomSize = STSX_BSIZE + (uint32_t) m_rndAccOffsets.size () * 4;
@@ -165,12 +165,12 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   header4Byte[164>>2] = trakAtomSize;
   header4Byte[200>>2] = numSamplesBE;
   header4Byte[300>>2] = mdiaAtomSize;
-  header4Byte[332>>2] = toBigEndian (audioLength + m_pregapLength);
+  header4Byte[332>>2] = toBigEndian (audioLength + m_preLength);
   header4Byte[376>>2] = minfAtomSize;
   header4Byte[288>>2] = numSamplesBE;  // elst
   header4Byte[436>>2] = stblAtomSize;
   header4Byte[460>>2] = toBigEndian (m_frameCount - 1); // 2 entries used
-  header4Byte[472>>2] = toBigEndian (numSamplesFinalFrame == 0 ? m_frameLength : numSamplesFinalFrame);
+  header4Byte[472>>2] = toBigEndian ((numSamplesFinalFrame == 0 ? m_frameLength : __max (m_postLength + 1u, numSamplesFinalFrame)) - m_postLength);
 
   m_staticHeader[558] = ((maxBitrate >> 24) & UCHAR_MAX);
   m_staticHeader[559] = ((maxBitrate >> 16) & UCHAR_MAX);
@@ -318,7 +318,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
 
 int BasicMP4Writer::initHeader (const uint32_t audioLength, const unsigned extraDelay)
 {
-  const unsigned frameCount = (audioLength + m_pregapLength - extraDelay + m_sampleRate / 200u + m_frameLength - 1u) / m_frameLength;
+  const unsigned frameCount = (audioLength + m_preLength + m_postLength - extraDelay + m_frameLength - 1u) / m_frameLength;
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
   const unsigned numFramesFirstPeriod = __min (frameCount, m_rndAccPeriod);
   const unsigned numFramesFinalPeriod = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
@@ -337,6 +337,7 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength, const unsigned extra
     bytesWritten += _WRITE (m_fileHandle, m_staticHeader, __min (i, STAT_HEADER_SIZE));
   }
   m_mediaOffset = bytesWritten; // first frame will be written at this offset
+  m_postLength -= __min (m_postLength, extraDelay);
 
   return bytesWritten;
 }
@@ -427,7 +428,8 @@ void BasicMP4Writer::reset (const unsigned frameLength, const unsigned pregapLen
   m_frameLength  = frameLength;
   m_mediaOffset  = 0;  // offset of first 'mdat' data byte serialized to file
   m_mediaSize    = 0; // total length of 'mdat' (access unit) payload in file
-  m_pregapLength = pregapLength;
+  m_preLength    = pregapLength;
+  m_postLength   = sampleRate / 200u;
   m_rndAccPeriod = raPeriod;
   m_sampleRate   = sampleRate;
   m_dynamicHeader.clear ();

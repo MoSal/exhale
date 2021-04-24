@@ -742,7 +742,7 @@ int main (const int argc, char* argv[])
 #else
       const unsigned sampleRate  = wavReader.getSampleRate ();
 #endif
-      const unsigned indepPeriod = (sampleRate < 48000 ? (sampleRate - 320) / frameLength : 45 /*for 50-Hz video, use 50 for 60-Hz video*/);
+      const unsigned indepPeriod = (sampleRate < 48000 ? sampleRate - 320u : 50u << 10u) / frameLength;
       const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
       uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
       uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate

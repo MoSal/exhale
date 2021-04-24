@@ -1,5 +1,6 @@
 ## makefile - master user make-file for compiling exhale on Linux and MacOS platforms
  # written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
+ # Universal 2 support for macOS added by Christopher Snowhill on hydrogenaud.io in 2021
  #
  # The copyright in this software is being made available under the exhale Copyright License
  # and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-

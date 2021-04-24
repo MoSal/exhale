@@ -80,6 +80,71 @@ static uint8_t getNumEnvBits (const int32_t int32Value, const uint8_t maxBitCoun
   return bits;
 }
 
+#ifndef NO_PREROLL_DATA
+static unsigned getLowRatePreRollAU (uint8_t* const byteBuffer, const CoreCoderData& elData, EntropyCoder& entrCoder,
+                                     const uint8_t* ipfAuState, const uint8_t sbrRatioShiftValue)
+{
+  const uint16_t et = elData.elementType & 1;
+  const bool notLFE = (elData.elementType < ID_USAC_LFE);
+  const bool useSbr = (sbrRatioShiftValue > 0 && notLFE);
+  unsigned byteCount;
+
+  if (ipfAuState[0] == 0) // create zero-spectrum AU
+  {
+    byteCount = (8 + et * 6) >> (useSbr ? 0 : 1);
+    memcpy (byteBuffer, zeroAu[et], byteCount);
+
+    if (notLFE) // write appropriate window_sequence
+    {
+      const USAC_WSEQ wsPrev0 = elData.icsInfoPrev[0].windowSequence;
+      const uint8_t wsPreRoll = uint8_t (wsPrev0 == EIGHT_SHORT || wsPrev0 == STOP_START ? LONG_START : wsPrev0);
+      // SCE/CPE: window_sequence @ offset 2/0, left-shifted by 2/0
+      byteBuffer[2 - 2 * et] |= wsPreRoll << (2 - 2 * et);
+    }
+  }
+  else // complete AU with only 1 non-zero MDCT line
+  {
+    OutputStream au;
+    unsigned ci = 0;
+
+    byteCount = ((unsigned) ipfAuState[0] << 1) | (ipfAuState[1] >> 7);
+    while (ci < byteCount) au.write (byteBuffer[ci++], 8);
+    au.heldBitCount = ipfAuState[1] & SCHAR_MAX;
+    au.heldBitChunk = ipfAuState[2];
+
+    if (ipfAuState[3] > 0)
+    {
+      const uint16_t li = ipfAuState[4]; // line idx
+      const uint16_t lg = __min (li + 56, (uint16_t) ipfAuState[3] << 2);
+
+      memset (byteBuffer, 0, lg); // MDCT line coder
+      byteBuffer[li] = ipfAuState[5] >> 1;
+      entrCoder.initWindowCoding (true);
+      entrCoder.arithCodeSigMagn (byteBuffer, 0, lg, true, &au);
+      if (byteBuffer[li]) au.write (ipfAuState[5] & 1, 1); // sign
+    }
+    au.write (0, 1);// fac_data_present, no fac_data
+
+    if (useSbr) // UsacSbrData()
+    {
+      au.write (1, 7);// SbrInfo(), sbrUseDfltHeader
+      if (et) au.write (1, 1); // sbr_data(), couple
+      au.write (0, 7);
+      au.write (0, et ? 31 : 17);
+#if ENABLE_INTERTES
+      au.write (0, et + 1);
+#endif
+    }
+
+    if (au.heldBitCount > 0) au.stream.push_back (au.heldBitChunk);
+    byteCount = (unsigned) au.stream.size ();
+    memcpy (byteBuffer, &au.stream.front (), byteCount);
+  }
+
+  return byteCount;
+}
+#endif // !NO_PREROLL_DATA
+
 static uint8_t getOptMsMaskModeValue (const uint8_t* const msUsed, const unsigned numWinGroups, const unsigned numSwbShort,
                                       const uint8_t    msMaskMode, const unsigned maxSfbSte)
 {
@@ -176,8 +241,8 @@ unsigned BitStreamWriter::writeChannelWiseSbrData (const int32_t* const sbrDataC
   }
 
   // sbr_invf(), assumes dflt_noise_bands < 3, i.e. 1-2 noise bands
-  i = 6 * nb - 9;
-  m_auBitStream.write (ch0 & i, nb); // 3 or 15-bit bs_invf_mode[0]
+  i = (1 << nb) - 1;
+  m_auBitStream.write (ch0 & i, nb); // 2- or 4-bit bs_invf_mode[0]
   if (stereo && !couple) m_auBitStream.write (ch1 & i, nb);
 
   // sbr_envelope() for mono/left channel, assumes bs_df_env[] == 0
@@ -360,7 +425,7 @@ unsigned BitStreamWriter::writeChannelWiseTnsData (const TnsData& tnsData, const
 unsigned BitStreamWriter::writeFDChannelStream (const CoreCoderData& elData, EntropyCoder& entrCoder, const unsigned ch,
                                                 const int32_t* const mdctSignal, const uint8_t* const mdctQuantMag,
 #if !RESTRICT_TO_AAC
-                                                const bool timeWarping, const bool noiseFilling,
+                                                const bool timeWarping, const bool noiseFilling, uint8_t* ipfAuState,
 #endif
                                                 const bool indepFlag /*= false*/)
 {
@@ -444,6 +509,9 @@ unsigned BitStreamWriter::writeFDChannelStream (const CoreCoderData& elData, Ent
     entrCoder.initWindowCoding (!eightShorts /*reset*/, eightShorts);
 
     if (!indepFlag) m_auBitStream.write (1, 1); // force reset
+#ifndef NO_PREROLL_DATA
+    if (ipfAuState) memset (ipfAuState, 0, 4);  // no spectrum
+#endif
   }
   else // not zeroed, nasty since SFB ungrouping may be needed
   {
@@ -491,6 +559,39 @@ unsigned BitStreamWriter::writeFDChannelStream (const CoreCoderData& elData, Ent
         }
         m_auBitStream.write (b, 1); // write adapted reset bit
       }
+#ifndef NO_PREROLL_DATA
+      if (ipfAuState && (w == 0))
+      {
+        b = (unsigned) m_auBitStream.stream.size ();
+
+        if (eightShorts || (b > 511) || !indepFlag)
+        {
+          memset (ipfAuState, 0, 4); // grouped or no residual
+        }
+        else
+        {
+          const int32_t* const winSig = &mdctSignal[grpOff[0]];
+          int32_t sigPk = 0;
+
+          ipfAuState[0] = uint8_t (b >> 1);
+          ipfAuState[1] = uint8_t ((b & 1) << 7) | m_auBitStream.heldBitCount;
+          ipfAuState[2] = m_auBitStream.heldBitChunk;
+          ipfAuState[3] = CLIP_UCHAR (lg >> 2);
+
+          for (b = i = 0; i < __min (256u, lg); i++)
+          {
+            if ((winMag[i] != 0) && (abs (winSig[i]) > sigPk))
+            {
+              sigPk = abs (winSig[i]);
+              b = i;
+            }
+          }
+          ipfAuState[4] = (uint8_t) b;
+          ipfAuState[5] = winMag[b] << 1;
+          if (winSig[b] > 0) ipfAuState[5] |= 1; // store sign of single peak
+        }
+      }
+#endif
       bitCount += entrCoder.arithCodeSigMagn (winMag, 0, lg, true, &m_auBitStream);
 
       if (eightShorts && (grpLen > 1))
@@ -800,7 +901,7 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
     const unsigned methodValueBits  = (methodDefinition == 7 ? 5 : (methodDefinition == 8 ? 2 : 8));
 
     m_auBitStream.write (0, 2); // numConfigExtensions
-    m_auBitStream.write (ID_EXT_LOUDNESS_INFO, 4);
+    m_auBitStream.write (2, 4); // ..EXT_LOUDNESS_INFO
     m_auBitStream.write (methodValueBits < 3 ? 7 : 8, 4); // usacConfigExtLength
 
     m_auBitStream.write (1, 12);// loudnessInfoCount=1
@@ -838,10 +939,13 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
                                             const uint32_t frameCount,          const uint32_t indepPeriod,
 #endif
                                             const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
-                                            unsigned char* const accessUnit,    const unsigned nSamplesInFrame /*= 1024*/)
+                                            unsigned char* const accessUnit,    const unsigned nSamplesInFrame)
 {
 #ifndef NO_PREROLL_DATA
   const uint8_t ipf = (frameCount == 1 ? 2 : ((frameCount % (indepPeriod << 1)) == 1 ? 1 : 0));
+#endif
+#if !RESTRICT_TO_AAC
+  uint8_t* ipfState = (frameCount > 0 && (frameCount % (indepPeriod << 1)) == 0 && numElements == 1 ? m_usacIpfState : nullptr);
 #endif
   unsigned bitCount = 1, ci = 0;
 
@@ -858,9 +962,11 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
     return 0; // invalid arguments error
   }
 #ifndef NO_PREROLL_DATA
-  if ((ipf == 2) || (ipf == 1 && (numElements > 1 || !noiseFilling[0])))
+  if (ipf)
   {
-    bitCount = __min (nSamplesInFrame << 2, (uint32_t) m_auBitStream.stream.size ());
+    bitCount = ((ipf == 2) || (ipf == 1 && (numElements > 1 || !noiseFilling[0]))
+                ? __min (nSamplesInFrame << 2, (unsigned) m_auBitStream.stream.size ())
+                : ((unsigned) m_usacIpfState[0] << 1) | (m_usacIpfState[1] >> 7));
     memcpy (tempBuffer, &m_auBitStream.stream.front (), bitCount); // prev fr AU
   }
 #endif
@@ -874,11 +980,10 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
   m_auBitStream.write (ipf ? 1 : 0, 1); // UsacExtElement, usacExtElementPresent
   if (ipf)
   {
-    const uint16_t idxPreRollExt = elementData[0]->elementType & 1;
     const bool lowRatePreRollExt = (ipf == 1 && numElements == 1 && noiseFilling[0]);
     const unsigned   extraLength = (m_usacConfigLen > 14 ? 4 : 3) + m_usacConfigLen;
-    const unsigned payloadLength = (lowRatePreRollExt ? (8 + idxPreRollExt * 6) >> (sbrRatioShiftValue > 0 ? 0 : 1) : bitCount) + extraLength; // in bytes
-
+    const unsigned payloadLength = (lowRatePreRollExt ? getLowRatePreRollAU (tempBuffer, *elementData[0], entropyCoder[0],
+                                    m_usacIpfState, sbrRatioShiftValue) : bitCount) + extraLength; // in bytes
     m_auBitStream.write (0, 1); // usacExtElementUseDefaultLength = 0 (variable)
     m_auBitStream.write (CLIP_UCHAR (payloadLength), 8);
     if (payloadLength > 254) m_auBitStream.write (payloadLength - 253, 16);
@@ -895,18 +1000,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
     m_auBitStream.write (1, 2); // numPreRollFrames, only one supported for now!
     m_auBitStream.write (payloadLength - extraLength, 16); // auLen
 
-    if (lowRatePreRollExt)
-    {
-      bitCount = payloadLength - extraLength;
-      memcpy (tempBuffer, zeroAu[idxPreRollExt], bitCount);
-      if (elementData[0]->elementType < ID_USAC_LFE)  // correct window_sequence
-      {
-        const USAC_WSEQ wsPrev0 = elementData[0]->icsInfoPrev[0].windowSequence;
-        const uint8_t wsPreRoll = uint8_t (wsPrev0 == EIGHT_SHORT || wsPrev0 == STOP_START ? LONG_START : wsPrev0);
-        // SCE/CPE: window_sequence at byte index 2/0, left-shifted by value 2/0
-        tempBuffer[2 - 2 * idxPreRollExt] |= wsPreRoll << (2 - 2 * idxPreRollExt);
-      }
-    }
+    if (lowRatePreRollExt) bitCount = payloadLength - extraLength;
     while (ci < bitCount) m_auBitStream.write (tempBuffer[ci++], 8); // write AU
     ci = 0;
     if (m_usacConfigLen > 14) m_auBitStream.write (0, 4); // pad end of ext data
@@ -933,7 +1027,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
         bitCount += writeFDChannelStream (*elData, entropyCoder[ci], 0,
                                           mdctSignals[ci], mdctQuantMag[ci],
 #if !RESTRICT_TO_AAC
-                                          tw_mdct[el], noiseFilling[el],
+                                          tw_mdct[el], noiseFilling[el], ipfState,
 #endif
                                           usacIndependencyFlag);
         if (sbrRatioShiftValue > 0) // UsacSbrData()
@@ -968,14 +1062,14 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
         bitCount += writeFDChannelStream (*elData, entropyCoder[ci], 0, // L
                                           mdctSignals[ci], mdctQuantMag[ci],
 #if !RESTRICT_TO_AAC
-                                          tw_mdct[el], noiseFilling[el],
+                                          tw_mdct[el], noiseFilling[el], nullptr,
 #endif
                                           usacIndependencyFlag);
         ci++;
         bitCount += writeFDChannelStream (*elData, entropyCoder[ci], 1, // R
                                           mdctSignals[ci], mdctQuantMag[ci],
 #if !RESTRICT_TO_AAC
-                                          tw_mdct[el], noiseFilling[el],
+                                          tw_mdct[el], noiseFilling[el], ipfState,
 #endif
                                           usacIndependencyFlag);
         if (sbrRatioShiftValue > 0) // UsacSbrData()
@@ -1002,7 +1096,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
         bitCount += writeFDChannelStream (*elData, entropyCoder[ci], 0,
                                           mdctSignals[ci], mdctQuantMag[ci],
 #if !RESTRICT_TO_AAC
-                                          false, false,
+                                          false, false, ipfState,
 #endif
                                           usacIndependencyFlag);
         ci++;
