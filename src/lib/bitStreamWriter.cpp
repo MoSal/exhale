@@ -128,12 +128,12 @@ static unsigned getLowRatePreRollAU (uint8_t* const byteBuffer, const CoreCoderD
     if (useSbr) // UsacSbrData()
     {
       au.write (1, 7);// SbrInfo(), sbrUseDfltHeader
-      if (et) au.write (1, 1); // sbr_data(), couple
-      au.write (0, 7);
-      au.write (0, et ? 31 : 17);
-#if ENABLE_INTERTES
+      if (et) au.write (0, 1);  // fix _coupling = 0
+      au.write (0, 8 << et);
+      au.write (0, 16 << et);
+# if ENABLE_INTERTES
       au.write (0, et + 1);
-#endif
+# endif
     }
 
     if (au.heldBitCount > 0) au.stream.push_back (au.heldBitChunk);
@@ -814,8 +814,8 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
 #endif
                                              const uint8_t sbrRatioShiftValue,   unsigned char* const audioConfig)
 {
-  const uint8_t fli = (sbrRatioShiftValue == 0 ? 1 /*no SBR*/ : __min (2, sbrRatioShiftValue) + 2);
-  const int8_t usfi = __max (0, samplingFrequencyIndex - 3 * sbrRatioShiftValue); // TODO: non-standard sampling rates
+  const uint8_t fli = (sbrRatioShiftValue == 0 ? 1 /*no SBR*/ : __min (2, sbrRatioShiftValue & 3) + 2);
+  const int8_t usfi = __max (0, samplingFrequencyIndex - 3 * (sbrRatioShiftValue & 3)); // TODO: nonstandard rates
   unsigned bitCount = 37, auLen;
 #ifndef NO_PREROLL_DATA
   unsigned ucOffset = (samplingFrequencyIndex < AAC_NUM_SAMPLE_RATES ? 2 : 5);
@@ -881,7 +881,7 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
         m_auBitStream.write (0, 3);  // fix harmonicSBR, bs_interTes, bs_pvc = 0
 #endif
         bitCount += 13; // incl. SbrDfltHeader following hereafter
-        m_auBitStream.write (15, 4); // 11025 @ 44.1, 11625 @ 48, 15000 @ 64 kHz
+        m_auBitStream.write (15 - (sbrRatioShiftValue / 4), 4); // bs_start_freq
         m_auBitStream.write (sf, 4); // 16193 @ 44.1, 18375 @ 48, 22500 @ 64 kHz
         m_auBitStream.write ( 0, 2); // fix dflt_header_extra* = 0
 

@@ -444,6 +444,8 @@ unsigned BasicWavReader::read (int32_t* const frameBuf, const uint16_t frameCoun
   if ((frameBuf == nullptr) || (m_fileHandle == -1) || (framesTotal == 0) || (m_byteBuffer == nullptr) ||
       (m_bytesRemaining <= 0)) // end of chunk reached
   {
+    if (frameBuf != nullptr) memset (frameBuf, 0, framesTotal * m_waveChannels * sizeof (int32_t));
+
     return 0; // invalid args or class not initialized
   }
   framesRead  = m_readDataFunc (m_fileHandle, frameBuf, framesTotal, m_waveChannels, m_byteBuffer);
