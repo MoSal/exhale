@@ -284,7 +284,7 @@ static inline void applyTnsCoeffPreProcessing (LinearPredictor& predictor, TnsDa
 static inline uint8_t brModeAndFsToMaxSfbLong (const unsigned bitRateMode, const unsigned samplingRate)
 {
   // max. for fs of 44 kHz: band 47 (19.3 kHz), 48 kHz: 45 (19.5 kHz), 64 kHz: 39 (22.0 kHz)
-  return __max (39, (0x20A000 + (samplingRate >> 1)) / samplingRate) - 9 + bitRateMode - (samplingRate < 48000 ? bitRateMode >> 3 : 0);
+  return __max (39, (0x20A000 + (samplingRate >> 1)) / samplingRate) - 9 + bitRateMode - (samplingRate < 46009 ? bitRateMode >> 3 : 0);
 }
 
 static inline uint8_t brModeAndFsToMaxSfbShort(const unsigned bitRateMode, const unsigned samplingRate)
@@ -457,11 +457,7 @@ static const uint8_t freqIdxToSwbTableIdx768[USAC_NUM_SAMPLE_RATES + 2] = {
 
 // ISO/IEC 23003-3, Table 131
 static const uint8_t tnsScaleFactorBandLimit[2 /*long/short*/][USAC_NUM_FREQ_TABLES] = { // TNS_MAX_BANDS
-#if 0 // RESTRICT_TO_AAC
-  {31, 34, 51 /*to be corrected to 42 (44.1) and 40 (48 kHz)!*/, 46, 42, 39}, {9, 10, 14, 14, 14, 14}
-#else
   {31, 34, 51 /*to be corrected to 42 (44.1) and 40 (48 kHz)!*/, 47, 43, 40}, {9, 10, 14, 15, 15, 15}
-#endif
 };
 
 static const uint8_t sbrRateOffset[10] = {7, 6, 6, 8, 7, 8, 8, 8, 8, 8}; // used for scaleSBR
@@ -926,8 +922,8 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         meanSpecFlat[ci] = meanSpecFlat[ci + 1] = ((uint16_t) meanSpecFlat[ci] + (uint16_t) meanSpecFlat[ci + 1]) >> 1;
      // meanTempFlat[ci] = meanTempFlat[ci + 1] = ((uint16_t) meanTempFlat[ci] + (uint16_t) meanTempFlat[ci + 1]) >> 1;
       }
-      else memset (coreConfig.stereoDataCurr, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
-
+      else memset (coreConfig.stereoDataCurr, 0, (eightShorts0 || !coreConfig.commonWindow
+                                                  ? MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS : MAX_NUM_SWB_LONG) * sizeof (uint8_t));
       errorValue |= m_bitAllocator.imprSfbStepSizes (m_scaleFacData, m_numSwbShort, m_mdctSignals, nSamplesInFrame, nrChannels,
                                                      ((32 + 5 * m_shiftValSBR) * samplingRate) >> 5, sfbStepSizes, ci, meanSpecFlat,
                                                      coreConfig.commonWindow, coreConfig.stereoDataCurr, coreConfig.stereoConfig);
@@ -976,7 +972,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           const uint8_t numSwbFrame = __min ((numSwbCh * ((maxSfbCh == maxSfbCurr) || (m_bitRateMode <= 2) || (m_shiftValSBR > 0) ? 4u : 3u)) >> 2,
                                       (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || keepMaxSfbCurr ? 0u : 1u));
 #ifndef NO_DTX_MODE
-          if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713) && eightShorts)
+          if ((m_bitRateMode == 0) && (m_numElements == 1) && (samplingRate < 27713) && eightShorts)
           {
             for (s = 0; s < 26; s++) m_sfbLoudMem[ch][s][m_frameCount & 31] = uint16_t (sqrt (double (getThr (ch, s) << (samplingRate >> 13))));
           }
@@ -990,7 +986,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #ifndef NO_DTX_MODE
               const uint32_t*  grpRms = &grpData.sfbRmsValues[m_numSwbShort * gr];
 
-              if ((m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713))
+              if ((m_bitRateMode == 0) && (m_numElements == 1) && (samplingRate < 27713))
               {
                 const uint32_t*  refRms = &coreConfig.groupingData[1 - ch].sfbRmsValues[m_numSwbShort * gr];
                 uint8_t*  grpStereoData = &coreConfig.stereoDataCurr[m_numSwbShort * gr];
@@ -1031,7 +1027,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           }
         }
 #ifndef NO_DTX_MODE
-        else if (m_noiseFilling[el] && (m_bitRateMode < 1) && (m_numElements == 1) && (samplingRate < 27713))
+        else if (m_noiseFilling[el] && (m_bitRateMode == 0) && (m_numElements == 1) && (samplingRate < 27713))
         {
           for (s = 0; s < 26; s++) m_sfbLoudMem[ch][s][m_frameCount & 31] = BA_EPS;
         }
@@ -1420,7 +1416,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         m_perCorrLCurr[el] = coreConfig.stereoDataCurr[0];
 
         if ((int) s == steAnaStats * -1) coreConfig.stereoConfig = 2;  // 2: S>M, pred_dir=1
-        if (s > (UCHAR_MAX * 3) / 4) coreConfig.stereoMode = 2; // 2: all, ms_mask_present=2
+        if (s > (UCHAR_MAX * (6u + m_shiftValSBR)) / 8) coreConfig.stereoMode = 2; // 2: all
         if (s >= UCHAR_MAX - 1) coreConfig.stereoConfig |= 8; // true: mono-in-stereo signal
       }
       else if (nrChannels > 1) m_perCorrHCurr[el] = m_perCorrLCurr[el] = 128; // "mid" value
