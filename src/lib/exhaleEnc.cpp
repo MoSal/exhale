@@ -783,7 +783,6 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
   // get means of spectral and temporal flatness for every channel
   m_bitAllocator.getChAverageSpecFlat (meanSpecFlat, nChannels);
-//m_bitAllocator.getChAverageTempFlat (meanTempFlat, nChannels);
 
   for (unsigned el = 0; el < m_numElements; el++)  // element loop
   {
@@ -920,7 +919,6 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         m_specAnaCurr[ci    ] = (m_specAnaCurr[ci    ] & (UINT_MAX - 65504)) | peakIndexSte;
         m_specAnaCurr[ci + 1] = (m_specAnaCurr[ci + 1] & (UINT_MAX - 65504)) | peakIndexSte;
         meanSpecFlat[ci] = meanSpecFlat[ci + 1] = ((uint16_t) meanSpecFlat[ci] + (uint16_t) meanSpecFlat[ci + 1]) >> 1;
-     // meanTempFlat[ci] = meanTempFlat[ci + 1] = ((uint16_t) meanTempFlat[ci] + (uint16_t) meanTempFlat[ci + 1]) >> 1;
       }
       else memset (coreConfig.stereoDataCurr, 0, (eightShorts0 || !coreConfig.commonWindow
                                                   ? MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS : MAX_NUM_SWB_LONG) * sizeof (uint8_t));
@@ -958,7 +956,10 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
             // scale step-sizes according to VBR mode & derive scale factors from step-sizes
             grpStepSizes[b] = uint32_t (__max (BA_EPS, ((1u << 17) + grpStepSizes[b] * scale) >> 18));
-
+#if !RESTRICT_TO_AAC
+            if (!m_noiseFilling[el] || (m_bitRateMode > 0) || (m_shiftValSBR == 0) || (samplingRate < 23004) ||
+                (b + 3 - (meanSpecFlat[ci] >> 6) < m_numSwbLong)) // HF
+#endif
             grpScaleFacs[b] = m_bitAllocator.getScaleFac (grpStepSizes[b], &m_mdctSignals[ci][grpOff[b]], sfbWidth, grpRms[b]);
           }
         } // for gr

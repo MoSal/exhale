@@ -1,11 +1,11 @@
 /* basicWavReader.cpp - source file for class with basic WAVE file reading capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleAppPch.h"
@@ -25,6 +25,22 @@ static int64_t fourBytesToLength (const uint8_t* b, const int64_t lengthLimit)
 
   return __min (lengthLimit, chunkLength); // for security
 }
+#if BWR_BUFFERED_READ
+static inline unsigned getFrames (const int fileHandle, void* dataBuf, const unsigned frameCount,
+                                  const bool roundSize, const unsigned bytesPerFrame)
+{
+  const int size = ((frameCount + (roundSize ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT) * bytesPerFrame;
+  int  bytesRead = _READ (fileHandle, dataBuf, size); // 1
+
+  if ((bytesRead = __max (0, bytesRead)) < size)
+  {
+    const int br = _READ (fileHandle, (uint8_t*) dataBuf + bytesRead, size - bytesRead);
+
+    bytesRead += __max (0, br); // bytes of read attempt 2
+  }
+  return bytesRead / bytesPerFrame;  // num of frames read
+}
+#endif
 
 // private reader functions
 bool BasicWavReader::readRiffHeader ()
@@ -124,9 +140,7 @@ unsigned BasicWavReader::readDataFloat16 (const int fileHandle, int32_t* frameBu
   for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const int16_t* fBuf = (const int16_t*) tempBuf; // words
-    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
-    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 2);
-    const unsigned read = __max (0, bytesRead / (chanCount * 2));
+    const unsigned read = getFrames (fileHandle, tempBuf, frameCount, (fract & 1), chanCount * 2);
 
     for (unsigned i = read * chanCount; i > 0; i--)
     {
@@ -175,9 +189,7 @@ unsigned BasicWavReader::readDataFloat32 (const int fileHandle, int32_t* frameBu
   for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const float*   fBuf = (const float*) tempBuf; // 4 bytes
-    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
-    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 4);
-    const unsigned read = __max (0, bytesRead / (chanCount * 4));
+    const unsigned read = getFrames (fileHandle, tempBuf, frameCount, (fract & 1), chanCount * 4);
 
     for (unsigned i = read * chanCount; i > 0; i--)
     {
@@ -224,9 +236,7 @@ unsigned BasicWavReader::readDataLnPcm08 (const int fileHandle, int32_t* frameBu
   for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const uint8_t* iBuf = (const uint8_t*) tempBuf; // 1b
-    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
-    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount);
-    const unsigned read = __max (0, bytesRead / chanCount);
+    const unsigned read = getFrames (fileHandle, tempBuf, frameCount, (fract & 1), chanCount);
 
     for (unsigned i = read * chanCount; i > 0; i--)
     {
@@ -263,9 +273,7 @@ unsigned BasicWavReader::readDataLnPcm16 (const int fileHandle, int32_t* frameBu
   for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const int16_t* iBuf = (const int16_t*) tempBuf; // words
-    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
-    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 2);
-    const unsigned read = __max (0, bytesRead / (chanCount * 2));
+    const unsigned read = getFrames (fileHandle, tempBuf, frameCount, (fract & 1), chanCount * 2);
 
     for (unsigned i = read * chanCount; i > 0; i--)
     {
@@ -302,9 +310,7 @@ unsigned BasicWavReader::readDataLnPcm24 (const int fileHandle, int32_t* frameBu
   for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const uint8_t* iBuf = (const uint8_t*) tempBuf; // 3b
-    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
-    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 3);
-    const unsigned read = __max (0, bytesRead / (chanCount * 3));
+    const unsigned read = getFrames (fileHandle, tempBuf, frameCount, (fract & 1), chanCount * 3);
 
     for (unsigned i = read * chanCount; i > 0; i--)
     {
@@ -343,9 +349,7 @@ unsigned BasicWavReader::readDataLnPcm32 (const int fileHandle, int32_t* frameBu
   for (unsigned fract = 0; fract < (1 << BWR_READ_FRACT) + rest; fract++)
   {
     const int32_t* iBuf = (const int32_t*) tempBuf; // dword
-    const unsigned size = (frameCount + ((fract & 1) > 0 ? 1 << (BWR_READ_FRACT - 1) : 0)) >> BWR_READ_FRACT;
-    const int bytesRead = _READ (fileHandle, tempBuf, size * chanCount * 4);
-    const unsigned read = __max (0, bytesRead / (chanCount * 4));
+    const unsigned read = getFrames (fileHandle, tempBuf, frameCount, (fract & 1), chanCount * 4);
 
     for (unsigned i = read * chanCount; i > 0; i--)
     {

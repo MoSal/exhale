@@ -1,11 +1,11 @@
 /* exhaleLibPch.cpp - pre-compiled source file for classes of exhaleLib coding library
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -59,7 +59,9 @@ static const uint8_t deltaHuffSbrT[14] = {0xFD, 0x7D, 0x3D, 0x1D, 0x0D, 0x05, 0x
 // static SBR related functions
 static int32_t getSbrDeltaBitCount (const int32_t delta, const bool dt)
 {
-  return (delta == 5 && !dt ? 8 : abs (delta) + 2 + (delta >> 31));
+  const int dLimit = __max (-7, __min (6, delta));
+
+  return (delta != dLimit ? 85 : (delta == 5 && !dt ? 8 : abs (delta) + 2 + (delta >> 31)));
 }
 
 static int32_t getSbrDeltaHuffCode (const int32_t delta, const bool dt)
@@ -126,13 +128,14 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
                                (enValue[4] + enValue[5]) << 2, (enValue[6] + enValue[7]) << 2};
   const uint64_t envTmp3[8] = { enValue[0] << 3, enValue[1] << 3, enValue[2] << 3, enValue[3] << 3,
                                 enValue[4] << 3, enValue[5] << 3, enValue[6] << 3, enValue[7] << 3};
-  const uint8_t  noiseLevel = __min (30, __max (specFlat5b, specFlatSte));
+  const uint8_t  noiseLimit = uint8_t (envTmp0[0] < frameSize * 30 ? 30 - envTmp0[0] / frameSize : 1);
+  const uint8_t  noiseLevel = __max (noiseLimit, __min (30, __max (specFlat5b, specFlatSte)));
   const uint32_t rat3BandsL = sbrLevels[28] & USHRT_MAX;
   const uint32_t rat3BandsM = sbrLevels[28] >> 16;
   const uint32_t rat3BandsH = sbrLevels[29] & USHRT_MAX;
   uint64_t errTmp[4] = {0, 0, 0, 0};
   uint64_t errBest;
-  int32_t  tmpBest, bitCount, diff;
+  int32_t  tmpBest = 0;
   uint8_t  t;
 
   for (t = 0; t < 8; t++) // get energy errors due to temporal merging
@@ -145,7 +148,6 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
     errTmp[3] += abs ((int64_t) envTmp3[t >> 0] - ref); // squares
   }
   errBest = errTmp[0];
-  tmpBest = 0;
 
   for (t = 1; t < 3; t++) // find tmp value for minimal weighted error
   {
@@ -203,27 +205,27 @@ int32_t getSbrEnvelopeAndNoise (int32_t* const sbrLevels, const uint8_t specFlat
     const int32_t c[3] = {curr & SCHAR_MAX, (curr >> 8) & SCHAR_MAX, (curr >> 16) & SCHAR_MAX};
     const int32_t prev = sbrLevels[30];
     const int32_t p[3] = {prev & SCHAR_MAX, (prev >> 8) & SCHAR_MAX, (prev >> 16) & SCHAR_MAX};
+    const int    df[3] = {c[0]/*PCM*/, c[1] - c[0], c[2] - c[1]};
+    const int    dt[3] = {c[0] - p[0], c[1] - p[1], c[2] - p[2]};
+    const int*      dp = df;
+    bool      useDTime = false;
+    int32_t   bitCount = 8;
 
-    if ((t > 0 || !ind) && (getSbrDeltaBitCount (c[0] - p[0], true) + getSbrDeltaBitCount (c[1] - p[1], true) +
-                            getSbrDeltaBitCount (c[2] - p[2], true) < 13)) // approximate!
+    if ((t > 0 || !ind) && (7/*PCM bits*/ + getSbrDeltaBitCount (df[1],false) + getSbrDeltaBitCount (df[2], false) >
+        getSbrDeltaBitCount (dt[0], true) + getSbrDeltaBitCount (dt[1], true) + getSbrDeltaBitCount (dt[2], true)))
     {
       tmpBest |= 1 << (12 + t); // delta-time coding flag for envelope
+      dp = dt;
+      useDTime = true;
 
-      diff = c[0] - p[0];
-      sbrData[t]  = getSbrDeltaHuffCode (diff, true );  bitCount = 8; // see bitStreamWriter.cpp, lines 186 and 213
-      diff = c[2] - p[2];
-      sbrData[t] |= getSbrDeltaHuffCode (diff, true ) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true );
-      diff = c[1] - p[1];
-      sbrData[t] |= getSbrDeltaHuffCode (diff, true ) << bitCount;  bitCount += getSbrDeltaBitCount (diff, true );
+      sbrData[t] = getSbrDeltaHuffCode (dt[0], true);
     }
-    else // delta-frequency coding
+    else // delta-frequency
     {
-      sbrData[t] = c[0];  bitCount = 8; // first envelope is PCM coded
-      diff = c[2] - c[1];
-      sbrData[t] |= getSbrDeltaHuffCode (diff, false) << bitCount;  bitCount += getSbrDeltaBitCount (diff, false);
-      diff = c[1] - c[0];
-      sbrData[t] |= getSbrDeltaHuffCode (diff, false) << bitCount;  bitCount += getSbrDeltaBitCount (diff, false);
+      sbrData[t] = df[0];
     }
+    sbrData[t] |= getSbrDeltaHuffCode (dp[2], useDTime) << bitCount;  bitCount += getSbrDeltaBitCount (dp[2], useDTime);
+    sbrData[t] |= getSbrDeltaHuffCode (dp[1], useDTime) << bitCount;  bitCount += getSbrDeltaBitCount (dp[1], useDTime);
     sbrData[t] |= 1 << bitCount; // MSB delimiter for bitstream writer
     sbrLevels[30] = curr;
   }
