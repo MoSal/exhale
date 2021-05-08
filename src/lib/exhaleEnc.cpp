@@ -773,7 +773,6 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                                    : scaleSr - eightTimesSqrt256Minus[256 - m_bitRateMode] - __min (3, (m_bitRateMode - 1) >> 1)) + scaleSBR;
   uint32_t* sfbStepSizes = (uint32_t*) m_tempIntBuf;
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
-//uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS];
   unsigned ci = 0, s; // running index
   unsigned errorValue = 0; // no error
 
@@ -826,9 +825,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       {
         const int16_t chanCorrSign = (coreConfig.stereoConfig & 2 ? -1 : 1);
         const uint16_t nSamplesMax = (useMaxBandwidth ? nSamplesInFrame : swbOffsetsL[m_swbTableIdx][__min (m_numSwbLong, maxSfbLong + 1)]);
-        const uint8_t steppFadeLen = (eightShorts0 ? 4 : (coreConfig.tnsActive ? 32 : 64));
+        const uint8_t steppFadeLen = (eightShorts0 ? 4 : (coreConfig.tnsActive && (m_bitRateMode > 0) ? 32 : 64));
         const uint8_t steppFadeOff = ((m_bitRateMode + 77000 / samplingRate) & 6) << (eightShorts0 ? 2 : 5);
-        const int64_t steppWeightI = __min (64, m_perCorrHCurr[el] - 128) >> (eightShorts0 || coreConfig.tnsActive ? 1 : 0);
+        const int64_t steppWeightI = __min (64, m_perCorrHCurr[el] - 128) >> (eightShorts0 || (coreConfig.tnsActive && (m_bitRateMode > 0)) ? 1 : 0);
         const int64_t steppWeightD = 128 - steppWeightI; // decrement, (1 - crosstalk) * 128
 
         for (uint16_t n = 0, gr = 0; gr < coreConfig.groupingData[0].numWindowGroups; gr++)
@@ -1418,7 +1417,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
         if ((int) s == steAnaStats * -1) coreConfig.stereoConfig = 2;  // 2: S>M, pred_dir=1
         if (s > (UCHAR_MAX * (6u + m_shiftValSBR)) / 8) coreConfig.stereoMode = 2; // 2: all
-        if (s >= UCHAR_MAX - 1) coreConfig.stereoConfig |= 8; // true: mono-in-stereo signal
+        if (s >= UCHAR_MAX - 2u + (meanSpecFlat >> 6)) coreConfig.stereoConfig |= 8; // mono
       }
       else if (nrChannels > 1) m_perCorrHCurr[el] = m_perCorrLCurr[el] = 128; // "mid" value
 
