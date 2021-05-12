@@ -1,11 +1,11 @@
 /* specAnalysis.cpp - source file for class providing spectral analysis of MCLT signals
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -44,10 +44,8 @@ SpecAnalyzer::SpecAnalyzer ()
   for (unsigned ch = 0; ch < USAC_MAX_NUM_CHANNELS; ch++)
   {
     m_bandwidthOff[ch] = 0;
-#if SA_IMPROVED_SFM_ESTIM
     m_magnCorrPrev[ch] = 0;
     m_magnSpectra [ch] = nullptr;
-#endif
     m_numAnaBands [ch] = 0;
     m_specAnaStats[ch] = 0;
     memset (m_parCorCoeffs[ch], 0, MAX_PREDICTION_ORDER * sizeof (short));
@@ -169,7 +167,7 @@ unsigned SpecAnalyzer::initSigAnaMemory (LinearPredictor* const linPredictor, co
     return 1; // invalid arguments error
   }
   m_tnsPredictor = linPredictor;
-#if SA_IMPROVED_SFM_ESTIM
+
   for (unsigned ch = 0; ch < nChannels; ch++)
   {
     if ((m_magnSpectra[ch] = (uint32_t*) malloc (maxTransfLength * sizeof (uint32_t))) == nullptr)
@@ -178,7 +176,6 @@ unsigned SpecAnalyzer::initSigAnaMemory (LinearPredictor* const linPredictor, co
     }
     memset (m_magnSpectra[ch], 0, maxTransfLength * sizeof (uint32_t));
   }
-#endif
   return 0; // no error
 }
 
@@ -242,7 +239,7 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
   const unsigned thresholdStart = samplingRate >> 15;
 
   if ((mdctSignals == nullptr) || (mdstSignals == nullptr) || (nChannels > USAC_MAX_NUM_CHANNELS) || (lfeChannelIndex > USAC_MAX_NUM_CHANNELS) ||
-      (nSamplesInFrame > 2048) || (nSamplesInFrame < 2) || (samplingRate < 7350) || (samplingRate > 96000))
+      (nSamplesInFrame > 2048) || (nSamplesInFrame <= 127) || (samplingRate < 7350) || (samplingRate > 96000))
   {
     return 1; // invalid arguments error
   }
@@ -251,11 +248,10 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
   {
     const int32_t* const chMdct = mdctSignals[ch];
     const int32_t* const chMdst = mdstSignals[ch];
-#if SA_IMPROVED_SFM_ESTIM
     uint32_t* const   chPrvMagn = m_magnSpectra[ch];
     const bool improvedSfmEstim = (chPrvMagn != nullptr);
     uint16_t currMC = 0, numMC = 0; // channel average
-#endif
+
 // --- get L1 norm and max value in each band
     uint16_t idxMaxSpec = 0;
     uint64_t sumAvgBand = 0;
@@ -279,22 +275,19 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
       const uint16_t         offs = b << SA_BW_SHIFT; // start offset of current analysis band
       const int32_t* const  bMdct = &chMdct[offs];
       const int32_t* const  bMdst = &chMdst[offs];
-#if SA_IMPROVED_SFM_ESTIM
       uint32_t* const     prvMagn = (improvedSfmEstim ? &chPrvMagn[offs] : nullptr);
-#endif
       uint16_t maxAbsIdx = 0;
       uint32_t maxAbsVal = 0, tmp = UINT_MAX;
       uint64_t sumAbsVal = 0;
-#if SA_IMPROVED_SFM_ESTIM
       uint64_t sumAbsPrv = 0;
       uint64_t sumPrdCP  = 0, sumPrdCC = 0, sumPrdPP = 0;
       double ncp, dcc, dpp;
-#endif
+
       for (int s = SA_BW - 1; s >= 0; s--)
       {
         // sum absolute values of complex spectrum, derive L1 norm, peak value, and peak index
         const uint64_t absSample = complexAbs (bMdct[s], bMdst[s]);
-#if SA_IMPROVED_SFM_ESTIM
+
         if (improvedSfmEstim)   // correlation between current and previous magnitude spectrum
         {
           const uint64_t prvSample = prvMagn[s];
@@ -306,7 +299,6 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
           sumAbsPrv += prvSample;
           prvMagn[s] = (uint32_t) absSample;
         }
-#endif
         sumAbsVal += absSample;
         if (offs + s > 0) // exclude DC from max & min
         {
@@ -332,7 +324,6 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
       tmp/*mean*/ = uint32_t ((sumAbsVal + anaBwOffset) >> SA_BW_SHIFT);
       m_meanAbsValue[ch][b] = tmp;
       // spectral statistics
-#if SA_IMPROVED_SFM_ESTIM
       if (improvedSfmEstim && (b > 0) && ((unsigned) b < lpcStopBand16k))
       {
         dcc = double (tmp);
@@ -344,7 +335,6 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
 
         currMC += (uint16_t) __min (UCHAR_MAX, sumPrdCP); numMC++; // temporal correlation sum
       }
-#endif
       if (b > 0)
       {
         sumAvgBand += tmp;
@@ -359,14 +349,19 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
 
 // --- spectral analysis statistics for frame
     b = 1;
+#if SA_IMPROVED_FILT_CALC
+    if (samplingRate < 27713) sumAvgBand -= m_meanAbsValue[ch][b++];
+#endif
     while (((unsigned) b + 1 < lpcStopBand16k) && ((uint64_t) m_meanAbsValue[ch][b] * (m_numAnaBands[ch] - 1) > sumAvgBand)) b++;
     b = __min (m_bandwidthOff[ch], b << SA_BW_SHIFT);
-
+#if SA_IMPROVED_FILT_CALC
+    if (samplingRate < 27713) sumAvgBand += m_meanAbsValue[ch][1];
+#endif
     // obtain prediction gain across spectrum
     m_tnsPredGains[ch] = m_tnsPredictor->calcParCorCoeffs (&chMdct[b], __min (m_bandwidthOff[ch], lpcStopBand16k << SA_BW_SHIFT) - b,
                                                            MAX_PREDICTION_ORDER, m_parCorCoeffs[ch]);
     m_specAnaStats[ch] = packAvgSpecAnalysisStats (sumAvgBand, sumMaxBand, m_tnsPredGains[ch] >> 24, idxMaxSpec, (unsigned) b >> SA_BW_SHIFT);
-#if SA_IMPROVED_SFM_ESTIM
+
     if (improvedSfmEstim)
     {
       if (numMC > 1) currMC = (currMC + (numMC >> 1)) / numMC;// smoothed temporal correlation
@@ -375,7 +370,6 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
 
       if (valMaxSpec > ((m_specAnaStats[ch] >> 16) & UCHAR_MAX)) m_specAnaStats[ch] = (m_specAnaStats[ch] & 0xFF00FFFF) | (valMaxSpec << 16);
     }
-#endif
   } // for ch
 
   return 0; // no error

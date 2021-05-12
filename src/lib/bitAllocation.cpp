@@ -1,11 +1,11 @@
 /* bitAllocation.cpp - source file for class needed for psychoacoustic bit-allocation
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -205,13 +205,13 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
 
     m_avgStepSize[ch] = 0;
 
-    b = ((specAnaStats[ch] >> 16) & UCHAR_MAX); // start with squared spec. flatness from spectral analysis
-    b = __max (b * b, (tempAnaStats[ch] >> 24) * (tempAnaStats[ch] >> 24)); // ..and from temporal analysis
-    m_avgSpecFlat[ch] = uint8_t ((b + (1 << 7)) >> 8); // normalized maximum
+    b = ((specAnaStats[ch] >> 16) & UCHAR_MAX);
+    b = __max (b * b, (tempAnaStats[ch] >> 24) * (tempAnaStats[ch] >> 24));
+    m_avgSpecFlat[ch] = uint8_t ((b + (1 << 7)) >> 8); // max. of squared SFM from spec. and temp. analysis
 
-    b = ((tempAnaStats[ch] >> 16) & UCHAR_MAX); // now derive squared temp. flatness from temporal analysis
-    b = __max (b * b, (specAnaStats[ch] >> 24) * (specAnaStats[ch] >> 24)); // ..and from spectral analysis
-    m_avgTempFlat[ch] = uint8_t ((b + (1 << 7)) >> 8); // normalized maximum
+    b = ((tempAnaStats[ch] >> 16) & UCHAR_MAX);
+    b = __max (b * b, (specAnaStats[ch] >> 24) * (specAnaStats[ch] >> 24));
+    m_avgTempFlat[ch] = uint8_t ((b + (1 << 7)) >> 8); // max. of squared TFM from spec. and temp. analysis
 
     if ((nBandsInCh == 0) || (grpData.numWindowGroups > NUM_WINDOW_GROUPS))
     {
@@ -373,12 +373,6 @@ unsigned BitAllocator::initSfbStepSizes (const SfbGroupData* const groupData[USA
 
   sumMeans = (sumMeans + (nMeans >> 1)) / nMeans;
   sumMeans *= sumMeans;  // since we've averaged square-roots
-#if BA_INTER_CHAN_SIM_MASK
-  if (nMeans > 3)
-  {
-    // TODO: cross-channel simultaneous masking for 4.0 - 7.1
-  }
-#endif
 
   for (unsigned ch = 0; ch < nChannels; ch++)
   {
@@ -435,9 +429,10 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
     const SfbGroupData& grpData = *groupData[ch];
     const uint32_t maxSfbInCh = __min (MAX_NUM_SWB_LONG, grpData.sfbsPerGroup);
     const bool    eightShorts = (grpData.numWindowGroups != 1);
-    const bool  lowRateTuning = (samplingRate >= 25495) && (sfm[ch] <= (SCHAR_MAX >> 1));
-    const uint32_t*   rms = grpData.sfbRmsValues;
-    uint32_t*   stepSizes = &sfbStepSizes[ch * numSwbShort * NUM_WINDOW_GROUPS];
+    const bool  lowRateTuning = (m_rateIndex == 0) && (samplingRate >= 25495 && sfm[ch] <= (SCHAR_MAX >> 1));
+    const bool undercodingRed = (m_rateIndex >  0) || (samplingRate >= 25495 && sfm[ch] * 8 > UCHAR_MAX * 7) || lowRateTuning;
+    const uint32_t* rms = grpData.sfbRmsValues;
+    uint32_t* stepSizes = &sfbStepSizes[ch * numSwbShort * NUM_WINDOW_GROUPS];
 
     if ((grpData.numWindowGroups * maxSfbInCh == 0) || (grpData.numWindowGroups > NUM_WINDOW_GROUPS))
     {
@@ -454,8 +449,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
       uint64_t  s = (eightShorts ? (nSamplesInFrame * grpData.windowGroupLength[gr]) >> 1 : nSamplesInFrame << 2);
 
       memset (m_tempSfbValue, UCHAR_MAX, maxSfbInCh * sizeof (uint8_t));
-
-      if ((m_rateIndex == 0) && lowRateTuning && (maxSfbInCh > 0) && !eightShorts)
+      if (lowRateTuning && (maxSfbInCh > 0) && !eightShorts)
       {
         uint32_t numRedBands = nSamplesInFrame; // final result lies between 1/4 and 1/2
 
@@ -491,10 +485,8 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
           }
         }
         if (grpRms[b] < grpRmsMin) grpRmsMin = grpRms[b];
-#if 1
-        if ((m_rateIndex > 0) || lowRateTuning)
-#endif
-        if (rmsComp >= rmsRef9 && (rmsComp < (grpStepSizes[b] >> 1)))  // zero-quantized
+
+        if (undercodingRed && (rmsComp >= rmsRef9) && (rmsComp < (grpStepSizes[b] >> 1))) // zero-quantized
         {
           s -= (sfbWidth * redFactor * __min (1u << 11, rmsComp) + (1u << 10)) >> 11;
         }
@@ -505,10 +497,8 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
         const uint32_t rmsComp = (grpSte != nullptr && grpSte[b] > 0 ? squareMeanRoot (refRms[b], grpRms[b]) : grpRms[b]);
         const uint32_t rmsRef9 = (commonWindow ? refRms[b] >> 9 : rmsComp);
         const uint8_t sfbWidth = grpOff[maxSfbL16k] - grpOff[b];
-#if 1
-        if ((m_rateIndex > 0) || lowRateTuning)
-#endif
-        if (rmsComp >= rmsRef9) // check only first SFB above max_sfb for simplification
+
+        if (undercodingRed && (rmsComp >= rmsRef9)) // check only first SFB above max_sfb as simplification
         {
           s -= (sfbWidth * redFactor * __min (1u << 11, rmsComp) + (1u << 10)) >> 11;
         }
@@ -522,7 +512,7 @@ unsigned BitAllocator::imprSfbStepSizes (const SfbGroupData* const groupData[USA
         grpStepSizes[b] = uint32_t ((__max (grpRmsMin, grpStepSizes[b]) * s * (m_tempSfbValue[b] + 1u) + (1u << 14)) >> 15);
         if (grpStepSizes[b] <= (grpRms[b] >> 11)) grpStepSizes[b] = __max (BA_EPS, grpRms[b] >> 11);
 
-        if ((m_rateIndex == 0) && lowRateTuning) // clip near-zero SNRs to a minimum SNR
+        if (lowRateTuning) // clip near-0 SNRs to minimum SNR
         {
           const uint32_t lim = uint32_t ((grpRms[b] * (8192u - (uint64_t) sfm[ch] * sfm[ch]) + (1u << 12)) >> 13);
 
