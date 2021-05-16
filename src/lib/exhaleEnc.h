@@ -50,9 +50,7 @@ typedef enum USAC_CCI : signed char
 typedef enum USAC_CCFL : short
 {
   CCFL_UNDEF = -1,
-#if !RESTRICT_TO_AAC
   CCFL_768   = 768, // LD
-#endif
   CCFL_1024  = 1024 // LC
 } USAC_CCFL;
 
@@ -83,8 +81,8 @@ private:
   uint8_t         m_meanTempPrev[USAC_MAX_NUM_CHANNELS]; // SBR
 #if !RESTRICT_TO_AAC
   bool            m_noiseFilling[USAC_MAX_NUM_ELEMENTS];
-  bool            m_nonMpegExt;
 #endif
+  bool            m_nonMpegExt;
   uint8_t         m_numElements;
   uint8_t         m_numSwbLong;
   uint8_t         m_numSwbShort;
@@ -93,6 +91,7 @@ private:
   int32_t*        m_pcm24Data;
   uint8_t         m_perCorrHCurr[USAC_MAX_NUM_ELEMENTS];
   uint8_t         m_perCorrLCurr[USAC_MAX_NUM_ELEMENTS];
+  uint8_t         m_priLength;
   SfbGroupData*   m_scaleFacData[USAC_MAX_NUM_CHANNELS];
 #ifndef NO_DTX_MODE
   uint16_t        m_sfbLoudMem[2][26][32]; // loudness mem

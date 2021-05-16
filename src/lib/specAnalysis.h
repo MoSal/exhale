@@ -43,11 +43,7 @@ public:
   // constructor
   SpecAnalyzer ();
   // destructor
-#if SA_IMPROVED_SFM_ESTIM
   ~SpecAnalyzer () { for (unsigned ch = 0; ch < USAC_MAX_NUM_CHANNELS; ch++) MFREE (m_magnSpectra[ch]); }
-#else
-  ~SpecAnalyzer () { }
-#endif
   // public functions
   unsigned getLinPredCoeffs (short parCorCoeffs[MAX_PREDICTION_ORDER], const unsigned channelIndex); // returns best filter order
   unsigned getMeanAbsValues (const int32_t* const mdctSignal, const int32_t* const mdstSignal, const unsigned nSamplesInFrame,

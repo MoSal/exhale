@@ -281,6 +281,9 @@ int main (const int argc, char* argv[])
   uint16_t compatibleExtensionFlag = 0; // 0: disabled, 1: enabled
   uint16_t coreSbrFrameLengthIndex = 1; // 0: 768, 1: 1024 samples
   uint16_t variableCoreBitRateMode = 3; // 0: lowest... 9: highest
+#if ENABLE_RESAMPLING
+  uint8_t  zeroDelayForSbrEncoding = 0; // 0: 1 frame, 1: no delay
+#endif
 #ifdef EXHALE_APP_WIN
   const HANDLE hConsole = GetStdHandle (STD_OUTPUT_HANDLE);
   CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -473,6 +476,7 @@ int main (const int argc, char* argv[])
     return 16384; // preset isn't supported
   }
 
+  const bool enableSbrCoding = (coreSbrFrameLengthIndex >= 3); // SBR coding flag
   const unsigned frameLength = (3 + coreSbrFrameLengthIndex) << 8; // dec. output
   const unsigned startLength = (frameLength * 25) >> 4; // encoder PCM look-ahead
 
@@ -560,11 +564,11 @@ int main (const int argc, char* argv[])
 #else
   if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : lseek (inFileHandle, 0, 2 /*SEEK_END*/)) != 0) ||
 #endif
-      (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && coreSbrFrameLengthIndex >= 3) || (wavReader.getNumChannels () >= 7))
+      (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && enableSbrCoding) || (wavReader.getNumChannels () >= 7))
   {
     _ERROR1 (" ERROR while trying to open WAVE file: invalid or unsupported audio format!\n\n");
 
-    if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && coreSbrFrameLengthIndex >= 3)
+    if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && enableSbrCoding)
     {
       _ERROR2 (" The sampling rate is %d kHz but xHE-AAC with SBR requires at least 24 kHz.\n\n", wavReader.getSampleRate () / 1000);
     }
@@ -600,7 +604,7 @@ int main (const int argc, char* argv[])
 #if ENABLE_RESAMPLING
         (variableCoreBitRateMode > 1 || wavReader.getSampleRate () != 48000) &&
 #endif
-        (coreSbrFrameLengthIndex < 3))
+        !enableSbrCoding)
     {
       i = (variableCoreBitRateMode > 4 ? 96 : __min (64, 32 + variableCoreBitRateMode * 12));
 #ifdef EXHALE_APP_WCHAR
@@ -612,7 +616,7 @@ int main (const int argc, char* argv[])
 
       goto mainFinish; // ask for resampling
     }
-    if ((wavReader.getSampleRate () > 32000) && (coreSbrFrameLengthIndex < 3) && (variableCoreBitRateMode <= 1))
+    if ((wavReader.getSampleRate () > 32000) && !enableSbrCoding && (variableCoreBitRateMode <= 1))
     {
 #if ENABLE_RESAMPLING
       if (wavReader.getSampleRate () == 48000)
@@ -667,7 +671,7 @@ int main (const int argc, char* argv[])
 
   // enforce executable specific constraints
   i = __min (USHRT_MAX, wavReader.getSampleRate ());
-  if ((wavReader.getNumChannels () > 3 || coreSbrFrameLengthIndex >= 3) && (i == 57600 || i == 38400 || i == 28800 || i == 19200)) // BL USAC
+  if ((wavReader.getNumChannels () > 3 || enableSbrCoding) && (i == 57600 || i == 38400 || i == 28800 || i == 19200)) // BL USAC
   {
 #ifdef EXHALE_APP_WCHAR
     fwprintf_s (stderr, L" ERROR: exhale does not support %d-channel coding with %d Hz sampling rate.\n\n", wavReader.getNumChannels (), i);
@@ -680,18 +684,18 @@ int main (const int argc, char* argv[])
   {
     const unsigned numChannels = wavReader.getNumChannels ();
     const unsigned inSampDepth = wavReader.getBitDepth ();
-    const unsigned sbrEncDelay = (coreSbrFrameLengthIndex >= 3 ? 962 : 0);
+    const unsigned sbrEncDelay = (enableSbrCoding ? 962 : 0);
 #if ENABLE_RESAMPLING
     const bool enableUpsampler = eaInitUpsampler2x (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels);
-    const bool enableResampler = (coreSbrFrameLengthIndex >= 3 ? false : // no 3:2 downsampling needed when using SBR
+    const bool enableResampler = (enableSbrCoding ? false : // no 3:2 downsampling required when encoding in SBR mode
                                  eaInitDownsampler (&inPcmRsmp, variableCoreBitRateMode, i, frameLength, numChannels));
     const uint16_t firstLength = uint16_t (enableUpsampler ? (frameLength >> 1) + 32 : (enableResampler ? startLength : frameLength));
     const unsigned inFrameSize = (enableResampler ? startLength : frameLength) * sizeof (int32_t); // max buffer size
     const unsigned resampRatio = (enableResampler ? 3 : 1); // for resampling ratio
     const unsigned resampShift = (enableResampler || enableUpsampler ? 1 : 0);
 # ifdef FULL_FRM_LOOKAHEAD
-    const uint16_t inPadLength = uint16_t ((((frameLength << 1) - startLength) * resampRatio) >> resampShift)
-                                 + (coreSbrFrameLengthIndex >= 3 ? firstLength - (sbrEncDelay >> resampShift) - (enableUpsampler ? 32 : 0) : 0);
+    const uint16_t inPadLength = uint16_t ((((frameLength << 1) - startLength) * resampRatio) >> resampShift) +
+                                 (enableSbrCoding ? firstLength - (sbrEncDelay >> resampShift) - (enableUpsampler ? 32 : 0) : 0);
 # endif
     const int64_t expectLength = (wavReader.getDataBytesLeft () << resampShift) / int64_t ((numChannels * inSampDepth * resampRatio) >> 3);
 
@@ -767,13 +771,29 @@ int main (const int argc, char* argv[])
       // init encoder, generate UsacConfig()
       memset (outAuData, 0, 108 * sizeof (uint8_t));  // max. allowed ASC + UC size
 #ifdef FULL_FRM_LOOKAHEAD
-      outAuData[0] = 1; // to skip 1st frame
+      if (!enableSbrCoding) zeroDelayForSbrEncoding = 0;
+
+      if (zeroDelayForSbrEncoding)
+      {
+        // resample PCM priming if necessary
+        if (enableUpsampler) eaApplyUpsampler2x (inPcmData, inPcmRsmp, frameLength, numChannels, true);
+        else
+        if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels, true);
+      }
+      // signal 1-frame skip and PCM priming
+      outAuData[0] = 1 | zeroDelayForSbrEncoding * (uint8_t) __min (254, (firstLength - inPadLength) << (resampShift + 1));
 #endif
       i = exhaleEnc.initEncoder (outAuData, &bw); // bw stores actual ASC + UC size
+#ifdef FULL_FRM_LOOKAHEAD
+      if ((i == 0) && (zeroDelayForSbrEncoding))
+      {
+        if (wavReader.read (inPcmData, (frameLength * resampRatio) >> resampShift) == 0) i = 1; // discard priming
+      }
+#endif
 
       if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength,
 #ifdef FULL_FRM_LOOKAHEAD
-                                (frameLength << (coreSbrFrameLengthIndex >= 3 ? 1 : 0))
+                                (frameLength << (enableSbrCoding && !zeroDelayForSbrEncoding ? 1 : 0))
 #else
                                 startLength + sbrEncDelay
 #endif
@@ -792,9 +812,8 @@ int main (const int argc, char* argv[])
 
       if (*argv[1] != '#') // user-def. mode
       {
-        fprintf_s (stdout, " Encoding %d-kHz %d-channel %d-bit WAVE to low-complexity xHE-AAC at %d kbit/s\n\n",
-                   sampleRate / 1000, numChannels, inSampDepth, __min (5, numChannels) * (((24 + variableCoreBitRateMode * 8) *
-                   (coreSbrFrameLengthIndex >= 3 ? 3 : 4)) >> 2));
+        fprintf_s (stdout, " Encoding %d-kHz %d-channel %d-bit WAVE to low-complexity xHE-AAC at %d kbit/s\n\n", sampleRate / 1000,
+                   numChannels, inSampDepth, __min (5, numChannels) * (((24 + variableCoreBitRateMode * 8) * (enableSbrCoding ? 3 : 4)) >> 2));
       }
       if (!readStdin && (mod3Percent > 0))
       {
@@ -825,9 +844,9 @@ int main (const int argc, char* argv[])
 
 #if ENABLE_RESAMPLING
       // resample initial frame if necessary
-      if (enableUpsampler) eaApplyUpsampler2x (inPcmData, inPcmRsmp, frameLength, numChannels, true);
+      if (enableUpsampler) eaApplyUpsampler2x (inPcmData, inPcmRsmp, frameLength, numChannels, !zeroDelayForSbrEncoding);
       else
-      if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels, true);
+      if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels, !zeroDelayForSbrEncoding);
 #endif
       // initial frame, encode look-ahead AU
       if ((bw = exhaleEnc.encodeLookahead ()) < 3)
@@ -840,6 +859,16 @@ int main (const int argc, char* argv[])
         goto mainFinish; // coder-time error
       }
 #ifdef FULL_FRM_LOOKAHEAD
+      if (zeroDelayForSbrEncoding)
+      {
+        if (loudnessEst.addNewPcmData (frameLength))
+        {
+# if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+# endif
+          goto mainFinish; // loudness error
+        }
+      }
       wavReader.read (inPcmData, (frameLength * resampRatio) >> resampShift); // discard the initial look-ahead AU
 
       // resample leading frame if necessary
@@ -913,7 +942,7 @@ int main (const int argc, char* argv[])
 
         if (!readStdin && (mod3Percent > 0) && !(mp4Writer.getFrameCount () % mod3Percent))
         {
-          if ((i++) < (coreSbrFrameLengthIndex >= 3 ? 17 : 34)) // with short files
+          if ((i++) < (enableSbrCoding ? 17 : 34))
           {
             fprintf_s (stdout, "-");  fflush (stdout);
           }
@@ -1054,7 +1083,7 @@ int main (const int argc, char* argv[])
       bw = mp4Writer.finishFile (br, bw, uint32_t (__min (UINT_MAX - startLength, actualLength)), (time (nullptr) + 2082844800) & UINT_MAX,
                                  (i == 0) && (numChannels < 7) ? outAuData : nullptr);
       // print out collected file statistics
-      if (coreSbrFrameLengthIndex >= 3)
+      if (enableSbrCoding)
       {
         fprintf_s (stdout, " Done, actual average incl. SBR data %.2f kbit/s\n\n", (float) br * 0.001f);
       }

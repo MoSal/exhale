@@ -445,13 +445,13 @@ static const uint8_t numSwbOffsetS[USAC_NUM_FREQ_TABLES] = {13, 13, 15, 16, 16, 
 
 // ISO/IEC 23003-3, Table 79
 static const uint8_t freqIdxToSwbTableIdxAAC[USAC_NUM_SAMPLE_RATES + 2] = {
-  /*96000*/ 0, 0, 1, 2, 2, 2,/*24000*/ 3, 3, 4, 4, 4, 5, 5, // AAC
-  255, 255, 1, 2, 2, 2, 2, 2,/*25600*/ 3, 3, 3, 4, 4, 4, 4 // USAC
+  /*96000*/ 0, 0, 1, 2, 2, 2, 3, 3, 4, 4, 4, 5, 5, // AAC
+  255, 255, 1, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4 // USAC
 };
 #if !RESTRICT_TO_AAC
 static const uint8_t freqIdxToSwbTableIdx768[USAC_NUM_SAMPLE_RATES + 2] = {
-  /*96000*/ 0, 0, 0, 1, 1, 2,/*24000*/ 2, 2, 3, 4, 4, 4, 4, // AAC
-  255, 255, 0, 1, 2, 2, 2, 2,/*25600*/ 2, 3, 3, 3, 3, 4, 4 // USAC
+  /*96000*/ 0, 0, 0, 1, 1, 2, 2, 2, 3, 4, 4, 4, 4, // AAC
+  255, 255, 0, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4 // USAC
 };
 #endif
 
@@ -1826,18 +1826,17 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
   // adopt basic coding parameters
   m_bitRateMode  = __min (9, varBitRateMode);
   m_channelConf  = (numChannels >= 7 ? CCI_UNDEF : (USAC_CCI) numChannels); // see 23003-3, Tables 73 & 161
-  if (m_channelConf == CCI_CONF)
-  {
-    m_channelConf = CCI_2_CHM; // passing numChannels = 0 to ExhaleEncoder is interpreted as 2-ch dual-mono
-  }
+  if (m_channelConf == CCI_CONF) m_channelConf = CCI_2_CHM; // passing numChannels = 0 means 2-ch dual-mono
   m_numElements  = elementCountConfig[m_channelConf % USAC_MAX_NUM_ELCONFIGS]; // used in UsacDecoderConfig
   m_shiftValSBR  = (frameLength >= 1536 ? 1 : 0);
-  m_frameCount   = 0;
+  m_frameCount   = m_priLength = 0;
   m_frameLength  = USAC_CCFL (frameLength >> m_shiftValSBR); // ccfl signaled using coreSbrFrameLengthIndex
   m_frequencyIdx = toSamplingFrequencyIndex (sampleRate >> m_shiftValSBR); // as usacSamplingFrequencyIndex
   m_indepFlag    = true; // usacIndependencyFlag in UsacFrame(), will be set per frame, true in first frame
   m_indepPeriod  = (indepPeriod == 0 ? USHRT_MAX : __min (USHRT_MAX, indepPeriod)); // random-access period
-#if !RESTRICT_TO_AAC
+#if RESTRICT_TO_AAC
+  m_nonMpegExt   = false;
+#else
   m_nonMpegExt   = useEcodisExt;
 #endif
   m_numSwbLong   = MAX_NUM_SWB_LONG;
@@ -1926,23 +1925,20 @@ unsigned ExhaleEncoder::encodeLookahead ()
   // copy nSamplesInFrame external channel-interleaved samples into internal channel buffers
   for (s = 0; s < nSamplesInFrame; s++) // sample loop
   {
-    for (ch = 0; ch < nChannels; ch++) // channel loop
-    {
-      m_timeSignals[ch][nSamplesTempAna + s] = *(chSig++);
-    }
+    for (ch = 0; ch < nChannels; ch++) m_timeSignals[ch][nSamplesTempAna + s] = *(chSig++);
   }
 
-  // generate first nSamplesTempAna deinterleaved samples (previous frame data) by LP filter
+  // generate first nSamplesTempAna - m_priLength samples (previous frame data) by LP filter
   for (ch = 0; ch < nChannels; ch++)
   {
     short filterC[MAX_PREDICTION_ORDER] = {0, 0, 0, 0};
     short parCorC[MAX_PREDICTION_ORDER] = {0, 0, 0, 0};
-    int32_t* predSig = &m_timeSignals[ch][nSamplesTempAna]; // end of signal to be predicted
+    int32_t* predSig = &m_timeSignals[ch][nSamplesTempAna - m_priLength];
 
     m_linPredictor.calcParCorCoeffs (predSig, uint16_t (nSamplesInFrame >> 1), MAX_PREDICTION_ORDER, parCorC);
     m_linPredictor.parCorToLpCoeffs (parCorC, MAX_PREDICTION_ORDER, filterC);
 
-    for (s = nSamplesTempAna; s > 0; s--) // generate prediction signal without limit cycles
+    for (s = nSamplesTempAna - m_priLength; s > 0; s--) // generate predicted priming signal
     {
       const int64_t predSample = *(predSig + 0) * (int64_t) filterC[0] + *(predSig + 1) * (int64_t) filterC[1] +
                                  *(predSig + 2) * (int64_t) filterC[2] + *(predSig + 3) * (int64_t) filterC[3];
@@ -1996,10 +1992,7 @@ unsigned ExhaleEncoder::encodeFrame ()
   // copy nSamplesInFrame external channel-interleaved samples into internal channel buffers
   for (s = 0; s < nSamplesInFrame; s++) // sample loop
   {
-    for (ch = 0; ch < nChannels; ch++) // channel loop
-    {
-      m_timeSignals[ch][nSamplesTempAna + s] = *(chSig++);
-    }
+    for (ch = 0; ch < nChannels; ch++) m_timeSignals[ch][nSamplesTempAna + s] = *(chSig++);
   }
 
   if (temporalProcessing ()) // time domain: window length, overlap, grouping, and transform
@@ -2025,7 +2018,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   const unsigned specSigBufSize  = nSamplesInFrame * sizeof (int32_t);
   const unsigned timeSigBufSize  = (((nSamplesInFrame << m_shiftValSBR) * 41) >> 4) * sizeof (int32_t); // core-codec delay*4
   const unsigned char chConf     = m_channelConf;
-  unsigned errorValue = 0; // no error
+  unsigned ch, errorValue = 0; // no error
 
   // check user's input parameters
 #if RESTRICT_TO_AAC
@@ -2055,13 +2048,12 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   if (errorValue > 0) return errorValue;
 
   // get window band table index
-  errorValue = (unsigned) m_frequencyIdx; // for temporary storage
+  ch = (unsigned) m_frequencyIdx; // for temporary storage
 #if RESTRICT_TO_AAC
-  m_swbTableIdx = freqIdxToSwbTableIdxAAC[errorValue];
+  m_swbTableIdx = freqIdxToSwbTableIdxAAC[ch];
 #else
-  m_swbTableIdx = (m_frameLength == CCFL_768 ? freqIdxToSwbTableIdx768[errorValue] : freqIdxToSwbTableIdxAAC[errorValue]);
+  m_swbTableIdx = (m_frameLength == CCFL_768 ? freqIdxToSwbTableIdx768[ch] : freqIdxToSwbTableIdxAAC[ch]);
 #endif
-  errorValue = 0;
 
   if (m_elementData[0] != nullptr) // initEncoder was called before, don't reallocate memory
   {
@@ -2099,11 +2091,9 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   // allocate all signal buffers
   if (m_shiftValSBR > 0)
   {
-    if (m_shiftValSBR > 1)
-    {
-      return (errorValue | 4); // >2:1 not supported at the moment
-    }
-    else for (unsigned ch = 0; ch < nChannels; ch++)
+    if (m_shiftValSBR > 1) return (errorValue | 4); // no 8:3, 4:1
+
+    for (ch = 0; ch < nChannels; ch++)
     {
       if ((m_coreSignals[ch] = (int32_t*) malloc (timeSigBufSize >> m_shiftValSBR)) == nullptr)
       {
@@ -2111,7 +2101,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
       }
     }
   }
-  for (unsigned ch = 0; ch < nChannels; ch++)
+  for (ch = 0; ch < nChannels; ch++)
   {
     if ((m_entropyCoder[ch].initCodingMemory (nSamplesInFrame) > 0) ||
         (m_mdctQuantMag[ch]= (uint8_t*) malloc (nSamplesInFrame * sizeof (uint8_t))) == nullptr ||
@@ -2150,9 +2140,9 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
   if ((errorValue == 0) && (audioConfigBuffer != nullptr)) // save UsacConfig() for writeout
   {
     const uint32_t loudnessInfo = (audioConfigBytes ? *audioConfigBytes : 0);
-#if 1 //FULL_FRM_LOOKAHEAD
-    if (*audioConfigBuffer > 0) m_frameCount--; // to skip 1 frame
-#endif
+
+    if (*audioConfigBuffer & 1) m_frameCount--; // to skip 1 frame
+    m_priLength = (*audioConfigBuffer >> 1); // priming, see below
     errorValue = m_outStream.createAudioConfig (m_frequencyIdx, m_frameLength != CCFL_1024, chConf, m_numElements,
                                                 elementTypeConfig[chConf], loudnessInfo,
 #if !RESTRICT_TO_AAC
@@ -2162,12 +2152,20 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
     if (audioConfigBytes) *audioConfigBytes = errorValue; // length of UsacConfig() in bytes
     errorValue = (errorValue == 0 ? 1 : 0);
 
-    // NOTE: In the following, an error value of 256 is actually a warning, not an error. If
-    // the exhale library is used for realtime encoding and a nonzero program loudness level
-    // is provided before any frames have been encoded, this warning reminds the implementer
-    // to apply short-term loudness normalization of the incoming live audio before encoding
-    // each frame, preferably to a program level of -23 LUFS and as recommended in EBU R128.
-    if ((m_frameCount == 0) && ((loudnessInfo & 16383) > 0)) errorValue |= 256;
+    // NOTE: Below, value 256 is actually a warning, not an error. If the library is used in
+    // live scenarios and a nonzero loudness level is provided before any frames were coded,
+    // it reminds developers to apply short-term R128 normalization of the incoming samples.
+    if ((m_frameCount == 0) && (loudnessInfo & 16383)) errorValue |= 256;
+  }
+  if (m_priLength)
+  {
+    const unsigned nSamplesTempAna = (nSamplesInFrame * 25) >> (4 - m_shiftValSBR);
+    const int32_t* chSig = &m_pcm24Data[nChannels * ((nSamplesInFrame << m_shiftValSBR) - m_priLength)];
+
+    for (unsigned s = nSamplesTempAna - m_priLength; s < nSamplesTempAna; s++)
+    {
+      for (ch = 0; ch < nChannels; ch++) m_timeSignals[ch][s] = *(chSig++);
+    }
   }
 
   return errorValue;
