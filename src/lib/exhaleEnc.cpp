@@ -1447,7 +1447,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
             }
             icsCurr.maxSfb = __min (icsCurr.maxSfb, brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           }
-          while (grpSO[icsCurr.maxSfb] > __max (m_bandwidCurr[ci], m_bandwidPrev[ci])) icsCurr.maxSfb--; // BW detector
+          while (grpSO[icsCurr.maxSfb] > __max (m_bandwidCurr[ci], m_bandwidPrev[ci]) + (icsCurr.maxSfb >> 1)) icsCurr.maxSfb--; // detect BW
         }
         else // icsCurr.windowSequence == EIGHT_SHORT
         {
@@ -2142,7 +2142,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
     const uint32_t loudnessInfo = (audioConfigBytes ? *audioConfigBytes : 0);
 
     if (*audioConfigBuffer & 1) m_frameCount--; // to skip 1 frame
-    m_priLength = (*audioConfigBuffer >> 1); // priming, see below
+    m_priLength = (*audioConfigBuffer >> 1);
     errorValue = m_outStream.createAudioConfig (m_frequencyIdx, m_frameLength != CCFL_1024, chConf, m_numElements,
                                                 elementTypeConfig[chConf], loudnessInfo,
 #if !RESTRICT_TO_AAC

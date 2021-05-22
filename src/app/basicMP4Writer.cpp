@@ -323,13 +323,13 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength, const unsigned extra
   const unsigned numFramesFirstPeriod = __min (frameCount, m_rndAccPeriod);
   const unsigned numFramesFinalPeriod = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
   const unsigned smpGrpSize = 10 /*sgpd*/ + (numFramesFirstPeriod > UINT8_MAX ? 10 : 9) + ((numFramesFirstPeriod + 1) >> 1) /*csgp*/;
-  const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6 + 4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 6 + smpGrpSize +
+  const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6 + 4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 6 + smpGrpSize + chunkCount * 4 /*stco*/ +
 #ifdef NO_PREROLL_DATA
                               4 /*minimum stss*/ +
 #else
                               ((chunkCount + 1) >> 1) * 4 /*stss*/ +
 #endif
-                              (numFramesFinalPeriod == 0 ? 12 : 24) /*stsc*/ + chunkCount * 4 /*stco*/ + 8 /*mdat*/;
+                              (numFramesFinalPeriod == 0 ? (frameCount > m_rndAccPeriod && m_frameLength == 2048 ? 20 : 12) : 24) /*stsc*/ + 8 /*mdat*/;
   int bytesWritten = 0;
 
   for (int i = estimHeaderSize; i > 0; i -= STAT_HEADER_SIZE)

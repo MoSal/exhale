@@ -257,7 +257,7 @@ int main (const int argc, char* argv[])
 {
   if (argc <= 0) return argc; // for safety
 
-  const bool readStdin = (argc == 3);
+  const bool readStdin = (argc == 3 || argc == 5);
   BasicWavReader wavReader;
   int32_t* inPcmData = nullptr;  // 24-bit WAVE audio input buffer
 #if ENABLE_RESAMPLING
@@ -282,7 +282,7 @@ int main (const int argc, char* argv[])
   uint16_t coreSbrFrameLengthIndex = 1; // 0: 768, 1: 1024 samples
   uint16_t variableCoreBitRateMode = 3; // 0: lowest... 9: highest
 #if ENABLE_RESAMPLING
-  uint8_t  zeroDelayForSbrEncoding = 0; // 0: 1 frame, 1: no delay
+  uint8_t  zeroDelayForSbrEncoding = (argc >= 5 && (argv[2][0] == 's' || argv[2][0] == 'S') && argv[2][1] == 0 ? 1 : 0);
 #endif
 #ifdef EXHALE_APP_WIN
   const HANDLE hConsole = GetStdHandle (STD_OUTPUT_HANDLE);
@@ -391,7 +391,7 @@ int main (const int argc, char* argv[])
   fprintf_s (stdout, "  ---------------------------------------------------------------------\n\n");
 
   // check arg. list, print usage if needed
-  if ((argc < 3) || (argc > 4) || (argc > 1 && argv[1][1] != 0))
+  if ((argc < 3) || (argc > 6) || (argc > 1 && argv[1][1] != 0))
   {
     fprintf_s (stdout, " Copyright 2018-2021 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
@@ -522,7 +522,11 @@ int main (const int argc, char* argv[])
     if (inPathEnd == 0) // name has no path
     {
 #if EA_USE_WORK_DIR
+# ifdef __linux__
+      if ((currPath == nullptr) && (currPath = _GETCWD (NULL, 0)) != nullptr)
+# else
       if ((currPath == nullptr) && (currPath = _GETCWD (NULL, 1)) != nullptr)
+# endif
       {
         exePath = currPath;
         exePathEnd = (uint16_t) __min (USHRT_MAX - 1, _STRLEN (currPath));
@@ -631,7 +635,11 @@ int main (const int argc, char* argv[])
     if (outPathEnd == 0) // name has no path
     {
 #if EA_USE_WORK_DIR
+# ifdef __linux__
+      if ((currPath != exePath) && (currPath = _GETCWD (NULL, 0)) != nullptr)
+# else
       if ((currPath != exePath) && (currPath = _GETCWD (NULL, 1)) != nullptr)
+# endif
       {
         exePath = currPath;
         exePathEnd = (uint16_t) __min (USHRT_MAX - 1, _STRLEN (currPath));
@@ -746,7 +754,8 @@ int main (const int argc, char* argv[])
 #else
       const unsigned sampleRate  = wavReader.getSampleRate ();
 #endif
-      const unsigned indepPeriod = (sampleRate < 48000 ? sampleRate - 320u : 50u << 10u) / frameLength;
+      const bool userIndepPeriod = (argc >= 5 && argv[3][0] > '0' && argv[3][0] <= '9' && argv[3][1] >= '0' && argv[3][1] <= '9' && argv[3][2] == 0);
+      const unsigned indepPeriod = (userIndepPeriod ? 10 * (argv[3][0] - 48) + (argv[3][1] - 48) : (sampleRate < 48000 ? sampleRate - 320u : 50u << 10u) / frameLength);
       const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
       uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
       uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
