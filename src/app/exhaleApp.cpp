@@ -772,7 +772,7 @@ int main (const int argc, char* argv[])
                                 + (enableUpsampler && (variableCoreBitRateMode < 9) ? 1 : 0)
 #endif
 #if !RESTRICT_TO_AAC
-                              , true /*noise filling*/, compatibleExtensionFlag > 0
+                              , !(argc >= 5 && (argv[2][0] == 'n' || argv[2][0] == 'N') && argv[2][1] == 0), compatibleExtensionFlag > 0
 #endif
                                 );
       BasicMP4Writer mp4Writer; // .m4a file

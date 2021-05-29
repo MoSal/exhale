@@ -113,9 +113,10 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const unsigned numFramesFirstPeriod = __min (m_frameCount, m_rndAccPeriod);
   const unsigned numFramesFinalPeriod = (m_frameCount <= m_rndAccPeriod ? 0 : m_frameCount % m_rndAccPeriod);
   const unsigned numSamplesFinalFrame = (audioLength + m_preLength + m_postLength) % m_frameLength;
+  const uint32_t raOffsetSize = (uint32_t) m_rndAccOffsets.size ();
   const uint32_t stszAtomSize = STSX_BSIZE + 4 /*bytes for sampleSize*/ + m_frameCount * 4;
   const uint32_t stscAtomSize = STSX_BSIZE + (numFramesFinalPeriod == 0 ? 12 : 24);
-  const uint32_t stcoAtomSize = STSX_BSIZE + (uint32_t) m_rndAccOffsets.size () * 4;
+  const uint32_t stcoAtomSize = STSX_BSIZE + raOffsetSize * 4;
 #ifdef NO_PREROLL_DATA
   const uint32_t stssAtomSize = STSX_BSIZE + 4;
 #else
@@ -124,10 +125,11 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
 #endif
   /* The following code creates a 'prol' sample group with a repeating pattern of membership,
   indicating that the first sample in each increment of m_rndAccPeriod samples is a member and
-  thus an independent frame (IF) or immediate playout frame (IPF), and the remainder are not. */
+  thus an independent frame (but not an immediate playout frame), and the remainder are not. */
   const uint32_t sgpdAtomSize = STSX_BSIZE + 4 /*defaultLength == 2*/ + 4 /*entryCount == 1*/ + 2 /*rollDistance*/;
-  const uint32_t patternLengthSize = (numFramesFirstPeriod > UINT8_MAX ? 2 : 1);
-  const uint32_t compPatternLength = (numFramesFirstPeriod + 1) >> 1; // 4 bit per index with byte alignment
+  const unsigned patternEntryCount = __min (m_frameCount, m_rndAccPeriod << 1);
+  const uint32_t patternLengthSize = (patternEntryCount > UINT8_MAX ? 2 : 1);
+  const uint32_t compPatternLength = (patternEntryCount + 1) >> 1; // four bit per index with byte alignment
   const uint32_t sampleCountSize   = (m_frameCount > UINT16_MAX ? 4 : (m_frameCount > UINT8_MAX ? 2 : 1));
   const uint32_t csgpAtomSize = STSX_BSIZE + 4 /*patternCount == 1*/ + patternLengthSize + sampleCountSize + compPatternLength;
   const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize + stssAtomSize + sgpdAtomSize + csgpAtomSize;
@@ -140,6 +142,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const uint32_t  timeStampBE = toBigEndian (modifTime);
   uint32_t* const header4Byte = (uint32_t* const) m_staticHeader;
   int bytesWritten = 0;
+  uint32_t i;
 
   if ((m_fileHandle == -1) || (m_mediaSize > 0xFFFFFFF0u - m_mediaOffset))
   {
@@ -150,7 +153,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   {
     memcpy (&m_staticHeader[571], ascBuf, 5 * sizeof (uint8_t));
 
-    for (unsigned i = 0; i < m_ascSizeM5; i++) m_dynamicHeader.at (i) = ascBuf[5 + i];
+    for (i = 0; i < m_ascSizeM5; i++) m_dynamicHeader.at (i) = ascBuf[5 + i];
   }
 
   // finish setup of fixed-length part of MPEG-4 file header
@@ -202,7 +205,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
 
   if (numFramesFinalPeriod > 0)
   {
-    push32BitValue ((uint32_t) m_rndAccOffsets.size ());
+    push32BitValue (raOffsetSize);
     push32BitValue (numFramesFinalPeriod);
     push32BitValue (1);
   }
@@ -211,13 +214,10 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74);
   m_dynamicHeader.push_back (0x63); m_dynamicHeader.push_back (0x6F); // stco
   push32BitValue (0);
-  push32BitValue ((uint32_t) m_rndAccOffsets.size ());
+  push32BitValue (raOffsetSize);
 
   // add header size corrected random-access offsets to file
-  for (uint32_t i = 0; i < (uint32_t) m_rndAccOffsets.size (); i++)
-  {
-    push32BitValue (m_rndAccOffsets.at (i) + m_mediaOffset);
-  }
+  for (i = 0; i < raOffsetSize; i++) push32BitValue (m_rndAccOffsets.at (i) + m_mediaOffset);
 
   push32BitValue (stssAtomSize);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74);
@@ -228,10 +228,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   push32BitValue (1); // AU!
 #else
   push32BitValue (preRollCount);
-  for (uint32_t i = 1; i <= m_frameCount; i += (m_rndAccPeriod << 1))
-  {
-    push32BitValue (i);
-  }
+  for (i = 1; i <= m_frameCount; i += (m_rndAccPeriod << 1)) push32BitValue (i);
 #endif
   push32BitValue (sgpdAtomSize);
   m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x67);
@@ -251,9 +248,9 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   push32BitValue (1);
   if (patternLengthSize > 1)
   {
-    m_dynamicHeader.push_back ((numFramesFirstPeriod >> 8) & UCHAR_MAX);
+    m_dynamicHeader.push_back ((patternEntryCount >> 8) & UCHAR_MAX);
   }
-  m_dynamicHeader.push_back   ( numFramesFirstPeriod       & UCHAR_MAX);
+  m_dynamicHeader.push_back   ( patternEntryCount       & UCHAR_MAX);
   if (sampleCountSize > 2)
   {
     m_dynamicHeader.push_back ((m_frameCount >> 24) & UCHAR_MAX);
@@ -265,10 +262,11 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   }
   m_dynamicHeader.push_back   ( m_frameCount        & UCHAR_MAX);
 
-  m_dynamicHeader.push_back ((1 << 4) | 0); // first frame is a member of 'prol' group and remainder are not
-  for (uint32_t pNdx = 1; pNdx < compPatternLength; pNdx++)
+  for (i = 0; i < (numFramesFirstPeriod >> 1); i++) m_dynamicHeader.push_back (0); // nonmembers, first part
+  if (i < compPatternLength)
   {
-    m_dynamicHeader.push_back (0); // remaining 4-bit pairs of nonmembers
+    m_dynamicHeader.push_back (1 << ((numFramesFirstPeriod & 1) ? 0 : 4));
+    for (i++; i < compPatternLength; i++) m_dynamicHeader.push_back (0);  // rest of nonmembers, second part
   }
 
   const uint32_t moovAndMdatOverhead = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + 8;
@@ -299,7 +297,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
     {
       uint8_t crc8 = m_dynamicHeader.back(); // Baicheva '98
 
-      for (uint16_t i = 8; i > 0; i--) if (crc8 & 0x80) crc8 = (crc8 << 1) ^ 0x2F; else crc8 <<= 1;
+      for (i = 8; i > 0; i--) if (crc8 & 0x80) crc8 = (crc8 << 1) ^ 0x2F; else crc8 <<= 1;
       m_dynamicHeader.push_back (crc8); // add padding CRC-8
     }
     else
@@ -320,9 +318,9 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength, const unsigned extra
 {
   const unsigned frameCount = (audioLength + m_preLength + m_postLength - extraDelay + m_frameLength - 1u) / m_frameLength;
   const unsigned chunkCount = ((frameCount + m_rndAccPeriod - 1) / m_rndAccPeriod);
-  const unsigned numFramesFirstPeriod = __min (frameCount, m_rndAccPeriod);
   const unsigned numFramesFinalPeriod = (frameCount <= m_rndAccPeriod ? 0 : frameCount % m_rndAccPeriod);
-  const unsigned smpGrpSize = 10 /*sgpd*/ + (numFramesFirstPeriod > UINT8_MAX ? 10 : 9) + ((numFramesFirstPeriod + 1) >> 1) /*csgp*/;
+  const unsigned patternEntryCount = __min (frameCount, m_rndAccPeriod << 1);
+  const unsigned smpGrpSize = 10 /*sgpd*/ + (patternEntryCount > UINT8_MAX ? 10 : 9) + ((patternEntryCount + 1) >> 1) /*csgp*/;
   const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6 + 4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 6 + smpGrpSize + chunkCount * 4 /*stco*/ +
 #ifdef NO_PREROLL_DATA
                               4 /*minimum stss*/ +
