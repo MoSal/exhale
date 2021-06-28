@@ -936,7 +936,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
                                             const uint8_t numSwbShort,          uint8_t* const tempBuffer,
 #if !RESTRICT_TO_AAC
                                             const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
-                                            const uint32_t frameCount,          const uint32_t indepPeriod,
+                                            const uint32_t frameCount,          const uint32_t indepPeriod,  uint32_t* rate,
 #endif
                                             const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                                             unsigned char* const accessUnit,    const unsigned nSamplesInFrame)
@@ -971,7 +971,6 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
   }
 #endif
   m_auBitStream.reset ();
-  m_frameLength = nSamplesInFrame;
   m_numSwbShort = numSwbShort;
   m_uCharBuffer = tempBuffer;
   m_auBitStream.write (usacIndependencyFlag ? 1 : 0, 1);
@@ -1112,6 +1111,18 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
 #if RESTRICT_TO_AAC || defined (NO_PREROLL_DATA)
   memcpy (accessUnit, &m_auBitStream.stream.front (), __min (768 * ci, bitCount >> 3));
 #else
+  m_auByteCount += bitCount >> 3;
+  if (rate != nullptr)  // sampling rate
+  {
+    const double framesPerSec = (double) *rate / nSamplesInFrame;
+    const unsigned targetRate = (4 - (sbrRatioShiftValue & 1)) * ci; // frame average for preset 1
+
+    if (framesPerSec > 0.0 && targetRate > 0 && frameCount < UINT_MAX) // running overcoding ratio
+    {
+      *rate = uint32_t (0.5 + (m_auByteCount * framesPerSec) / (__max (20.0 * framesPerSec, (double) frameCount) * targetRate));
+    }
+    else *rate = 0; // insufficient data
+  }
   memcpy (accessUnit, &m_auBitStream.stream.front (), __min (ci * (ipf ? 1152 : 768), bitCount >> 3));
 #endif
   return (bitCount >> 3);  // byte count

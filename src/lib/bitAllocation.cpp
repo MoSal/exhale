@@ -101,6 +101,15 @@ void BitAllocator::getChAverageTempFlat (uint8_t meanTempFlatInCh[USAC_MAX_NUM_C
   memcpy (meanTempFlatInCh, m_avgTempFlat, nChannels * sizeof (uint8_t));
 }
 
+uint16_t BitAllocator::getRateCtrlFac (const int32_t rateRatio, const unsigned samplingRate, const uint32_t specFlatness)
+{
+  const uint32_t brRatio = __max (1 << 15, __min (USHRT_MAX, rateRatio * (36 - 9 * m_rateIndex)));
+  const uint16_t mSfmSqr = (m_rateIndex < 2 && samplingRate >= 27713 ? (specFlatness * specFlatness) >> m_rateIndex : 0);
+  const uint16_t mSfmFac = 256 - (((32 + m_rateIndex) * (specFlatness << 4) - mSfmSqr + (1 << 9)) >> 10);
+
+  return uint16_t ((brRatio * mSfmFac + (1 << 7)) >> 8);
+}
+
 uint8_t BitAllocator::getScaleFac (const uint32_t sfbStepSize, const int32_t* const sfbSignal, const uint8_t sfbWidth,
                                    const uint32_t sfbRmsValue)
 {

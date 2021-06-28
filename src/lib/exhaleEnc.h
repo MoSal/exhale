@@ -50,7 +50,9 @@ typedef enum USAC_CCI : signed char
 typedef enum USAC_CCFL : short
 {
   CCFL_UNDEF = -1,
+#if !RESTRICT_TO_AAC
   CCFL_768   = 768, // LD
+#endif
   CCFL_1024  = 1024 // LC
 } USAC_CCFL;
 
@@ -92,10 +94,9 @@ private:
   uint8_t         m_perCorrHCurr[USAC_MAX_NUM_ELEMENTS];
   uint8_t         m_perCorrLCurr[USAC_MAX_NUM_ELEMENTS];
   uint8_t         m_priLength;
+  uint32_t        m_rateFactor; // RC
   SfbGroupData*   m_scaleFacData[USAC_MAX_NUM_CHANNELS];
-#ifndef NO_DTX_MODE
   uint16_t        m_sfbLoudMem[2][26][32]; // loudness mem
-#endif
   SfbQuantizer    m_sfbQuantizer; // powerlaw quantization
   uint8_t         m_shiftValSBR; // SBR ratio for shifting
   SpecAnalyzer    m_specAnalyzer; // for spectral analysis
@@ -128,9 +129,7 @@ private:
                                int32_t* const mdctSignal, int32_t* const mdstSignal);
   unsigned getOptParCorCoeffs (const SfbGroupData& grpData, const uint8_t maxSfb, TnsData& tnsData,
                                const unsigned channelIndex, const uint8_t firstGroupIndexToTest = 0);
-#ifndef NO_DTX_MODE
   uint32_t getThr             (const unsigned channelIndex, const unsigned sfbIndex);
-#endif
   unsigned psychBitAllocation ();
   unsigned quantizationCoding ();
   unsigned spectralProcessing ();
@@ -146,7 +145,7 @@ public:
 #if !RESTRICT_TO_AAC
                , const bool useNoiseFilling = true, const bool useEcodisExt = false
 #endif
-                );
+    );
   // destructor
   virtual ~ExhaleEncoder ();
   // public functions

@@ -25,7 +25,7 @@ private:
 
   // member variables
   OutputStream m_auBitStream; // access unit bit-stream to write
-  uint32_t     m_frameLength;
+  uint64_t     m_auByteCount;
   uint8_t      m_numSwbShort; // max. SFB count in short windows
   uint8_t*     m_uCharBuffer; // temporary buffer for ungrouping
 #ifndef NO_PREROLL_DATA
@@ -37,7 +37,7 @@ private:
 #endif
   // helper functions
   void     writeByteAlignment (); // write 0s for byte alignment
-  unsigned writeChannelWiseIcsInfo (const IcsInfo& icsInfo); // ics_info()
+  unsigned writeChannelWiseIcsInfo (const IcsInfo& icsInfo);
   unsigned writeChannelWiseSbrData (const int32_t* const sbrDataCh0, const int32_t* const sbrDataCh1,
                                     const bool indepFlag = false);
   unsigned writeChannelWiseTnsData (const TnsData& tnsData, const bool eightShorts);
@@ -56,7 +56,7 @@ private:
 public:
 
   // constructor
-  BitStreamWriter () { m_auBitStream.reset (); m_frameLength = 0; m_numSwbShort = 0; m_uCharBuffer = nullptr;
+  BitStreamWriter () { m_auBitStream.reset (); m_auByteCount = m_numSwbShort = 0; m_uCharBuffer = nullptr;
 #ifndef NO_PREROLL_DATA
                        memset (m_usacConfig, 0, 20); m_usacConfigLen = 0; memset (m_usacIpfState, 0, 4);
 #endif
@@ -77,7 +77,7 @@ public:
                               const uint8_t numSwbShort,          uint8_t* const tempBuffer,
 #if !RESTRICT_TO_AAC
                               const bool* const tw_mdct /*N/A*/,  const bool* const noiseFilling,
-                              const uint32_t frameCount,          const uint32_t indepPeriod,
+                              const uint32_t frameCount,          const uint32_t indepPeriod,  uint32_t* rate,
 #endif
                               const uint8_t sbrRatioShiftValue,   int32_t** const sbrInfoAndData,
                               unsigned char* const accessUnit,    const unsigned nSamplesInFrame);
