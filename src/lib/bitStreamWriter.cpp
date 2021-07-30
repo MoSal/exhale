@@ -883,7 +883,14 @@ unsigned BitStreamWriter::createAudioConfig (const char samplingFrequencyIndex, 
         bitCount += 13; // incl. SbrDfltHeader following hereafter
         m_auBitStream.write (15 - (sbrRatioShiftValue / 4), 4); // bs_start_freq
         m_auBitStream.write (sf, 4); // 16193 @ 44.1, 18375 @ 48, 22500 @ 64 kHz
-        m_auBitStream.write ( 0, 2); // fix dflt_header_extra* = 0
+        if (loudnessInfo >> 30)
+        {
+          m_auBitStream.write (2, 2);// set dflt_header_extra1 = 1
+          m_auBitStream.write (2 + (loudnessInfo >> 31), 2);
+          m_auBitStream.write (4 | ((loudnessInfo >> 29) & 2), 3);
+          bitCount += 5;
+        }
+        else m_auBitStream.write (0, 2); // dflt_header_extra* = 0
 
         if (elementType[el] == ID_USAC_CPE)
         {

@@ -73,6 +73,7 @@
 #define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
 #define EA_USE_WORK_DIR    1  // 1: use working instead of app directory
 #define ENABLE_RESAMPLING  1  // 1: automatic input up- and downsampling
+#define ENABLE_STDOUT_LOAS 0  // 1: experimental LOAS packed pipe output
 #define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 #if ENABLE_RESAMPLING
 #define FULL_FRM_LOOKAHEAD   // on: encoder delay = zero or frame length
@@ -248,6 +249,47 @@ static void eaApplyDownsampler (int32_t* const pcmBuffer, int32_t* const resampl
 }
 #endif // ENABLE_RESAMPLING
 
+#if ENABLE_STDOUT_LOAS
+static uint16_t eaInitLoasHeader (uint8_t* const loasHeader, // sets up LATM/LOAS header, returns payload offset
+                                  const uint8_t* const ascUcBuf, const uint32_t ascUcSize)
+{
+  if (ascUcSize == 0) return 0;
+
+  loasHeader[0] = 0x56; // 11-bit sync. word
+  loasHeader[1] = 0xE0; // AudioSyncStream()
+  // audioMuxLengthBytes will be placed here
+  loasHeader[3] = 0x20; // AudioMuxElement()
+  loasHeader[4] = 0x00;
+  memcpy (loasHeader + 5, ascUcBuf, ascUcSize); // 3 trailing bits
+  loasHeader[4 + ascUcSize] &= 0xE0;
+  loasHeader[4 + ascUcSize] |= 0x3; // first 5 bits after ASC + UC
+  loasHeader[5 + ascUcSize] = 0xFC;
+
+  return uint16_t (6 + ascUcSize);
+}
+
+static uint32_t eaWriteLoasFrame (const int fileHandle, uint8_t* const loasHeader, const uint16_t payloadOffset,
+                                  const uint8_t* const auBuffer, const uint32_t auSize)
+{
+  const uint32_t audioMuxLengthBytes = payloadOffset + 1 + auSize / 255 + auSize;
+  uint32_t size = payloadOffset, tmp = auSize;
+
+  if (audioMuxLengthBytes > 8191) return 0;
+
+  loasHeader[1] = uint8_t (audioMuxLengthBytes >> 8) | 0xE0; // set AudioSyncStream()
+  loasHeader[2] = uint8_t (audioMuxLengthBytes & UCHAR_MAX);
+
+  loasHeader[size++] = (uint8_t) __min (UCHAR_MAX, tmp); // write PayloadLengthInfo()
+  while (tmp >= UCHAR_MAX)
+  {
+    tmp -= UCHAR_MAX;
+    loasHeader[size++] = (uint8_t) __min (UCHAR_MAX, tmp);
+  }
+    if ( (uint32_t) _WRITE (fileHandle, loasHeader, size) != size) return 0;
+  return (uint32_t) _WRITE (fileHandle, auBuffer, auSize); // then write PayloadMux()
+}
+#endif // ENABLE_STDOUT_LOAS
+
 // main routine
 #ifdef EXHALE_APP_WCHAR
 extern "C" int wmain (const int argc, wchar_t* argv[])
@@ -283,6 +325,11 @@ int main (const int argc, char* argv[])
   uint16_t variableCoreBitRateMode = 3; // 0: lowest... 9: highest
 #if ENABLE_RESAMPLING
   uint8_t  zeroDelayForSbrEncoding = (argc >= 5 && (argv[2][0] == 's' || argv[2][0] == 'S') && argv[2][1] == 0 ? 1 : 0);
+#endif
+#if ENABLE_STDOUT_LOAS
+  const bool writeStdout = (zeroDelayForSbrEncoding != 0 && argv[1][0] >= 'a' && argv[argc - 1][0] == '-' && argv[argc - 1][1] == 0);
+  uint16_t loasMuxOffset = 0;
+  uint8_t loasHeader[64] = {0};
 #endif
 #ifdef EXHALE_APP_WIN
   const HANDLE hConsole = GetStdHandle (STD_OUTPUT_HANDLE);
@@ -345,6 +392,24 @@ int main (const int argc, char* argv[])
   }
 
   // print program header with compile info
+#if ENABLE_STDOUT_LOAS
+  if (writeStdout)
+  {
+# ifdef EXHALE_APP_WCHAR
+    wchar_t dateStr[12] = {0};
+
+    mbstowcs_s (nullptr, dateStr, 12, __DATE__, _TRUNCATE);
+    _ERROR1 ("\n  ----------------------------------------------------------------------\n");
+    _ERROR2 (" | exhale (stdout mode, built on %s) - written by C.R.Helmrich |\n", dateStr);
+# else
+    _ERROR1 ("\n  ----------------------------------------------------------------------\n");
+    _ERROR2 (" | exhale (stdout mode, built on %s) - written by C.R.Helmrich |\n", __DATE__);
+# endif
+    _ERROR1 ("  ----------------------------------------------------------------------\n\n");
+  }
+  else
+  {
+#endif
   fprintf_s (stdout, "\n  ---------------------------------------------------------------------\n");
   fprintf_s (stdout, " | ");
 #ifdef EXHALE_APP_WIN
@@ -389,6 +454,9 @@ int main (const int argc, char* argv[])
 #endif
              EXHALELIB_VERSION_MAJOR, EXHALELIB_VERSION_MINOR, EXHALELIB_VERSION_BUGFIX, __DATE__);
   fprintf_s (stdout, "  ---------------------------------------------------------------------\n\n");
+#if ENABLE_STDOUT_LOAS
+  }
+#endif
 
   // check arg. list, print usage if needed
   if ((argc < 3) || (argc > 6) || (argc > 1 && argv[1][1] != 0))
@@ -464,6 +532,13 @@ int main (const int argc, char* argv[])
   }
   else if (*argv[1] == '#') // default mode
   {
+#if ENABLE_STDOUT_LOAS
+    if (writeStdout)
+    {
+      _ERROR2 (" Default preset is specified, encoding to low-complexity xHE-AAC, preset mode %d\n\n", variableCoreBitRateMode);
+    }
+    else
+#endif
     fprintf_s (stdout, " Default preset is specified, encoding to low-complexity xHE-AAC, preset mode %d\n\n", variableCoreBitRateMode);
   }
   else
@@ -568,18 +643,72 @@ int main (const int argc, char* argv[])
 #else
   if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : lseek (inFileHandle, 0, 2 /*SEEK_END*/)) != 0) ||
 #endif
-      (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && enableSbrCoding) || (wavReader.getNumChannels () >= 7))
+      (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 22050 && enableSbrCoding) || (wavReader.getNumChannels () >= 7))
   {
     _ERROR1 (" ERROR while trying to open WAVE file: invalid or unsupported audio format!\n\n");
 
-    if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 24000 && enableSbrCoding)
+    if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 22050 && enableSbrCoding)
     {
-      _ERROR2 (" The sampling rate is %d kHz but xHE-AAC with SBR requires at least 24 kHz.\n\n", wavReader.getSampleRate () / 1000);
+      _ERROR2 (" The sampling rate is %d kHz but xHE-AAC with SBR requires at least 22 kHz.\n\n", wavReader.getSampleRate () / 1000);
     }
     i = 8192; // return value
 
     goto mainFinish; // audio format invalid
   }
+#if ENABLE_STDOUT_LOAS
+  else if (writeStdout)  // configure stdout
+  {
+    if (wavReader.getNumChannels () != 2)
+    {
+      _ERROR1 (" ERROR during encoding! Input audio must be stereo for encoding to stdout!\n\n");
+      i = 8192; // return value
+
+      goto mainFinish; // stdout audio error
+    }
+
+    fflush (stdout);
+# ifdef EXHALE_APP_WIN
+    outFileHandle = _fileno (stdout);
+    if (_setmode (outFileHandle, _O_BINARY) == -1)
+    {
+      _ERROR1 (" ERROR while trying to set stdout to binary mode! Has stdout been closed?\n\n");
+      outFileHandle = -1;
+
+      goto mainFinish; // stdout setup error
+    }
+# else
+    outFileHandle = fileno (stdout);
+# endif
+
+    if ((wavReader.getSampleRate () > 32100 + (unsigned) variableCoreBitRateMode * 12000 + (variableCoreBitRateMode >> 2) * 3900) &&
+# if ENABLE_RESAMPLING
+        (variableCoreBitRateMode > 1 || wavReader.getSampleRate () != 48000) &&
+# endif
+        !enableSbrCoding)
+    {
+      i = (variableCoreBitRateMode > 4 ? 96 : __min (64, 32 + variableCoreBitRateMode * 12));
+# ifdef EXHALE_APP_WCHAR
+      fwprintf_s (stderr, L" ERROR during encoding! Input sample rate must be <=%d kHz for preset mode %d!\n\n", i, variableCoreBitRateMode);
+# else
+      fprintf_s (stderr, " ERROR during encoding! Input sample rate must be <=%d kHz for preset mode %d!\n\n", i, variableCoreBitRateMode);
+# endif
+      i = 4096; // return value
+
+      goto mainFinish; // ask for resampling
+    }
+    if ((wavReader.getSampleRate () > 32000) && !enableSbrCoding && (variableCoreBitRateMode <= 1))
+    {
+# if ENABLE_RESAMPLING
+      if (wavReader.getSampleRate () == 48000)
+      {
+        _ERROR2 (" NOTE: Downsampling the input audio from 48 kHz to 32 kHz with preset mode %d\n\n", variableCoreBitRateMode);
+      }
+      else
+# endif
+      _ERROR2 (" WARNING: The input sampling rate should be 32 kHz or less for preset mode %d!\n\n", variableCoreBitRateMode);
+    }
+  }
+#endif
   else // WAVE OK, open output file
   {
 #ifdef EXHALE_APP_WCHAR
@@ -679,6 +808,8 @@ int main (const int argc, char* argv[])
 
   // enforce executable specific constraints
   i = __min (USHRT_MAX, wavReader.getSampleRate ());
+  if (i == 22050 && enableSbrCoding) loudStats |= 0xC0000000; // fix dflt_freq_scale in SBR header for 22050-Hz input
+
   if ((wavReader.getNumChannels () > 3 || enableSbrCoding) && (i == 57600 || i == 38400 || i == 28800 || i == 19200)) // BL USAC
   {
 #ifdef EXHALE_APP_WCHAR
@@ -709,6 +840,18 @@ int main (const int argc, char* argv[])
 
     if (enableUpsampler) // notify by printf
     {
+# if ENABLE_STDOUT_LOAS
+      if (writeStdout) // relocate to stderr
+      {
+#  ifdef EXHALE_APP_WCHAR
+        fwprintf_s (stderr, L" NOTE: Upsampling the input audio from %d kHz to %d kHz with preset mode %d\n\n",
+#  else
+        fprintf_s (stderr, " NOTE: Upsampling the input audio from %d kHz to %d kHz with preset mode %d\n\n",
+#  endif
+                    i / 1000, i / 500, variableCoreBitRateMode);
+      }
+      else
+# endif
       fprintf_s (stdout, " NOTE: Upsampling the input audio from %d kHz to %d kHz with preset mode %d\n\n", i / 1000, i / 500, variableCoreBitRateMode);
     }
 #else
@@ -756,8 +899,13 @@ int main (const int argc, char* argv[])
 #endif
       const bool userIndepPeriod = (argc >= 5 && argv[3][0] > '0' && argv[3][0] <= '9' && argv[3][1] >= '0' && argv[3][1] <= '9' && argv[3][2] == 0);
       const unsigned indepPeriod = (userIndepPeriod ? 10 * (argv[3][0] - 48) + (argv[3][1] - 48) : (sampleRate < 48000 ? sampleRate - 320u : 50u << 10u) / frameLength);
+#if ENABLE_STDOUT_LOAS
+      const unsigned mod3Percent = (writeStdout ? 0 : unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17));
+      uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats | (writeStdout ? 0x4A0C22CB /*-23 LUFS*/ : 0) : 0);
+#else
       const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
       uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
+#endif
       uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
       uint32_t headerRes = 0;
       // initialize LoudnessEstimator object
@@ -800,6 +948,14 @@ int main (const int argc, char* argv[])
       }
 #endif
 
+#if ENABLE_STDOUT_LOAS
+      if ((i == 0) && writeStdout)
+      {
+        br = 0; // init frame count & header
+        if ((loasMuxOffset = eaInitLoasHeader (loasHeader, outAuData, bw)) == 0) i = 1;
+      }
+      else
+#endif
       if ((i |= mp4Writer.open (outFileHandle, sampleRate, numChannels, inSampDepth, frameLength,
 #ifdef FULL_FRM_LOOKAHEAD
                                 (frameLength << (enableSbrCoding && !zeroDelayForSbrEncoding ? 1 : 0))
@@ -821,6 +977,18 @@ int main (const int argc, char* argv[])
 
       if (*argv[1] != '#') // user-def. mode
       {
+#if ENABLE_STDOUT_LOAS
+        if (writeStdout)  // print to stderr
+        {
+# ifdef EXHALE_APP_WCHAR
+          fwprintf_s (stderr, L" Encoding %d-kHz %d-channel %d-bit WAVE to low-complexity xHE-AAC at %d kbit/s\n\n", sampleRate / 1000,
+# else
+          fprintf_s (stderr, " Encoding %d-kHz %d-channel %d-bit WAVE to low-complexity xHE-AAC at %d kbit/s\n\n", sampleRate / 1000,
+# endif
+                      numChannels, inSampDepth, __min (5, numChannels) * (((24 + variableCoreBitRateMode * 8) * (enableSbrCoding ? 3 : 4)) >> 2));
+        }
+        else
+#endif
         fprintf_s (stdout, " Encoding %d-kHz %d-channel %d-bit WAVE to low-complexity xHE-AAC at %d kbit/s\n\n", sampleRate / 1000,
                    numChannels, inSampDepth, __min (5, numChannels) * (((24 + variableCoreBitRateMode * 8) * (enableSbrCoding ? 3 : 4)) >> 2));
       }
@@ -836,7 +1004,11 @@ int main (const int argc, char* argv[])
 #endif
       }
 
+#if ENABLE_STDOUT_LOAS
+      if (!readStdin && !writeStdout) // reserve space required for MP4 file header
+#else
       if (!readStdin) // reserve space for MP4 file header. TODO: nasty, avoid this
+#endif
       {
         if ((headerRes = (uint32_t) mp4Writer.initHeader (uint32_t (__min (UINT_MAX - startLength, expectLength)), sbrEncDelay >> 2)) < 666)
         {
@@ -940,6 +1112,20 @@ int main (const int argc, char* argv[])
         }
         if (bwMax < bw) bwMax = bw;
         // write new AU, add frame to header
+#if ENABLE_STDOUT_LOAS
+        if (writeStdout)
+        {
+          if ((eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
+          {
+# if USE_EXHALELIB_DLL
+            exhaleDelete (&exhaleEnc);
+# endif
+            goto mainFinish; // writer error
+          }
+          if (br < UINT_MAX) br++;
+        }
+        else
+#endif
         if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
         {
 #if USE_EXHALELIB_DLL
@@ -976,6 +1162,20 @@ int main (const int argc, char* argv[])
       }
       if (bwMax < bw) bwMax = bw;
       // write final AU, add frame to header
+#if ENABLE_STDOUT_LOAS
+      if (writeStdout)
+      {
+        if ((eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
+        {
+# if USE_EXHALELIB_DLL
+          exhaleDelete (&exhaleEnc);
+# endif
+          goto mainFinish; // writeout error
+        }
+        if (br < UINT_MAX) br++;
+      }
+      else
+#endif
       if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
       {
 #if USE_EXHALELIB_DLL
@@ -1024,6 +1224,20 @@ int main (const int argc, char* argv[])
         }
         if (bwMax < bw) bwMax = bw;
         // the flush AU, add frame to header
+#if ENABLE_STDOUT_LOAS
+        if (writeStdout)
+        {
+          if (eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw) // no loudness update
+          {
+# if USE_EXHALELIB_DLL
+            exhaleDelete (&exhaleEnc);
+# endif
+            goto mainFinish; // writer error
+          }
+          if (br < UINT_MAX) br++;
+        }
+        else
+#endif
         if (mp4Writer.addFrameAU (outAuData, bw) != (int) bw) // no loudness update
         {
 #if USE_EXHALELIB_DLL
@@ -1034,7 +1248,11 @@ int main (const int argc, char* argv[])
         byteCount += bw;
       } // trailing frame
 
+#if ENABLE_STDOUT_LOAS
+      if (readStdin && !writeStdout) // reserve space necessary for MP4 file header
+#else
       if (readStdin) // reserve space for MP4 file header (is there an easier way?)
+#endif
       {
         int64_t pos = _SEEK (outFileHandle, 0, 1 /*SEEK_CUR*/);
 
@@ -1067,15 +1285,20 @@ int main (const int argc, char* argv[])
       i = 0; // no errors
 
       // loudness and sample peak of program
+      bw = loudStats;
       loudStats = loudnessEst.getStatistics ();
+#if ENABLE_STDOUT_LOAS
+      if ((numChannels < 7) && !writeStdout)
+#else
       if (numChannels < 7)
+#endif
       {
         // quantize for loudnessInfo() reset
         const uint32_t qLoud = uint32_t (4.0f * __max (0.0f, (loudStats >> 16) / 512.f + EA_LOUD_NORM) + 0.5f);
         const uint32_t qPeak = uint32_t (32.0f * (20.0f - 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) - EA_PEAK_NORM) + 0.5f);
 
         // recreate ASC + UC + loudness data
-        bw = EA_LOUD_INIT | (qPeak << 18) | (qLoud << 6) | 11; // measurementSystem
+        bw |= (qPeak << 18) | (qLoud << 6) | 11; // measurementSystem & reliability
         memset (outAuData, 0, 108 * sizeof (uint8_t)); // max allowed ASC + UC size
         i = exhaleEnc.initEncoder (outAuData, &bw); // with finished loudnessInfo()
 #ifndef NO_PREROLL_DATA
@@ -1087,6 +1310,18 @@ int main (const int argc, char* argv[])
 #endif
       }
       // mean & max. bit-rate of encoded AUs
+#if ENABLE_STDOUT_LOAS
+      if (writeStdout)
+      {
+        br = uint32_t (((actualLength >> 1) + 8 * (byteCount + loasMuxOffset * (int64_t) br) * sampleRate) / actualLength);
+        bw = 0; // print encoding statistics
+
+        _ERROR2 (" Done, actual average %.1f kbit/s,", (float) br * 0.001f);
+        _ERROR2 (" program loudness in %.2f => out -23 LUFS\n\n", __max (3u, loudStats >> 16) / 512.f - 100.0f);
+      }
+      else
+      {
+#endif
       br = uint32_t (((actualLength >> 1) + 8 * (byteCount + 4 * (int64_t) mp4Writer.getFrameCount ()) * sampleRate) / actualLength);
       bw = uint32_t (((frameLength  >> 1) + 8 * (bwMax + 4u /* maximum AU size + stsz as a bit-rate */) * sampleRate) / frameLength);
       bw = mp4Writer.finishFile (br, bw, uint32_t (__min (UINT_MAX - startLength, actualLength)), (time (nullptr) + 2082844800) & UINT_MAX,
@@ -1105,6 +1340,9 @@ int main (const int argc, char* argv[])
         fprintf_s (stdout, " Input statistics:  File loudness %.2f LUFS,\tsample peak level %.2f dBFS\n\n",
                    __max (3u, loudStats >> 16) / 512.f - 100.0f, 20.0f * log10 (__max (EA_PEAK_MIN, float (loudStats & USHRT_MAX))) + EA_PEAK_NORM);
       }
+#if ENABLE_STDOUT_LOAS
+      } // writeStdout
+#endif
 
       if (!readStdin && (actualLength != expectLength || bw != headerRes))
       {
@@ -1169,6 +1407,9 @@ mainFinish:
   // close output file
   if (outFileHandle != -1)
   {
+#if ENABLE_STDOUT_LOAS
+    if (!writeStdout)
+#endif
     if (_CLOSE (outFileHandle) != 0)
     {
       _ERROR2 (" ERROR while trying to close output file %s! Does it still exist?\n\n", argv[argc - 1]);
