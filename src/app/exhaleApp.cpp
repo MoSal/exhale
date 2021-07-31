@@ -250,6 +250,29 @@ static void eaApplyDownsampler (int32_t* const pcmBuffer, int32_t* const resampl
 #endif // ENABLE_RESAMPLING
 
 #if ENABLE_STDOUT_LOAS
+static uint16_t eaApplyLevelNorm (int32_t* /*o*/ pcmBuffer, uint16_t* oldLoudness, const uint16_t currLoudness,
+                                  const uint16_t frameSize, const uint16_t numChannels)
+{
+  const int64_t gainOld = __min (MAX_VALUE_AUDIO24, int64_t (0.5f + MAX_VALUE_AUDIO24 * pow (10.0f, (77.0f - *oldLoudness / 512.f) / 20.0f)));
+  const int64_t gainNew = __min (MAX_VALUE_AUDIO24, int64_t (0.5f + MAX_VALUE_AUDIO24 * pow (10.0f, (77.0f - currLoudness / 512.f) / 20.0f)));
+  const int64_t gRShift = 32 + __min (3, frameSize >> 10);
+  const int64_t gOffset = (int64_t) 1 << (gRShift - 1);
+  uint16_t ch, i;
+
+  if ((frameSize & (frameSize - 1)) || !pcmBuffer) return 0;
+
+  for (i = frameSize; i > 0; i--)
+  {
+    const int64_t gainI = gainOld * i + gainNew * (frameSize - i);
+
+    for (ch = numChannels; ch > 0; ch--, pcmBuffer++)
+    {
+      *pcmBuffer = int32_t ((gOffset + *pcmBuffer * gainI) >> gRShift);
+    }
+  }
+  return (*oldLoudness = currLoudness);
+}
+
 static uint16_t eaInitLoasHeader (uint8_t* const loasHeader, // sets up LATM/LOAS header, returns payload offset
                                   const uint8_t* const ascUcBuf, const uint32_t ascUcSize)
 {
@@ -328,7 +351,7 @@ int main (const int argc, char* argv[])
 #endif
 #if ENABLE_STDOUT_LOAS
   const bool writeStdout = (zeroDelayForSbrEncoding != 0 && argv[1][0] >= 'a' && argv[argc - 1][0] == '-' && argv[argc - 1][1] == 0);
-  uint16_t loasMuxOffset = 0;
+  uint16_t loasMuxOffset = 0, loudMemory = 0;
   uint8_t loasHeader[64] = {0};
 #endif
 #ifdef EXHALE_APP_WIN
@@ -901,7 +924,7 @@ int main (const int argc, char* argv[])
       const unsigned indepPeriod = (userIndepPeriod ? 10 * (argv[3][0] - 48) + (argv[3][1] - 48) : (sampleRate < 48000 ? sampleRate - 320u : 50u << 10u) / frameLength);
 #if ENABLE_STDOUT_LOAS
       const unsigned mod3Percent = (writeStdout ? 0 : unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17));
-      uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats | (writeStdout ? 0x4A0C22CB /*-23 LUFS*/ : 0) : 0);
+      uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats | (writeStdout ? 0x4A0022CB /*-23 LUFS*/ : 0) : 0);
 #else
       const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
       uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
@@ -1101,6 +1124,10 @@ int main (const int argc, char* argv[])
         if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels);
 #endif
         // frame coding loop, encode next AU
+        loudnessEst.addNewPcmData (frameLength);
+#if ENABLE_STDOUT_LOAS
+        if (writeStdout) eaApplyLevelNorm (inPcmData, &loudMemory, loudnessEst.getStatistics () >> 16, frameLength, numChannels);
+#endif
         if ((bw = exhaleEnc.encodeFrame ()) < 3)
         {
           _ERROR2 ("\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
@@ -1115,7 +1142,7 @@ int main (const int argc, char* argv[])
 #if ENABLE_STDOUT_LOAS
         if (writeStdout)
         {
-          if ((eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
+          if (eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw)
           {
 # if USE_EXHALELIB_DLL
             exhaleDelete (&exhaleEnc);
@@ -1126,7 +1153,7 @@ int main (const int argc, char* argv[])
         }
         else
 #endif
-        if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
+        if (mp4Writer.addFrameAU (outAuData, bw) != (int) bw)
         {
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -1151,6 +1178,10 @@ int main (const int argc, char* argv[])
       if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels);
 #endif
       // end of coding loop, encode final AU
+      loudnessEst.addNewPcmData (frameLength);
+#if ENABLE_STDOUT_LOAS
+      if (writeStdout) eaApplyLevelNorm (inPcmData, &loudMemory, loudnessEst.getStatistics () >> 16, frameLength, numChannels);
+#endif
       if ((bw = exhaleEnc.encodeFrame ()) < 3)
       {
         _ERROR2 ("\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
@@ -1165,7 +1196,7 @@ int main (const int argc, char* argv[])
 #if ENABLE_STDOUT_LOAS
       if (writeStdout)
       {
-        if ((eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw) || loudnessEst.addNewPcmData (frameLength))
+        if (eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw)
         {
 # if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -1176,7 +1207,7 @@ int main (const int argc, char* argv[])
       }
       else
 #endif
-      if ((mp4Writer.addFrameAU (outAuData, bw) != (int) bw) || loudnessEst.addNewPcmData (frameLength))
+      if (mp4Writer.addFrameAU (outAuData, bw) != (int) bw)
       {
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -1213,6 +1244,10 @@ int main (const int argc, char* argv[])
         if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels);
 #endif
         // flush remaining audio into new AU
+        // no loudnessEst.addNewPcmData call
+#if ENABLE_STDOUT_LOAS
+        if (writeStdout) eaApplyLevelNorm (inPcmData, &loudMemory, loudnessEst.getStatistics () >> 16, frameLength, numChannels);
+#endif
         if ((bw = exhaleEnc.encodeFrame ()) < 3)
         {
           _ERROR2 ("\n ERROR while trying to create last xHE-AAC frame: error value %d was returned!\n\n", bw);
@@ -1227,7 +1262,7 @@ int main (const int argc, char* argv[])
 #if ENABLE_STDOUT_LOAS
         if (writeStdout)
         {
-          if (eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw) // no loudness update
+          if (eaWriteLoasFrame (outFileHandle, loasHeader, loasMuxOffset, outAuData, bw) != bw)
           {
 # if USE_EXHALELIB_DLL
             exhaleDelete (&exhaleEnc);
@@ -1238,7 +1273,7 @@ int main (const int argc, char* argv[])
         }
         else
 #endif
-        if (mp4Writer.addFrameAU (outAuData, bw) != (int) bw) // no loudness update
+        if (mp4Writer.addFrameAU (outAuData, bw) != (int) bw)
         {
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
