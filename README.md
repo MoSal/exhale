@@ -17,6 +17,14 @@ quality mono, stereo, and multichannel coding at medium and high bit
 rates, so the lower-rate USAC coding tools (ACELP, TCX, Enhanced SBR
 and MPEG Surround with Unified Stereo coding) won't be integrated.
 
+**Important:** Due to the missing lower-rate coding tools, the audio
+quality at the lowest of exhale's bit-rate modes (18 kbit/s mono, 36
+kbit/s stereo) doesn't reflect the full capabilities of the Extended
+HE-AAC standard. Therefore, use the lowest bit-rate modes *only when
+required*. Also, please don't attempt to modify exhale's source code
+or to configure the command-line encoder to produce lower bit-rates.
+Use only existing presets and input sampling rates of 32...48 kHz.
+
 ____________________________________________________________________
 
 
@@ -33,7 +41,7 @@ exhale is being made available under an open-source license which is
 based on the 3-clause BSD license but modified to address particular
 aspects dictated by the nature and the output of this application.
 
-The license text and release notes for the current version 1.1.6 can
+The license text and release notes for the current version 1.1.7 can
 be found in the `include` subdirectory of the exhale distribution.
 
 
@@ -102,13 +110,14 @@ to print out usage information. As an example, the following command
 
 converts file Input.wav to file Output.m4a at roughly 128 kbit/s (if
 the input signal is 2-channel stereo) and in Extended HE-AAC format.
-Note that, when calling the exhale application with a path (such as,
-e.g., `bin/exhale` or `bin\exhale.exe`), but specifying the input or
-output file without a file path (e.g., `Input.wav`), those files are
-assumed to be located in the application path (here, `bin`). Use the
-"dot prefix" to indicate files in the *current* directory instead of
-the application directory (here, `./Input.wav` or `.\Input.wav`).
 
+There is also an **expert mode** providing two additional arguments:
+
+`exhale.exe b s 42 C:\Music\Input.wav C:\Music\Output.m4a`
+
+e.g. encodes Input.wav to Output.m4a at roughly 48 kbit/s stereo and
+with SBR enabled, seamless operation (`s` forces media time 0 in the
+edit list), and an independent frame interval of 42 (range 10...99).
 
 ### Third-party stdin (foobar2000):
 
