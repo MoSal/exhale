@@ -10,6 +10,7 @@
 
 #include "exhaleLibPch.h"
 #include "stereoProcessing.h"
+#include "bitAllocation.h" // define BA_MORE_CBR (more constant bit-rate, experimental!)
 
 // static helper functions
 static inline uint64_t complexAbsMS (const int32_t realPart, const int32_t imagPart)
@@ -363,7 +364,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             nonZeroPredCoef = true;
           }
           sfbTempVar *= sfbTempVar;  // account for residual RMS reduction due to prediction
-#if SP_MDST_PRED
+#if SP_MDST_PRED && !(BA_MORE_CBR)
           if (bitRateMode > 0) sfbTempVar += alphaLimit * alphaLimit;  // including alpha_im
 #endif
           for (b = sfbIsOdd; b >= 0; b--)

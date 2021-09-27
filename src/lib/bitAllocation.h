@@ -16,6 +16,7 @@
 
 // constants, experimental macros
 #define BA_EPS                  1
+#define BA_MORE_CBR             0 // 1: force more constant bit-rate (CBR, experimental!)
 
 // class for audio bit-allocation
 class BitAllocator
@@ -39,7 +40,8 @@ public:
   // public functions
   void getChAverageSpecFlat (uint8_t meanSpecFlatInCh[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   void getChAverageTempFlat (uint8_t meanTempFlatInCh[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
-  uint16_t   getRateCtrlFac (const int32_t rateRatio, const unsigned samplingRate, const uint32_t specFlatness);
+  uint16_t   getRateCtrlFac (const int32_t rateRatio, const unsigned samplingRate, const uint32_t specFlatness,
+                             const bool prevEightShorts = false);
   uint8_t       getScaleFac (const uint32_t sfbStepSize, const int32_t* const sfbSignal, const uint8_t sfbWidth,
                              const uint32_t sfbRmsValue);
   unsigned initAllocMemory  (LinearPredictor* const linPredictor, const uint8_t numSwb, const uint8_t bitRateMode);

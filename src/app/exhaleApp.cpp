@@ -73,7 +73,6 @@
 #define EA_PEAK_MIN   0.262f  // 20 * log10() + EA_PEAK_NORM = -108 dbFS
 #define EA_USE_WORK_DIR    1  // 1: use working instead of app directory
 #define ENABLE_STDOUT_LOAS 0  // 1: experimental LOAS packed pipe output
-#define XHE_AAC_LOW_DELAY  0  // 1: allow encoding with 768 frame length
 #define FULL_FRM_LOOKAHEAD   // on: encoder delay = zero or frame length
 
 static const int16_t usfc2x[32] = { // 2x upsampling filter coefficients
@@ -95,7 +94,7 @@ static bool eaInitUpsampler2x (int32_t** upsampleBuffer, const uint16_t bitRateM
 {
   const uint16_t inLength = frameSize >> 1;
   const uint16_t chLength = inLength + (32 << 1);
-  const bool useUpsampler = (frameSize > (32 << 1) && bitRateMode * 4000 > sampleRate);
+  const bool useUpsampler = (frameSize > (32 << 1) && bitRateMode * 3675 > sampleRate);
 
   if (useUpsampler)
   {
@@ -495,19 +494,11 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
 #endif
 #ifdef EXHALE_APP_WIN
-    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16ú#+48 kbit/s\n");
-# if XHE_AAC_LOW_DELAY
-    fprintf_s (stdout, " \t     (A-J)  41ms low-delay compatible xHE-AAC with BE at 16ú#+48 kbit/s\n");
-# else
-    fprintf_s (stdout, " \t     (a-g)  low-complexity compliant xHE-AAC with SBR at 12ú#+36 kbit/s\n");
-# endif
+    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity ISO/MPEG-D Extended HE-AAC at 16ú#+48 kbit/s\n");
+    fprintf_s (stdout, " \t     (a-g)  low-complexity Extended HE-AAC using eSBR at 12ú#+36 kbit/s\n");
 #else
-    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity standard compliant xHE-AAC at 16*#+48 kbit/s\n");
-# if XHE_AAC_LOW_DELAY
-    fprintf_s (stdout, " \t     (A-J)  41ms low-delay compatible xHE-AAC with BE at 16*#+48 kbit/s\n");
-# else
-    fprintf_s (stdout, " \t     (a-g)  low-complexity compliant xHE-AAC with SBR at 12*#+36 kbit/s\n");
-# endif
+    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity ISO/MPEG-D Extended HE-AAC at 16*#+48 kbit/s\n");
+    fprintf_s (stdout, " \t     (a-g)  low-complexity Extended HE-AAC using eSBR at 12*#+36 kbit/s\n");
 #endif
     fprintf_s (stdout, "\n inputWaveFile.wav  lossless WAVE audio input, read from stdin if not specified\n\n");
     fprintf_s (stdout, " outputMP4File.m4a  encoded MPEG-4 bit-stream, extension should be .m4a or .mp4\n\n\n");
@@ -536,11 +527,7 @@ int main (const int argc, char* argv[])
   }
 
   // check preset mode, derive coder config
-#if XHE_AAC_LOW_DELAY
-  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'A' && *argv[1] <= 'J'))
-#else
   if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'g'))
-#endif
   {
     i = (uint16_t) argv[1][0];
     compatibleExtensionFlag = (i & 0x40) >> 6;
@@ -560,11 +547,8 @@ int main (const int argc, char* argv[])
   }
   else
   {
-#if XHE_AAC_LOW_DELAY
-    _ERROR2 (" ERROR reading preset mode: character %s is not supported! Use 0-9 or A-J.\n\n", argv[1]);
-#else
     _ERROR2 (" ERROR reading preset mode: character %s is not supported! Use 0-9 or a-g.\n\n", argv[1]);
-#endif
+
     return 16384; // preset isn't supported
   }
 
@@ -666,7 +650,7 @@ int main (const int argc, char* argv[])
 
     if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 22050 && enableSbrCoding)
     {
-      _ERROR2 (" The sampling rate is %d kHz but xHE-AAC with SBR requires at least 22 kHz.\n\n", wavReader.getSampleRate () / 1000);
+      _ERROR2 (" The sampling rate is %d kHz but encoding using eSBR requires at least 22 kHz.\n\n", wavReader.getSampleRate () / 1000);
     }
     i = 8192; // return value
 
@@ -865,6 +849,14 @@ int main (const int argc, char* argv[])
       fprintf_s (stdout, " NOTE: Upsampling the input audio from %d kHz to %d kHz with preset mode %d\n\n", i / 1000, i / 500, variableCoreBitRateMode);
     }
 
+    if (variableCoreBitRateMode == 0)
+    {
+      if (enableSbrCoding)
+        _ERROR1 (" WARNING: The usage of preset mode a is not recommended since the audio quality\n resulting from preset a does not reflect the full capabilities of the Extended\n HE-AAC standard. Therefore, use the lowest bit-rate modes only when necessary!\n\n");
+      else
+        _ERROR1 (" WARNING: The usage of preset mode 0 is not recommended since the audio quality\n resulting from preset 0 does not reflect the full capabilities of the Extended\n HE-AAC standard. Therefore, use the lowest bit-rate modes only when necessary!\n\n");
+    }
+
     // allocate dynamic frame memory buffers
     inPcmData = (int32_t*) malloc (inFrameSize * numChannels); // max frame in size
 #ifdef NO_PREROLL_DATA
@@ -965,7 +957,7 @@ int main (const int argc, char* argv[])
 #endif
                               , indepPeriod, outAuData, bw, (time (nullptr) + 2082844800) & UINT_MAX, (char) variableCoreBitRateMode)) != 0)
       {
-        _ERROR2 (" ERROR while trying to initialize xHE-AAC encoder: error value %d was returned!\n\n", i);
+        _ERROR2 (" ERROR while trying to initialize exhale encoder: error value %d was returned!\n\n", i);
         i <<= 2; // return value
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -1029,7 +1021,7 @@ int main (const int argc, char* argv[])
       // initial frame, encode look-ahead AU
       if ((bw = exhaleEnc.encodeLookahead ()) < 3)
       {
-        _ERROR2 ("\n ERROR while trying to create first xHE-AAC frame: error value %d was returned!\n\n", bw);
+        _ERROR2 ("\n ERROR while trying to create first audio frame: error value %d was returned!\n\n", bw);
         i = 2; // return value
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -1057,7 +1049,7 @@ int main (const int argc, char* argv[])
       // leading frame, actual look-ahead AU
       if ((bw = exhaleEnc.encodeFrame ()) < 3)
       {
-        _ERROR2 ("\n ERROR while trying to create first xHE-AAC frame: error value %d was returned!\n\n", bw);
+        _ERROR2 ("\n ERROR while trying to create first audio frame: error value %d was returned!\n\n", bw);
         i = 2; // return value
 # if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -1100,7 +1092,7 @@ int main (const int argc, char* argv[])
 
         if ((bw = exhaleEnc.encodeFrame ()) < 3)
         {
-          _ERROR2 ("\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
+          _ERROR2 ("\n ERROR while trying to create audio frame: error value %d was returned!\n\n", bw);
           i = 2; // return value
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);
@@ -1153,7 +1145,7 @@ int main (const int argc, char* argv[])
 
       if ((bw = exhaleEnc.encodeFrame ()) < 3)
       {
-        _ERROR2 ("\n ERROR while trying to create xHE-AAC frame: error value %d was returned!\n\n", bw);
+        _ERROR2 ("\n ERROR while trying to create audio frame: error value %d was returned!\n\n", bw);
         i = 2; // return value
 #if USE_EXHALELIB_DLL
         exhaleDelete (&exhaleEnc);
@@ -1212,7 +1204,7 @@ int main (const int argc, char* argv[])
 
         if ((bw = exhaleEnc.encodeFrame ()) < 3)
         {
-          _ERROR2 ("\n ERROR while trying to create last xHE-AAC frame: error value %d was returned!\n\n", bw);
+          _ERROR2 ("\n ERROR while trying to create last audio frame: error value %d was returned!\n\n", bw);
           i = 2; // return value
 #if USE_EXHALELIB_DLL
           exhaleDelete (&exhaleEnc);

@@ -931,7 +931,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #if !RESTRICT_TO_AAC
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
 #endif
-        const uint16_t rateFac = m_bitAllocator.getRateCtrlFac (m_priLength ? m_rateFactor : 0, samplingRate, meanSpecFlat[ci]); // RC factor
+        const uint16_t rateFac = m_bitAllocator.getRateCtrlFac (m_rateFactor, samplingRate, meanSpecFlat[ci], coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT);
         uint32_t*    stepSizes = &sfbStepSizes[ci * m_numSwbShort * NUM_WINDOW_GROUPS];
 
         memset (grpData.scaleFactors, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
@@ -961,13 +961,13 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         } // for gr
 
 #if !RESTRICT_TO_AAC
-        if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_bitRateMode <= 3 || !eightShorts))
+        if ((maxSfbCh > 0) && m_noiseFilling[el] && (m_shiftValSBR > 0 || m_bitRateMode <= 3 || !eightShorts))
         {
-          const uint32_t maxSfbCurr = (eightShorts ? (useMaxBandwidth ? 17 - (samplingRate >> 13) // was 14, good for 22.05 - 32 kHz
+          const uint32_t maxSfbCurr = (eightShorts ? (useMaxBandwidth ? __min (15, 17 - (samplingRate >> 13) + (samplingRate >> 15))
                                                                       : brModeAndFsToMaxSfbShort (m_bitRateMode, samplingRate)) : maxSfbLong);
           const bool keepMaxSfbCurr = ((samplingRate < 37566) || (samplingRate >= 46009 && samplingRate < 55426 && eightShorts));
           const uint8_t numSwbFrame = __min ((numSwbCh * ((maxSfbCh == maxSfbCurr) || (m_bitRateMode <= 2) || (m_shiftValSBR > 0) ? 4u : 3u)) >> 2,
-                                      (eightShorts ? maxSfbCh : maxSfbLong) + (m_bitRateMode < 2 || m_bitRateMode > 3 || keepMaxSfbCurr ? 0u : 1u));
+                                             maxSfbCurr + (m_bitRateMode < 2 || m_bitRateMode > 3 || keepMaxSfbCurr ? 0u : 1u));
 
           if ((m_bitRateMode == 0) && (m_numElements == 1) && (samplingRate < 27713) && eightShorts)
           {
@@ -994,8 +994,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                   if (grpRms[s] < getThr (ch, sfbIdx)) grpData.scaleFactors[s + m_numSwbShort * gr] = 0;
                 }
               }
-              else
-              if ((m_bitRateMode <= 4) && (meanSpecFlat[ci] <= (SCHAR_MAX >> 1))) // low-RMS
+              else if ((m_bitRateMode <= 4) && (meanSpecFlat[ci] <= (SCHAR_MAX >> 1))) // lo
               {
                 for (s = __max (samplingRate < 27713 ? (samplingRate < 18783 ? 17 : 24) : 22, m_specGapFiller.getFirstGapFillSfb ()); s < maxSfbCh; s++)
                 {
@@ -1005,7 +1004,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
               memset (&grpData.scaleFactors[maxSfbCh + m_numSwbShort * gr], 0, (numSwbFrame - maxSfbCh) * sizeof (uint8_t));
             }
-            grpData.sfbsPerGroup = coreConfig.icsInfoCurr[ch].maxSfb = numSwbFrame;
+            grpData.sfbsPerGroup = coreConfig.icsInfoCurr[ch].maxSfb = __max (maxSfbCh, numSwbFrame);
           }
           if (ch > 0 && coreConfig.commonWindow) // resynchronize the two max_sfb for stereo
           {
@@ -1023,7 +1022,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
         {
           for (s = 0; s < 26; s++) m_sfbLoudMem[ch][s][m_frameCount & 31] = BA_EPS;
         }
-#endif // !RESTRICT_TO_AAC
+#endif
         ci++;
       } // for ch
 
@@ -1325,7 +1324,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
     }
   } // for el
 #if !RESTRICT_TO_AAC
-  if (m_priLength) m_rateFactor = samplingRate;
+  m_rateFactor = samplingRate; // for RC
 #endif
   return (errorValue > 0 ? 0 : m_outStream.createAudioFrame (m_elementData, m_entropyCoder, m_mdctSignals, m_mdctQuantMag, m_indepFlag,
                                                              m_numElements, m_numSwbShort, (uint8_t* const) m_tempIntBuf,

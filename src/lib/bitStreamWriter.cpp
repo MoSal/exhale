@@ -10,6 +10,7 @@
 
 #include "exhaleLibPch.h"
 #include "bitStreamWriter.h"
+#include "bitAllocation.h" // define BA_MORE_CBR (more constant bit-rate, experimental!)
 
 #ifndef NO_PREROLL_DATA
 static const uint8_t zeroAu[2][14] = { // single-element AUs incl. SBR for digital silence
@@ -1126,7 +1127,11 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
 
     if (framesPerSec > 0.0 && targetRate > 0 && frameCount < UINT_MAX) // running overcoding ratio
     {
+#if BA_MORE_CBR
+      *rate = uint32_t (0.5 + (m_auByteCount * framesPerSec) / (__max (framesPerSec, (double) frameCount) * targetRate));
+#else
       *rate = uint32_t (0.5 + (m_auByteCount * framesPerSec) / (__max (20.0 * framesPerSec, (double) frameCount) * targetRate));
+#endif
     }
     else *rate = 0; // insufficient data
   }

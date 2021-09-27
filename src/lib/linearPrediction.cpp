@@ -1,11 +1,11 @@
 /* linearPrediction.cpp - source file for class providing linear prediction capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2020 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -417,5 +417,5 @@ bool LinearPredictor::similarParCorCoeffs (const short* const parCorCoeffs1, con
     sumAbsDiff += abs (parCorCoeffs1[s] - parCorCoeffs2[s]);
   }
 
-  return (sumAbsDiff < ((4u * (unsigned) nCoeffs) << (parCorCoeffBitDepth >> 1)));
+  return (sumAbsDiff + 12u * nCoeffs < ((4u * nCoeffs) << (parCorCoeffBitDepth >> 1)));
 }
