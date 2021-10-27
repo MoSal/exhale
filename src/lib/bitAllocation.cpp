@@ -107,11 +107,12 @@ uint16_t BitAllocator::getRateCtrlFac (const int32_t rateRatio, const unsigned s
 #if BA_MORE_CBR
   const int32_t ratioFac = rateRatio * (40 - 5 * m_rateIndex);
   const uint32_t brRatio = __max ((prevEightShorts ? (ratioFac * ratioFac + (1 << 16)) >> 17 : 0) - SHRT_MIN, __min (USHRT_MAX, ratioFac)) -
-                           (m_rateIndex == 2 ? (1 << 11) : 0);
+                           (m_rateIndex == 2 ? 1 << 12 : 0);  // rate tuning
+  const uint16_t mSfmSqr = (m_rateIndex <= 2 && samplingRate >= 27713 ? (specFlatness * specFlatness) >> m_rateIndex : 0);
 #else
   const uint32_t brRatio = __max (1 << 15, __min (USHRT_MAX, rateRatio * (36 - 9 * m_rateIndex)));
-#endif
   const uint16_t mSfmSqr = (m_rateIndex < 2 && samplingRate >= 27713 ? (specFlatness * specFlatness) >> m_rateIndex : 0);
+#endif
   const uint16_t mSfmFac = 256 - (((32 + m_rateIndex) * (specFlatness << 4) - mSfmSqr + (1 << 9)) >> 10);
 
   return uint16_t ((brRatio * mSfmFac + (1 << 7)) >> 8);

@@ -126,6 +126,46 @@ void TempAnalyzer::getTransientAndPitch (int16_t transIdxAndPitch[USAC_MAX_NUM_C
   memcpy (transIdxAndPitch, m_transientLoc, nChannels * sizeof (int16_t));
 }
 
+uint8_t TempAnalyzer::stereoPreAnalysis (const int32_t* const timeSignals[2], const uint8_t specFlatness[2], const unsigned nSamplesInSig)
+{
+  const double   offsetSfmLR  = __max (0.0, ((double) specFlatness[0] + specFlatness[1] - 256.0) * 0.5);
+  const int32_t* const sigL   = timeSignals[0] + (nSamplesInSig >> 1);
+  const int32_t* const sigLM1 = sigL - 1;
+  const int32_t* const sigR   = timeSignals[1] + (nSamplesInSig >> 1);
+  const int32_t* const sigRM1 = sigR - 1;
+  int64_t hpNextL = sigL[nSamplesInSig] - sigLM1[nSamplesInSig];
+  int64_t hpNextR = sigR[nSamplesInSig] - sigRM1[nSamplesInSig];
+  int64_t sumSqrL = hpNextL * hpNextL, sumSqrR = hpNextR * hpNextR;
+  int64_t sumPC00 = (hpNextL * hpNextR) >> 1, sumPC01 = 0, sumPC10 = 0;
+  double d;
+
+  for (int s = nSamplesInSig - 1; s >= 0; s--)
+  {
+    // compute correlation between high-pass channel signals with and without 1 smp time delay
+    const int64_t hpL = sigL[s] - sigLM1[s];
+    const int64_t hpR = sigR[s] - sigRM1[s];
+
+    sumSqrL += hpL * hpL;
+    sumSqrR += hpR * hpR;
+    sumPC00 += hpL * hpR;
+    sumPC01 += hpL * hpNextR;
+    sumPC10 += hpR * hpNextL;
+
+    hpNextL = hpL;
+    hpNextR = hpR;
+  }
+
+  if (sumSqrL < nSamplesInSig || sumSqrR < nSamplesInSig) return 0; // stop on low-level input
+
+  sumPC00 = abs (sumPC00);
+  sumPC01 = abs (sumPC01);
+  sumPC10 = abs (sumPC10);
+
+  d = 256.0 * __max (sumPC00, __max (sumPC01, sumPC10)); // max. corr. regardless of the delay
+
+  return (uint8_t) __max (0.0, d / sqrt ((double) sumSqrL * sumSqrR) - offsetSfmLR);
+}
+
 unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_MAX_NUM_CHANNELS], const unsigned nChannels,
                                          const int nSamplesInFrame, const unsigned lookaheadOffset, const uint8_t sbrShift,
                                          int32_t* const lrCoreTimeSignals[USAC_MAX_NUM_CHANNELS] /*= nullptr*/, // if using SBR

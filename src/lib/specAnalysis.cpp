@@ -179,7 +179,6 @@ unsigned SpecAnalyzer::initSigAnaMemory (LinearPredictor* const linPredictor, co
   return 0; // no error
 }
 
-#if SA_OPT_WINDOW_GROUPING
 unsigned SpecAnalyzer::optimizeGrouping (const unsigned channelIndex, const unsigned prefBandwidth, const unsigned prefGroupingIndex)
 {
   const uint32_t* meanAbsValCurr = m_meanAbsValue[channelIndex];
@@ -226,7 +225,6 @@ unsigned SpecAnalyzer::optimizeGrouping (const unsigned channelIndex, const unsi
 
   return __min (grpIdxCurr, prefGroupingIndex); // final optimized grouping index
 }
-#endif // SA_OPT_WINDOW_GROUPING
 
 unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_MAX_NUM_CHANNELS],
                                          const int32_t* const mdstSignals[USAC_MAX_NUM_CHANNELS],
@@ -349,14 +347,12 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
 
 // --- spectral analysis statistics for frame
     b = 1;
-#if SA_IMPROVED_FILT_CALC
     if (samplingRate < 27713) sumAvgBand -= m_meanAbsValue[ch][b++];
-#endif
+
     while (((unsigned) b + 1 < lpcStopBand16k) && ((uint64_t) m_meanAbsValue[ch][b] * (m_numAnaBands[ch] - 1) > sumAvgBand)) b++;
     b = __min (m_bandwidthOff[ch], b << SA_BW_SHIFT);
-#if SA_IMPROVED_FILT_CALC
     if (samplingRate < 27713) sumAvgBand += m_meanAbsValue[ch][1];
-#endif
+
     // obtain prediction gain across spectrum
     m_tnsPredGains[ch] = m_tnsPredictor->calcParCorCoeffs (&chMdct[b], __min (m_bandwidthOff[ch], lpcStopBand16k << SA_BW_SHIFT) - b,
                                                            MAX_PREDICTION_ORDER, m_parCorCoeffs[ch]);
@@ -378,7 +374,7 @@ unsigned SpecAnalyzer::spectralAnalysis (const int32_t* const mdctSignals[USAC_M
 int16_t SpecAnalyzer::stereoSigAnalysis (const int32_t* const mdctSignal1, const int32_t* const mdctSignal2,
                                          const int32_t* const mdstSignal1, const int32_t* const mdstSignal2,
                                          const unsigned nSamplesMax, const unsigned nSamplesInFrame, const bool shortTransforms,
-                                         uint8_t* const stereoCorrValue /*= nullptr*/) // per-band perceptual correlation data
+                                         uint8_t* const stereoCorrValue) // per-band LR correlation
 {
   const uint64_t anaBwOffset = SA_BW >> 1;
   const uint16_t numAnaBands = (shortTransforms ? nSamplesInFrame : nSamplesMax) >> SA_BW_SHIFT;
@@ -392,7 +388,8 @@ int16_t SpecAnalyzer::stereoSigAnalysis (const int32_t* const mdctSignal1, const
   }
   else
   {
-    uint16_t currPC = 0, numPC = 0; // frame-average correlation
+    const uint16_t tempPreAnaPC = stereoCorrValue[0];
+    uint16_t currPC = 0, numPC  = 0;
     uint64_t sumReM = 0, sumReS = 0;// mid-side RMS distribution
 
     for (b = numAnaBands - 1; b >= 0; b--)
@@ -456,6 +453,8 @@ int16_t SpecAnalyzer::stereoSigAnalysis (const int32_t* const mdctSignal1, const
     }
 
     if (numPC > 1) currPC = (currPC + (numPC >> 1)) / numPC; // frame's perceptual correlation
+
+    if (currPC < tempPreAnaPC) currPC = (currPC + tempPreAnaPC + 1) >> 1;
 
     b = (int16_t) currPC * (sumReS * 2 > sumReM * 3 ? -1 : 1);  // negation implies side > mid
   }

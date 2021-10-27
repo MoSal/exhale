@@ -1324,7 +1324,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
     }
   } // for el
 #if !RESTRICT_TO_AAC
-  m_rateFactor = samplingRate; // for RC
+  m_rateFactor = samplingRate; // rate ctrl
 #endif
   return (errorValue > 0 ? 0 : m_outStream.createAudioFrame (m_elementData, m_entropyCoder, m_mdctSignals, m_mdctQuantMag, m_indepFlag,
                                                              m_numElements, m_numSwbShort, (uint8_t* const) m_tempIntBuf,
@@ -1389,9 +1389,8 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
         const uint8_t meanSpecFlat = (((m_specAnaCurr[ci] >> 16) & UCHAR_MAX) + ((m_specAnaCurr[ci + 1] >> 16) & UCHAR_MAX) + 1) >> 1;
         const uint16_t* const swbo = swbOffsetsL[m_swbTableIdx];
         const uint16_t nSamplesMax = (useMaxBandwidth ? nSamplesInFrame : swbo[brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate)]);
-        const int16_t  steAnaStats = m_specAnalyzer.stereoSigAnalysis (m_mdctSignals[ci], m_mdctSignals[ci + 1],
-                                                                       m_mdstSignals[ci], m_mdstSignals[ci + 1], nSamplesMax,
-                                                                       nSamplesInFrame, eightShorts, coreConfig.stereoDataCurr);
+        const int16_t  steAnaStats = m_specAnalyzer.stereoSigAnalysis (m_mdctSignals[ci], m_mdctSignals[ci + 1], m_mdstSignals[ci], m_mdstSignals[ci + 1],
+                                                                       nSamplesMax, nSamplesInFrame, eightShorts, coreConfig.stereoDataCurr);
         if (steAnaStats == SHRT_MIN) errorValue = 1;
 
         if ((s = abs (steAnaStats)) * m_perCorrHCurr[el] == 0) // transition to/from silence
@@ -1455,7 +1454,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           {
             icsCurr.maxSfb = __min (icsCurr.maxSfb, brModeAndFsToMaxSfbShort (m_bitRateMode, samplingRate));
           }
-#if SA_OPT_WINDOW_GROUPING
+
           if (ch > 0 && coreConfig.commonWindow)  // resynchronize the scale_factor_grouping
           {
             if (icsCurr.windowGrouping != coreConfig.icsInfoCurr[0].windowGrouping)
@@ -1471,15 +1470,15 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
             }
           }
           memcpy (grpData.windowGroupLength, windowGroupingTable[icsCurr.windowGrouping], NUM_WINDOW_GROUPS * sizeof (uint8_t));
-#endif
+
           findActualBandwidthShort (&icsCurr.maxSfb, grpSO, m_mdctSignals[ci], nChannels < 2 ? nullptr : m_mdstSignals[ci], nSamplesInShort);
 
           errorValue |= eightShortGrouping (grpData, grpSO, m_mdctSignals[ci], nChannels < 2 ? nullptr : m_mdstSignals[ci]);
         } // if EIGHT_SHORT
 
         // compute and quantize optimal TNS coefficients, then find optimal TNS filter order
-        s /*max. pred gain*/ = getOptParCorCoeffs (grpData, icsCurr.maxSfb, tnsData, ci,
-                                                   ch > 0 && coreConfig.commonWindow ? coreConfig.tnsData[0].firstTnsWindow : 0);
+        s = getOptParCorCoeffs (grpData, icsCurr.maxSfb, tnsData, ci, (ch > 0 && coreConfig.commonWindow ? coreConfig.tnsData[0].firstTnsWindow : 0));
+
         for (uint16_t n = 0, gr = 0; gr < grpData.numWindowGroups; gr++)
         {
           if (grpData.windowGroupLength[gr] == 1)
@@ -1780,6 +1779,7 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
 
           memcpy (coreConfig.stereoDataPrev, &coreConfig.stereoDataCurr[lastGrpOffset], __min (60 - lastGrpOffset, maxSfbStePrev) * sizeof (uint8_t));
         }
+        coreConfig.stereoDataCurr[0] = (m_bitRateMode <= 1 ? m_tempAnalyzer.stereoPreAnalysis (&m_timeSignals[ci - 2], &m_specFlatPrev[ci - 2], nSamplesInFrame) : 0);
       } // if nrChannels > 1
     }
 

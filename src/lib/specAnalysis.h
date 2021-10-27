@@ -19,8 +19,6 @@
 #define SA_BW  (1 << SA_BW_SHIFT)
 #define SA_EPS               1024
 #define SA_EXACT_COMPLEX_ABS    0
-#define SA_IMPROVED_FILT_CALC   1
-#define SA_OPT_WINDOW_GROUPING  1
 
 // spectral signal analysis class
 class SpecAnalyzer
@@ -52,9 +50,7 @@ public:
   void getSpecAnalysisStats (uint32_t avgSpecAnaStats[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   void getSpectralBandwidth (uint16_t bandwidthOffset[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   unsigned initSigAnaMemory (LinearPredictor* const linPredictor, const unsigned nChannels, const unsigned maxTransfLength);
-#if SA_OPT_WINDOW_GROUPING
   unsigned optimizeGrouping (const unsigned channelIndex, const unsigned preferredBandwidth, const unsigned preferredGrouping);
-#endif
   unsigned spectralAnalysis (const int32_t* const mdctSignals[USAC_MAX_NUM_CHANNELS],
                              const int32_t* const mdstSignals[USAC_MAX_NUM_CHANNELS],
                              const unsigned nChannels, const unsigned nSamplesInFrame, const unsigned samplingRate,
@@ -62,7 +58,7 @@ public:
   int16_t stereoSigAnalysis (const int32_t* const mdctSignal1, const int32_t* const mdctSignal2,
                              const int32_t* const mdstSignal1, const int32_t* const mdstSignal2,
                              const unsigned nSamplesMax, const unsigned nSamplesInFrame, const bool shortTransforms,
-                             uint8_t* const stereoCorrValue = nullptr); // per-band perceptual correlation data
+                             uint8_t* const stereoCorrValue); // per-band LR correlation
 }; // SpecAnalyzer
 
 #endif // _SPEC_ANALYSIS_H_

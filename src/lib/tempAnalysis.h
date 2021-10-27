@@ -1,5 +1,5 @@
 /* tempAnalysis.h - header file for class providing temporal analysis of PCM signals
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -40,6 +40,7 @@ public:
   // public functions
   void getTempAnalysisStats (uint32_t avgTempAnaStats[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
   void getTransientAndPitch (int16_t transIdxAndPitch[USAC_MAX_NUM_CHANNELS], const unsigned nChannels);
+  uint8_t stereoPreAnalysis (const int32_t* const timeSignals[2], const uint8_t specFlatness[2], const unsigned nSamplesInSig);
   unsigned temporalAnalysis (const int32_t* const timeSignals[USAC_MAX_NUM_CHANNELS], const unsigned nChannels,
                              const int nSamplesInFrame, const unsigned lookaheadOffset, const uint8_t sbrShift,
                              int32_t* const lrCoreTimeSignals[USAC_MAX_NUM_CHANNELS] = nullptr, // if using SBR
