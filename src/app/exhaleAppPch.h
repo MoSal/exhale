@@ -1,5 +1,5 @@
 /* exhaleAppPch.h - pre-compiled header file for source code of exhale application
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -45,6 +45,13 @@
 #if !defined (fwprintf_s) && !defined (__MINGW32__)
 # define fwprintf_s            fwprintf
 #endif
+#ifndef MFREE
+# define MFREE(x)              if (x != nullptr) { free ((void*) x); x = nullptr; }
+#endif
+
+// public extrapolation function
+void eaExtrapolate (int32_t* const pcmBuffer, const uint16_t pcmOffset,
+                    const uint16_t frameSize, const uint16_t numChannels, const bool fadeIn = false);
 
 // public sampling rate function
 bool isSamplingRateSupported (const unsigned samplingRate);

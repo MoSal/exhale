@@ -458,9 +458,10 @@ unsigned BasicWavReader::read (int32_t* const frameBuf, const uint16_t frameCoun
   {
     m_bytesRead = unsigned (m_bytesRead + m_bytesRemaining);
     framesRead  = m_bytesRead / m_waveFrameSize;
-    if (framesRead < framesTotal) memset (&frameBuf[framesRead * m_waveChannels], 0, (framesTotal - framesRead) * m_waveChannels * sizeof (int32_t));
   }
   m_chunkLength += m_bytesRead;
+
+  if (framesRead < framesTotal) eaExtrapolate (frameBuf, framesRead, framesTotal, m_waveChannels); // fade-out, for gapless playback on more content
 
   return framesRead;
 }

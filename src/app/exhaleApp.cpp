@@ -926,6 +926,10 @@ int main (const int argc, char* argv[])
         else
         if (enableResampler) eaApplyDownsampler (inPcmData, inPcmRsmp, frameLength, numChannels, true);
       }
+      // extrapolate samples in padding region of first frame since exhaleLib can't
+      // take over this job when inPadLength > 0. Improves gapless playback.
+      else if (inPadLength > 0) eaExtrapolate (inPcmData, inPadLength, frameLength, numChannels, true); // fade-in
+
       // signal 1-frame skip and PCM priming
       outAuData[0] = 1 | zeroDelayForSbrEncoding * (uint8_t) __min (254, (firstLength - inPadLength) << (resampShift + 1));
 #endif
@@ -1356,28 +1360,13 @@ int main (const int argc, char* argv[])
 mainFinish:
 
   // free all dynamic memory
-  if (inPcmData != nullptr)
-  {
-    free ((void*) inPcmData);
-    inPcmData = nullptr;
-  }
-  if (inPcmRsmp != nullptr)
-  {
-    free ((void*) inPcmRsmp);
-    inPcmRsmp = nullptr;
-  }
+  MFREE (inPcmData);
+  MFREE (inPcmRsmp);
 #if EA_USE_WORK_DIR
-  if (currPath != nullptr)
-  {
-    free ((void*) currPath);
-    currPath = nullptr;
-  }
+  MFREE (currPath);
 #endif
-  if (outAuData != nullptr)
-  {
-    free ((void*) outAuData);
-    outAuData = nullptr;
-  }
+  MFREE (outAuData);
+
   // close input file
   if (inFileHandle != -1)
   {
