@@ -133,7 +133,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   const uint32_t sampleCountSize   = (m_frameCount > UINT16_MAX ? 4 : (m_frameCount > UINT8_MAX ? 2 : 1));
   const uint32_t csgpAtomSize = STSX_BSIZE + 4 /*patternCount == 1*/ + patternLengthSize + sampleCountSize + compPatternLength;
   const uint32_t stblIncrSize = m_ascSizeM5 + stszAtomSize + stscAtomSize + stcoAtomSize + stssAtomSize + sgpdAtomSize + csgpAtomSize;
-  const uint32_t moovAtomSize = toBigEndian (toUShortValue (MOOV_BSIZE) + stblIncrSize);
+  const uint32_t moovAtomSize = toBigEndian (toUShortValue (MOOV_BSIZE) + stblIncrSize + UDTA_BSIZE);
   const uint32_t trakAtomSize = toBigEndian (toUShortValue (TRAK_BSIZE) + stblIncrSize);
   const uint32_t mdiaAtomSize = toBigEndian (toUShortValue (MDIA_BSIZE) + stblIncrSize);
   const uint32_t minfAtomSize = toBigEndian (toUShortValue (MINF_BSIZE) + stblIncrSize);
@@ -268,7 +268,47 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
     m_dynamicHeader.push_back (1 << ((numFramesFirstPeriod & 1) ? 0 : 4));
     for (i++; i < compPatternLength; i++) m_dynamicHeader.push_back (0);  // rest of nonmembers, second part
   }
+#if UDTA_BSIZE
+  const char ver[] = EXHALELIB_VERSION_MAJOR "." EXHALELIB_VERSION_MINOR EXHALELIB_VERSION_BUGFIX;
 
+  push32BitValue (UDTA_BSIZE);
+  m_dynamicHeader.push_back (0x75); m_dynamicHeader.push_back (0x64);
+  m_dynamicHeader.push_back (0x74); m_dynamicHeader.push_back (0x61); // udta
+  push32BitValue (UDTA_BSIZE - 8);
+  m_dynamicHeader.push_back (0x6D); m_dynamicHeader.push_back (0x65);
+  m_dynamicHeader.push_back (0x74); m_dynamicHeader.push_back (0x61); // meta
+  push32BitValue (0);
+
+  push32BitValue (33);
+  m_dynamicHeader.push_back (0x68); m_dynamicHeader.push_back (0x64);
+  m_dynamicHeader.push_back (0x6C); m_dynamicHeader.push_back (0x72); // hdlr
+  push32BitValue (0);
+  push32BitValue (0);
+  m_dynamicHeader.push_back (0x6D); m_dynamicHeader.push_back (0x64);
+  m_dynamicHeader.push_back (0x69); m_dynamicHeader.push_back (0x72); // mdir
+  m_dynamicHeader.push_back (0x61); m_dynamicHeader.push_back (0x70);
+  m_dynamicHeader.push_back (0x70); m_dynamicHeader.push_back (0x6C); // appl
+  push32BitValue (0);
+  push32BitValue (0);
+  m_dynamicHeader.push_back (0);
+
+  push32BitValue (UDTA_BSIZE - 53);
+  m_dynamicHeader.push_back (0x69); m_dynamicHeader.push_back (0x6C);
+  m_dynamicHeader.push_back (0x73); m_dynamicHeader.push_back (0x74); // ilst
+  push32BitValue (UDTA_BSIZE - 53 - 8);
+  m_dynamicHeader.push_back (0xA9); m_dynamicHeader.push_back (0x74);
+  m_dynamicHeader.push_back (0x6F); m_dynamicHeader.push_back (0x6F); // ©too
+  push32BitValue (UDTA_BSIZE - 53 - 16);
+  m_dynamicHeader.push_back (0x64); m_dynamicHeader.push_back (0x61);
+  m_dynamicHeader.push_back (0x74); m_dynamicHeader.push_back (0x61); // data
+  push32BitValue (1);
+  push32BitValue (0);
+  m_dynamicHeader.push_back (0x65); m_dynamicHeader.push_back (0x78);
+  m_dynamicHeader.push_back (0x68); m_dynamicHeader.push_back (0x61);
+  m_dynamicHeader.push_back (0x6C); m_dynamicHeader.push_back (0x65); // exhale
+  m_dynamicHeader.push_back (0x20);
+  for (i = 0; i < 5; i++) m_dynamicHeader.push_back ((uint8_t) ver[i]);
+#endif
   const uint32_t moovAndMdatOverhead = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + 8;
   const uint32_t headerPaddingLength = uint32_t (m_mediaOffset - moovAndMdatOverhead);
 
@@ -288,7 +328,9 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   {
     if (pNdx == 0)  // add padding byte with library version
     {
+#if !UDTA_BSIZE
       const char ver[] = EXHALELIB_VERSION_MAJOR "." EXHALELIB_VERSION_MINOR EXHALELIB_VERSION_BUGFIX;
+#endif
       const int verInt = (ver[0] - 0x30) * 100 + (ver[2] - 0x30) * 10 + (ver[4] - 0x30);
 
       m_dynamicHeader.push_back (__max (0, __min (UCHAR_MAX, verInt)));
@@ -323,9 +365,9 @@ int BasicMP4Writer::initHeader (const uint32_t audioLength, const unsigned extra
   const unsigned smpGrpSize = 10 /*sgpd*/ + (patternEntryCount > UINT8_MAX ? 10 : 9) + ((patternEntryCount + 1) >> 1) /*csgp*/;
   const int estimHeaderSize = STAT_HEADER_SIZE + m_ascSizeM5 + 6 + 4 + frameCount * 4 /*stsz*/ + STSX_BSIZE * 6 + smpGrpSize + chunkCount * 4 /*stco*/ +
 #ifdef NO_PREROLL_DATA
-                              4 /*minimum stss*/ +
+                              4 /*minimum stss*/ + UDTA_BSIZE +
 #else
-                              ((chunkCount + 1) >> 1) * 4 /*stss*/ +
+                              ((chunkCount + 1) >> 1) * 4 /*stss*/ + UDTA_BSIZE +
 #endif
                               (numFramesFinalPeriod == 0 ? (frameCount > m_rndAccPeriod && m_frameLength == 2048 ? 20 : 12) : 24) /*stsc*/ + 8 /*mdat*/;
   int bytesWritten = 0;
