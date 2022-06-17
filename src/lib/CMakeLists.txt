@@ -45,6 +45,7 @@ if(CMAKE_DL_LIBS)
     target_link_libraries(exhaleLib PRIVATE ${CMAKE_DL_LIBS})
 endif()
 target_include_directories(exhaleLib PRIVATE ${PROJECT_SOURCE_DIR}/include)
+set_target_properties(exhaleLib PROPERTIES PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/include/exhaleDecl.h")
 
 # PCH requires at least 3.16
 # I actually don't know if this works or not
@@ -54,4 +55,5 @@ endif()
 
 install(TARGETS exhaleLib
     ARCHIVE DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR})
+    LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR})

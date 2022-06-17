@@ -12,6 +12,7 @@
 #define _EXHALE_DECL_H_
 
 #include <stdint.h> /* for (u)int8_t, (u)int16_t, (u)int32_t, (u)int64_t */
+#include <stdbool.h>
 
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
 # ifdef EXHALE_DYN_LINK

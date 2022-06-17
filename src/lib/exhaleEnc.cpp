@@ -2162,3 +2162,55 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 
   return errorValue;
 }
+
+extern "C"
+{
+// C constructor
+EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const inputPcmData,       unsigned char* const outputAuData,
+                                        const unsigned sampleRate        , const unsigned numChannels       ,
+                                        const unsigned frameLength       , const unsigned indepPeriod       ,
+                                        const unsigned varBitRateMode    , const bool useNoiseFilling       ,
+                                        const bool useEcodisExt)
+{
+  return reinterpret_cast<ExhaleEncAPI*> (new ExhaleEncoder (inputPcmData, outputAuData, sampleRate, numChannels, frameLength, indepPeriod, varBitRateMode
+#if !RESTRICT_TO_AAC
+                                        , useNoiseFilling, useEcodisExt
+#endif
+                                          ));
+}
+
+// C destructor
+EXHALE_DECL unsigned exhaleDelete (ExhaleEncAPI* exhaleEnc)
+{
+  if (exhaleEnc != NULL) { delete reinterpret_cast<ExhaleEncoder*> (exhaleEnc); return 0; }
+
+  return USHRT_MAX; // error
+}
+
+// C initializer
+EXHALE_DECL unsigned exhaleInitEncoder (ExhaleEncAPI* exhaleEnc, unsigned char* const audioConfigBuffer,
+                                        uint32_t* const audioConfigBytes)
+{
+  if (exhaleEnc != NULL) return reinterpret_cast<ExhaleEncoder*> (exhaleEnc)->initEncoder (audioConfigBuffer, audioConfigBytes);
+
+  return USHRT_MAX; // error
+}
+
+// C lookahead encoder
+EXHALE_DECL unsigned exhaleEncodeLookahead (ExhaleEncAPI* exhaleEnc)
+{
+  if (exhaleEnc != NULL) return reinterpret_cast<ExhaleEncoder*> (exhaleEnc)->encodeLookahead ();
+
+  return USHRT_MAX; // error
+}
+
+// C frame encoder
+EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI* exhaleEnc)
+{
+  if (exhaleEnc != NULL) return reinterpret_cast<ExhaleEncoder*> (exhaleEnc)->encodeFrame ();
+
+  return USHRT_MAX; // error
+}
+
+} // extern "C"
+
