@@ -8,12 +8,12 @@
  * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
-#include "..\..\include\version.h" // for EXHALELIB_VERSION_... strings
+#include "../../include/version.h" // for EXHALELIB_VERSION_... strings
 #include <windows.h>
 
 0 ICON "exhaleApp.ico"
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,1,9
+FILEVERSION 1,1,9,1
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN

@@ -12,7 +12,9 @@
 #define _EXHALE_DECL_H_
 
 #include <stdint.h> /* for (u)int8_t, (u)int16_t, (u)int32_t, (u)int64_t */
+#if !defined(_MSC_VER) || _MSC_VER >= 1800
 #include <stdbool.h>
+#endif
 
 #if defined (_WIN32) || defined (WIN32) || defined (_WIN64) || defined (WIN64)
 # ifdef EXHALE_DYN_LINK

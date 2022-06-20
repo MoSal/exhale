@@ -53,6 +53,8 @@ if(CMAKE_VERSION VERSION_GREATER "3.16.0")
     target_precompile_headers(exhaleLib PUBLIC ${PROJECT_SOURCE_DIR}/src/lib/exhaleLibPch.h)
 endif()
 
+target_compile_definitions(exhaleLib PRIVATE EXHALE_DYN_LINK)
+
 install(TARGETS exhaleLib
     ARCHIVE DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}

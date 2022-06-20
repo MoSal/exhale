@@ -33,6 +33,9 @@ if(CMAKE_DL_LIBS)
 endif()
 target_link_libraries(exhaleApp PRIVATE exhaleLib)
 target_include_directories(exhaleApp PRIVATE ${PROJECT_SOURCE_DIR}/include)
+if(BUILD_SHARED_LIBS)
+    target_compile_definitions(exhaleApp PRIVATE USE_EXHALELIB_DLL)
+endif(BUILD_SHARED_LIBS)
 
 # PCH requires at least 3.16
 # I actually don't know if this works or not

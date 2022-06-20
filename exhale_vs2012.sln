@@ -37,10 +37,10 @@ Global
 		{EC0D1502-2018-1700-4865-6C6D72696368}.Release|Win32.Build.0 = Release|Win32
 		{EC0D1502-2018-1700-4865-6C6D72696368}.Release|x64.ActiveCfg = Release|x64
 		{EC0D1502-2018-1700-4865-6C6D72696368}.Release|x64.Build.0 = Release|x64
-		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|Win32.ActiveCfg = Release|Win32
-		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|Win32.Build.0 = Release|Win32
-		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|x64.ActiveCfg = Release|x64
-		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|x64.Build.0 = Release|x64
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|Win32.ActiveCfg = Release DLL|Win32
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|Win32.Build.0 = Release DLL|Win32
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|x64.ActiveCfg = Release DLL|x64
+		{EC0D1502-2018-1700-4865-6C6D72696368}.Release DLL|x64.Build.0 = Release DLL|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
