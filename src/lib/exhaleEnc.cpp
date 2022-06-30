@@ -1,5 +1,6 @@
 /* exhaleEnc.cpp - source file for class providing Extended HE-AAC encoding capability
- * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
+ * C API corrected and API compilation extended by J. Regan in 2022, see merge request 8
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -736,7 +737,7 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const SfbGroupData& grpData, const u
           predGainCurr = predGainPrev;
           predGainPrev = (temp >> (8 * bestOrder - 16)) & UCHAR_MAX;
         }
-        tnsData.filterOrder[n] = uint8_t ((bestOrder == 1) && (tnsData.coeffParCor[n] == 0) ? 0 : bestOrder);
+        tnsData.filterOrder[n] = uint8_t ((bestOrder == 1) && (tnsData.coeffParCor[n][0] == 0) ? 0 : bestOrder);
       }
       n++;
     }
@@ -2166,10 +2167,10 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 extern "C"
 {
 // C constructor
-EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const inputPcmData,       unsigned char* const outputAuData,
-                                        const unsigned sampleRate        , const unsigned numChannels       ,
-                                        const unsigned frameLength       , const unsigned indepPeriod       ,
-                                        const unsigned varBitRateMode    , const bool useNoiseFilling       ,
+EXHALE_DECL ExhaleEncAPI* exhaleCreate (int32_t* const inputPcmData,   unsigned char* const outputAuData,
+                                        const unsigned sampleRate,     const unsigned numChannels,
+                                        const unsigned frameLength,    const unsigned indepPeriod,
+                                        const unsigned varBitRateMode, const bool useNoiseFilling,
                                         const bool useEcodisExt)
 {
   return reinterpret_cast<ExhaleEncAPI*> (new ExhaleEncoder (inputPcmData, outputAuData, sampleRate, numChannels, frameLength, indepPeriod, varBitRateMode
@@ -2213,4 +2214,3 @@ EXHALE_DECL unsigned exhaleEncodeFrame (ExhaleEncAPI* exhaleEnc)
 }
 
 } // extern "C"
-
