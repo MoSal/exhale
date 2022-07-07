@@ -66,9 +66,8 @@ unsigned SpecAnalyzer::getLinPredCoeffs (short parCorCoeffs[MAX_PREDICTION_ORDER
 
   predGainCurr = (m_tnsPredGains[channelIndex] >> 24) & UCHAR_MAX;
   predGainPrev = (m_tnsPredGains[channelIndex] >> 16) & UCHAR_MAX;
-  while ((bestOrder > 1) && (predGainPrev >= predGainCurr))  // find lowest-order gain maximum
+  while ((predGainPrev >= predGainCurr) && --bestOrder > 1)  // find lowest-order gain maximum
   {
-    bestOrder--;
     predGainCurr = predGainPrev;
     predGainPrev = (m_tnsPredGains[channelIndex] >> (8 * bestOrder - 16)) & UCHAR_MAX;
   }

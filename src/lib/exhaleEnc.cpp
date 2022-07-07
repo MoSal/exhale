@@ -731,9 +731,8 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const SfbGroupData& grpData, const u
 
         predGainCurr = (temp >> 24) & UCHAR_MAX;
         predGainPrev = (temp >> 16) & UCHAR_MAX;
-        while ((bestOrder > 1) && (predGainPrev >= predGainCurr))  // lowest-order gain max.
+        while ((predGainPrev >= predGainCurr) && --bestOrder > 1)  // lowest-order gain max.
         {
-          bestOrder--;
           predGainCurr = predGainPrev;
           predGainPrev = (temp >> (8 * bestOrder - 16)) & UCHAR_MAX;
         }
