@@ -275,10 +275,18 @@ static inline void applyTnsCoeffPreProcessing (LinearPredictor& predictor, TnsDa
   if (commonFlag != nullptr) *commonFlag &= (tnsData1.coeffResLow[n] == tnsData2.coeffResLow[n] && tnsData1.filterOrder[n] == tnsData2.filterOrder[n]);
   if (commonFlag != nullptr && *commonFlag)
   {
-    const int32_t* coeff1 = (int32_t*) tnsData1.coeff[n];  // fast
-    const int32_t* coeff2 = (int32_t*) tnsData2.coeff[n];  // comp
+    const int32_t coeff1 = (int32_t)
+      ((uint32_t) tnsData1.coeff[n][0]) |
+      ((uint32_t) tnsData1.coeff[n][1] << 8) |
+      ((uint32_t) tnsData1.coeff[n][2] << 16) |
+      ((uint32_t) tnsData1.coeff[n][3] << 24);
+    const int32_t coeff2 = (int32_t)
+      ((uint32_t) tnsData2.coeff[n][0]) |
+      ((uint32_t) tnsData2.coeff[n][1] << 8) |
+      ((uint32_t) tnsData2.coeff[n][2] << 16) |
+      ((uint32_t) tnsData2.coeff[n][3] << 24);
 
-    *commonFlag &= (*coeff1 == *coeff2); // might not be portable!
+    *commonFlag &= (coeff1 == coeff2);
   }
 }
 
