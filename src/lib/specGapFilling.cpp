@@ -268,7 +268,7 @@ uint8_t SpecGapFiller::getSpecGapFillParams (const SfbQuantizer& sfbQuantizer, c
       {
         unsigned countOld = 0, countNew = 0;
 
-        b = CLIP_PM (((b << 8) + (a >> 1)) / a, SHRT_MAX);
+        b = CLIP_PM (((b * (1 << 8)) + (a >> 1)) / a, SHRT_MAX);
         a = ((ySum << 8) - b * xSum + (size >> 1)) / size;
 
         ySum = grpScFacs[start];

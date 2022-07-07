@@ -80,7 +80,7 @@ uint32_t LoudnessEstimator::addNewPcmData (const unsigned samplesPerChannel)
         const int64_t pi = filtI[0] * i[0] + filtI[1] * i[1] + filtI[2] * i[2] + filtI[3] * i[3] -
                            filtO[0] * o[0] - filtO[1] * o[1] - filtO[2] * o[2] - filtO[3] * o[3];
         const int64_t to = (pi < 0 ? (1 << 28) - 1 : 0); // trunc. offset
-        const int32_t xi = (*(chSig++)) << 2;
+        const int32_t xi = (*(chSig++)) * (1 << 2);
         const int32_t yi = xi + int32_t ((pi + (xi == 0 ? to : (1 << 27))) >> 28);
         const uint32_t a = abs (xi >> 2);
 

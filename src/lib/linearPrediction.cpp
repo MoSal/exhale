@@ -190,8 +190,8 @@ uint32_t LinearPredictor::calcParCorCoeffs (const int32_t* const anaSignal, cons
       for (p = s; p < nCoeffs; p++)
       {
         sampleHO  =  EN[p - s]; // use register?
-        EN[p - s] = (EN[p - s] << 9) + EP[p] * Ks;
-        EP[p]     = (EP[p] << 9)  + sampleHO * Ks;
+        EN[p - s] = (EN[p - s] * (1 << 9)) + EP[p] * Ks;
+        EP[p]     = (EP[p] * (1 << 9))  + sampleHO * Ks;
       }
       if (s > 0 && EN[0] < 0)  // EN wrap-around
       {
@@ -255,11 +255,11 @@ uint8_t LinearPredictor::calcOptTnsCoeffs (short* const parCorCoeffs, int8_t* co
   }
 
   // determine direct-form filter damping factor
-  parCorCoeffs[0] <<= bitShift;
+  parCorCoeffs[0] *= 1 << bitShift;
   i = abs (parCorCoeffs[0]);
   for (s = 1; s < order; s++)
   {
-    parCorCoeffs[s] <<= bitShift; // scale coeff
+    parCorCoeffs[s] *= 1 << bitShift; // scale coeff
     i = __max (i, abs (parCorCoeffs[s]));
   }
   for (/*s*/; s < MAX_PREDICTION_ORDER; s++)
@@ -343,7 +343,7 @@ unsigned LinearPredictor::lpToParCorCoeffs (/*mod!*/short* const lpCoeffs, const
     }
     for (p = 0; p < s; p++)
     {
-      lpCoeffs[p] = short ((o + ((int) lpCoeffs[p] << shift) - intBuf[p] * i) / d);
+      lpCoeffs[p] = short ((o + ((int) lpCoeffs[p] * (1 << shift)) - intBuf[p] * i) / d);
     }
   }
   parCorCoeffs[0] = lpCoeffs[0];

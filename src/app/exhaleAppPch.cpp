@@ -28,7 +28,7 @@ void eaExtrapolate (int32_t* const pcmBuffer, const uint16_t pcmOffset, // start
   for (uint16_t ch = 0; ch < numChannels; ch++)
   {
     int32_t* chPcmBuf = pcmBuffer + ch + (pcmOffset - (fadeIn ? 0 : 1)) * numChannels;
-    int32_t  result32 = (pcmOffset == 0 ? 0 : *chPcmBuf << 8); // input is known to be 24-bit PCM
+    int32_t  result32 = (pcmOffset == 0 ? 0 : *chPcmBuf * (1 << 8)); // input is known to be 24-bit PCM
     const int32_t s32 = result32 / size;
 
     for (uint16_t i = size; i > 0; i--) *(chPcmBuf += delta) = ((result32 -= s32) + 128) >> 8;

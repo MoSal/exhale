@@ -277,7 +277,7 @@ unsigned BasicWavReader::readDataLnPcm16 (const int fileHandle, int32_t* frameBu
 
     for (unsigned i = read * chanCount; i > 0; i--)
     {
-      *(frameBuf++) = (int32_t) *(iBuf++) << 8; // * 2^8
+      *(frameBuf++) = (int32_t) *(iBuf++) * (1 << 8); // * 2^8
     }
     framesRead += read;
   }

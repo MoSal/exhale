@@ -210,7 +210,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
 
       for (int i = nSamplesInFrame >> sbrShift; i > 0; i--, lrSig++, hrSig += 2)
       {
-        int64_t r  = ((int64_t) hrSig[0] << 17) + (hrSig[-1] + (int64_t) hrSig[1]) * -2*SHRT_MIN;
+        int64_t r  = ((int64_t) hrSig[0] * (1 << 17)) + (hrSig[-1] + (int64_t) hrSig[1]) * -2*SHRT_MIN;
         int16_t s;
 
         for (u = 65, s = 129; u > 0; s -= 2) r += (hrSig[-s] + (int64_t) hrSig[s]) * lpfc12[--u];
@@ -222,7 +222,7 @@ unsigned TempAnalyzer::temporalAnalysis (const int32_t* const timeSignals[USAC_M
 
         if ((i & 1) != 0) // compute quarter-rate mid-frequency SBR signal
         {
-          r  = ((3 * (int64_t) hrSig[0]) << 16) - (hrSig[-1] + (int64_t) hrSig[1]) * SHRT_MIN - r;
+          r  = ((3 * (int64_t) hrSig[0]) * (1 << 16)) - (hrSig[-1] + (int64_t) hrSig[1]) * SHRT_MIN - r;
           r += (hrSig[-2] + (int64_t) hrSig[2]) * SHRT_MIN;
 
           for (s = 127; s > 0; s--/*u = s*/) r += (hrSig[-s] + (int64_t) hrSig[s]) * lpfc34[s];
