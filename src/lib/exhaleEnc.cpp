@@ -273,10 +273,7 @@ static inline void applyTnsCoeffPreProcessing (LinearPredictor& predictor, TnsDa
   tnsData2.numFilters[n] = (tnsData2.filterOrder[n] > 0 ? 1 : 0);
 
   if (commonFlag != nullptr) *commonFlag &= (tnsData1.coeffResLow[n] == tnsData2.coeffResLow[n] && tnsData1.filterOrder[n] == tnsData2.filterOrder[n]);
-  if (commonFlag != nullptr && *commonFlag)
-  {
-    *commonFlag &= (memcmp(tnsData1.coeff[n],tnsData2.coeff[n],sizeof(tnsData1.coeff[n])) == 0);
-  }
+  if (commonFlag != nullptr && *commonFlag) *commonFlag &= (memcmp (tnsData1.coeff[n], tnsData2.coeff[n], sizeof (tnsData1.coeff[n])) == 0);
 }
 
 static inline uint8_t brModeAndFsToMaxSfbLong (const unsigned bitRateMode, const unsigned samplingRate)
