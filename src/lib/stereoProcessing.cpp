@@ -1,5 +1,5 @@
 /* stereoProcessing.cpp - source file for class providing M/S stereo coding functionality
- * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -77,12 +77,8 @@ static inline void   setStepSizesMS (const uint32_t* const rmsSfbL, const uint32
 // constructor
 StereoProcessor::StereoProcessor ()
 {
-#if SP_OPT_ALPHA_QUANT
   memset (m_randomIntMemRe, 0, (1+MAX_NUM_SWB_LONG/2) * sizeof (int32_t));
-# if SP_MDST_PRED
   memset (m_randomIntMemIm, 0, (1+MAX_NUM_SWB_LONG/2) * sizeof (int32_t));
-# endif
-#endif
   memset (m_stereoCorrValue, 0, (1024 >> SA_BW_SHIFT) * sizeof (uint8_t));
 }
 
@@ -100,36 +96,24 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
   const SfbGroupData& grp = groupingData1;
   const bool  eightShorts = (grp.numWindowGroups > 1);
   const uint8_t maxSfbSte = (eightShorts ? __min (numSwbFrame, __max (grp.sfbsPerGroup, groupingData2.sfbsPerGroup) + 1) : numSwbFrame);
-  const bool  perCorrData = ((bitRateMode <= 4) && !eightShorts); // perceptual correlation?
-#if SP_OPT_ALPHA_QUANT
+  const bool  perCorrData = ((bitRateMode <= 5) && !eightShorts); // perceptual correlation?
   const bool  quantDither = ((bitRateMode >= 4) && !eightShorts); // quantization dithering?
-#endif
   bool       alterPredDir = (applyPredSte && reversePredDir); // predict mid from side band?
   uint32_t rmsSfbL[2] = {0, 0}, rmsSfbR[2] = {0, 0};
   uint32_t  numSfbPredSte = 0; // counter
-#if SP_SFB_WISE_STEREO
   uint16_t  numSfbNoMsSte = 0, idxSfbNoMsSte = 0, nNoMS = 0;
   uint32_t rms1NoMsSte[2] = {0, 0}, rms2NoMsSte[2] = {0, 0};
   uint32_t rmsMNoMsSte[2] = {0, 0}, rmsSNoMsSte[2] = {0, 0};
   uint8_t  dataNoMsSte[2] = {0, 0};
   bool nonZeroPredNoMsSte = false;
-#endif
 
   if ((mdctSpectrum1 == nullptr) || (mdctSpectrum2 == nullptr) || (numSwbFrame < maxSfbSte) || (grp.numWindowGroups != groupingData2.numWindowGroups) ||
       (sfbStepSize1  == nullptr) || (sfbStepSize2  == nullptr) || (numSwbFrame < MIN_NUM_SWB_SHORT) || (numSwbFrame > MAX_NUM_SWB_LONG))
   {
     return 1;  // invalid arguments error
   }
-#if !SP_SFB_WISE_STEREO
-  if (!useFullFrameMS)
-  {
-    if (applyPredSte) memset (sfbStereoData, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
 
-    return 0; // zeroed ms_used, no pred.
-  }
-#endif
-#if SP_MDST_PRED
-  if (applyPredSte && (bitRateMode > 4) && !eightShorts && !reversePredDir) // pred_dir test
+  if (applyPredSte && (bitRateMode > 5) && !eightShorts && !reversePredDir) // pred_dir test
   {
     uint64_t sumRealM = 0, sumRealS = 0;
 
@@ -140,21 +124,17 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
     }
     alterPredDir = (sumRealS * 2 > sumRealM * 3);
   }
-#endif
 
   if (applyPredSte && perCorrData) memcpy (m_stereoCorrValue, sfbStereoData, (grp.sfbOffsets[numSwbFrame] >> SA_BW_SHIFT) * sizeof (uint8_t));
-#if SP_OPT_ALPHA_QUANT
+
   if ((bitRateMode >= 4) && eightShorts) // reset quantizer dither memory in short transform
   {
     for (uint16_t sfb = 0; sfb <= MAX_NUM_SWB_LONG / 2; sfb++)
     {
       m_randomIntMemRe[sfb] = (1 << 30);
-# if SP_MDST_PRED
       m_randomIntMemIm[sfb] = (1 << 30);
-# endif
     }
   }
-#endif
 
   for (uint16_t n = 0, gr = 0; gr < grp.numWindowGroups; gr++)
   {
@@ -188,7 +168,6 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
       uint64_t sumAbsValM = 0, sumAbsValS = 0;
       double   sfbTempVar;
 
-#if SP_SFB_WISE_STEREO
       if ((sfbIsOdd == 0) && !useFullFrameMS) // save L/R data
       {
         const uint16_t cpyWidth = (grpOff[__min (maxSfbSte, sfb + 2)] - sfbStart) * sizeof (int32_t);
@@ -198,7 +177,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
         memcpy (m_originBandMdst1, sfbMdst1, cpyWidth);
         memcpy (m_originBandMdst2, sfbMdst2, cpyWidth);
       }
-#endif
+
       if (realOnlyCalc && (sfb >= realOnlyOffset)) // real-valued data, only MDCTs available
       {
         const int32_t* sfbNext1 = &sfbMdct1[1];
@@ -277,10 +256,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           const int32_t* mdctB = (alterPredDir ? &mdctSpectrum1[offEv] : &mdctSpectrum2[offEv]);
           const int32_t* mdstA = (alterPredDir ? &mdstSpectrum2[offEv] : &mdstSpectrum1[offEv]);
           const int32_t* mdstB = (alterPredDir ? &mdstSpectrum1[offEv] : &mdstSpectrum2[offEv]);
-          int64_t sumPrdReAReB = 0, sumPrdReAReA = SP_EPS;  // stabilizes the division below
-#if SP_MDST_PRED
-          int64_t sumPrdImAReB = 0;
-#endif
+          int64_t sumPrdReAReB = 0, sumPrdImAReB = 0, sumPrdReAReA = SP_EPS; // to stabilize
           double d, alphaLimit = 1.5; // max alpha_q magnitude
 
           for (uint16_t s = width; s > 0; s--, mdctA++, mdctB++, mdstA++, mdstB++)
@@ -290,15 +266,11 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
 
             sumPrdReAReB += ((int64_t) *mdctA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
             sumPrdReAReA += prdReAReA;
-#if SP_MDST_PRED
             sumPrdImAReB += ((int64_t) *mdstA * (int64_t) *mdctB + SA_BW) >> (SA_BW_SHIFT + 1);
-#endif
             // add complex conjugate part, increases stability
             sumPrdReAReB += ((int64_t) *mdstA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
             sumPrdReAReA += prdImAImA;
-#if SP_MDST_PRED
             sumPrdImAReB -= ((int64_t) *mdctA * (int64_t) *mdstB + SA_BW) >> (SA_BW_SHIFT + 1);
-#endif
           }
           for (b = sfbIsOdd; b >= 0; b--) // limit alpha_q to prevent residual RMS increases
           {
@@ -308,9 +280,8 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             if (alphaLimit > d) alphaLimit = d;
           }
           sfbTempVar = CLIP_PM ((double) sumPrdReAReB / (double) sumPrdReAReA, alphaLimit);
-#if SP_OPT_ALPHA_QUANT
+
           b = __max (512, 524 - int32_t (abs (10.0 * sfbTempVar))); // rounding optimization
-# if 1
           if (quantDither)
           {
             const int32_t r = (int32_t) m_randomInt32 ();
@@ -319,18 +290,12 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             b = int32_t (dr + b * (dr < 0.0 ? -0.0009765625 : 0.0009765625));
             m_randomIntMemRe[sfbEv >> 1] = r;
           }
-          else
-# endif
-          b = int32_t (10.0 * sfbTempVar + b * (sfbTempVar < 0.0 ? -0.0009765625 : 0.0009765625));
-#else
-          b = int32_t (10.0 * sfbTempVar + (sfbTempVar < 0 ? -0.5 : 0.5));// nearest integer
-#endif
+          else b = int32_t (10.0 * sfbTempVar + b * (sfbTempVar < 0.0 ? -0.0009765625 : 0.0009765625));
+
           sfbStereoData[sfbEv + grOffset] = uint8_t (b + 16); // save SFB's final alpha_q_re
-#if SP_MDST_PRED
           alphaLimit = CLIP_PM ((double) sumPrdImAReB / (double) sumPrdReAReA, alphaLimit);
-# if SP_OPT_ALPHA_QUANT
+
           b = __max (512, 524 - int32_t (abs (10.0 * alphaLimit))); // rounding optimization
-#  if 1
           if (quantDither)
           {
             const int32_t r = (int32_t) m_randomInt32 ();
@@ -339,15 +304,10 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             b = int32_t (dr + b * (dr < 0.0 ? -0.0009765625 : 0.0009765625));
             m_randomIntMemIm[sfbEv >> 1] = r;
           }
-          else
-#  endif
-          b = int32_t (10.0 * alphaLimit + b * (alphaLimit < 0.0 ? -0.0009765625 : 0.0009765625));
-# else
-          b = int32_t (10.0 * alphaLimit + (alphaLimit < 0 ? -0.5 : 0.5));// nearest integer
-# endif
+          else b = int32_t (10.0 * alphaLimit + b * (alphaLimit < 0.0 ? -0.0009765625 : 0.0009765625));
+
           if (sfbEv + 1 < numSwbFrame)
           sfbStereoData[sfbEv + 1 + grOffset] = uint8_t (b + 16); // save initial alpha_q_im
-#endif // SP_MDST_PRED
 
           if (perCorrData && ((offEv & (SA_BW - 1)) == 0) && ((width & (SA_BW - 1)) == 0))
           {
@@ -364,7 +324,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             nonZeroPredCoef = true;
           }
           sfbTempVar *= sfbTempVar;  // account for residual RMS reduction due to prediction
-#if SP_MDST_PRED && !(BA_MORE_CBR)
+#if !BA_MORE_CBR
           if (bitRateMode > 0) sfbTempVar += alphaLimit * alphaLimit;  // including alpha_im
 #endif
           for (b = sfbIsOdd; b >= 0; b--)
@@ -390,7 +350,6 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
           }
         } // if applyPredSte
 
-#if SP_SFB_WISE_STEREO
         if (!useFullFrameMS) // test M/S compaction gain, revert to L/R if it's insufficient
         {
           const uint64_t bandSum1 = (sfbIsOdd > 0 ? (uint64_t) grpRms1[sfbEv] + (uint64_t) grpRms1[sfbEv + 1] : grpRms1[sfbEv]);
@@ -440,7 +399,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
             continue; // M/S is not used
           }
         } // if !useFullFrameMS
-#endif
+
         for (b = sfbIsOdd; b >= 0; b--) setStepSizesMS (rmsSfbL, rmsSfbR, rmsSfbM, rmsSfbS, grpRms1, grpRms2,
                                                         grpStepSizes1, grpStepSizes2, sfbEv, (uint16_t) b, applyPredSte);
         if (nonZeroPredCoef) numSfbPredSte++; // if perceptually significant prediction band
@@ -449,7 +408,6 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
     if (grpLength == 1) n++;
   } // for gr
 
-#if SP_SFB_WISE_STEREO
   if (numSfbNoMsSte == 1) // upgrade single L/R to M/S band to reduce M/S signaling overhead
   {
     const uint16_t   grNoMS = idxSfbNoMsSte / numSwbFrame;
@@ -510,7 +468,6 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
     }
     if (nonZeroPredNoMsSte) numSfbPredSte++; // was perceptually significant prediction band
   } // if numSfbNoMsSte == 1
-#endif
 
   if (numSfbPredSte == 0) // discard prediction coefficients and stay with legacy M/S stereo
   {
@@ -647,11 +604,7 @@ unsigned StereoProcessor::applyPredJointStereo (int32_t* const mdctSpectrum1, in
       if (grpLength == 1) n++;
     } // for gr
 
-#if SP_MDST_PRED
     numSfbPredSte = (applyPredSte && (alterPredDir != reversePredDir) ? 4 /*pred_dir=1*/ : 2);
-#else
-    numSfbPredSte = 2;
-#endif
   }
 
   return numSfbPredSte; // no error

@@ -455,7 +455,7 @@ static const uint8_t tnsScaleFactorBandLimit[2 /*long/short*/][USAC_NUM_FREQ_TAB
   {31, 34, 51 /*to be corrected to 42 (44.1) and 40 (48 kHz)!*/, 47, 43, 40}, {9, 10, 14, 15, 15, 15}
 };
 
-static const uint8_t sbrRateOffset[10] = {7, 6, 6, 8, 7, 8, 8, 8, 8, 8}; // used for scaleSBR
+static const uint8_t sbrRateOffset[10] = {7, 6, 6, 8, 7, 8, 9, 9, 9, 9}; // used for scaleSBR
 
 // scale_factor_grouping map
 // group lengths based on transient location:  1133, 1115, 2114, 3113, 4112, 5111, 3311, 1331
@@ -817,9 +817,10 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
       {
         const int16_t chanCorrSign = (coreConfig.stereoConfig & 2 ? -1 : 1);
         const uint16_t nSamplesMax = (useMaxBandwidth ? nSamplesInFrame : swbOffsetsL[m_swbTableIdx][__min (m_numSwbLong, maxSfbLong + 1)]);
-        const uint8_t steppFadeLen = (eightShorts0 ? 4 : (coreConfig.tnsActive && (m_bitRateMode > 0) ? 32 : 64));
+        const bool reducedStrength = (coreConfig.tnsActive && (m_bitRateMode > 0)) || (m_bitRateMode >= 5);
+        const uint8_t steppFadeLen = (eightShorts0 ? 4 : (reducedStrength ? 32 : 64));
         const uint8_t steppFadeOff = ((m_bitRateMode + 77000 / samplingRate) & 6) << (eightShorts0 ? 2 : 5);
-        const int64_t steppWeightI = __min (64, m_perCorrHCurr[el] - 128) >> (eightShorts0 || (coreConfig.tnsActive && (m_bitRateMode > 0)) ? 1 : 0);
+        const int64_t steppWeightI = __min (64, m_perCorrHCurr[el] - 128) >> (eightShorts0 || reducedStrength ? 1 : 0); // crosstalk * 128
         const int64_t steppWeightD = 128 - steppWeightI; // decrement, (1 - crosstalk) * 128
 
         for (uint16_t n = 0, gr = 0; gr < coreConfig.groupingData[0].numWindowGroups; gr++)
@@ -1189,7 +1190,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           b = 40 + (samplingRate >> 12);
           if ((m_shiftValSBR == 0) || (samplingRate < 23004) || shortWinCurr || (b > lastSfb)) b = lastSfb;
 
-          while ((b >= sfmBasedSfbStart + (m_bitRateMode >> 1)) && (grpOff[b] > peakIndex) && ((grpRms[b] >> 16) <= 1) /*coarse quantization*/ &&
+          while ((b >= sfmBasedSfbStart + (m_bitRateMode >> 1) + (m_bitRateMode / 5)) && (grpOff[b] > peakIndex) && ((grpRms[b] >> 16) <= 1) &&
                  ((estimBitCount * 5 > targetBitCount25 * 2) || (grpLength > 1 /*no accurate bit count estim. available for grouped spectrum*/)))
           {
             b--; // search first coarsely quantized high-freq. SFB
@@ -1377,7 +1378,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
     {
       coreConfig.stereoConfig = coreConfig.stereoMode = 0;
 
-      if (coreConfig.commonWindow && (m_bitRateMode <= 4)) // stereo pre-processing analysis
+      if (coreConfig.commonWindow && (m_bitRateMode <= 5)) // stereo pre-processing analysis
       {
         const bool     eightShorts = (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT);
         const uint8_t meanSpecFlat = (((m_specAnaCurr[ci] >> 16) & UCHAR_MAX) + ((m_specAnaCurr[ci + 1] >> 16) & UCHAR_MAX) + 1) >> 1;
@@ -1519,7 +1520,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
               {
                 applyTnsCoeff2ChannelSynch (m_linPredictor, tnsData0, tnsData1, s, n, &coreConfig.commonTnsData);
               }
-              else if ((m_bitRateMode <= 4) && (m_perCorrHCurr[el] > 128))
+              else if ((m_bitRateMode <= 5) && (m_perCorrHCurr[el] > 128))
               {
                 applyTnsCoeffPreProcessing (m_linPredictor, tnsData0, tnsData1, s, n, &coreConfig.commonTnsData, m_perCorrHCurr[el] - 128);
               }
@@ -1536,7 +1537,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           }
           maxSfb0 = maxSfb1 = maxSfbSte;
 
-          if ((m_bitRateMode <= 4) && (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT))
+          if ((m_bitRateMode <= 5) && (coreConfig.icsInfoCurr[0].windowSequence == EIGHT_SHORT))
           {
             m_perCorrLCurr[el] = stereoCorrGrouping (coreConfig.groupingData[0], nSamplesInFrame, coreConfig.stereoDataCurr);
           }
@@ -1816,7 +1817,8 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
   if (m_channelConf == CCI_CONF) m_channelConf = CCI_2_CHM; // passing numChannels = 0 means 2-ch dual-mono
   m_numElements  = elementCountConfig[m_channelConf % USAC_MAX_NUM_ELCONFIGS]; // used in UsacDecoderConfig
   m_shiftValSBR  = (frameLength >= 1536 ? 1 : 0);
-  m_frameCount   = m_rateFactor = m_priLength = 0;
+  m_frameCount   = m_rateFactor = 0;
+  m_priLength    = 0;
   m_frameLength  = USAC_CCFL (frameLength >> m_shiftValSBR); // ccfl signaled using coreSbrFrameLengthIndex
   m_frequencyIdx = toSamplingFrequencyIndex (sampleRate >> m_shiftValSBR); // as usacSamplingFrequencyIndex
   m_indepFlag    = true; // usacIndependencyFlag in UsacFrame(), will be set per frame, true in first frame
@@ -2117,7 +2119,7 @@ unsigned ExhaleEncoder::initEncoder (unsigned char* const audioConfigBuffer, uin
 #else
       m_sfbQuantizer.initQuantMemory (nSamplesInFrame) > 0 ||
 #endif
-      m_specAnalyzer.initSigAnaMemory (&m_linPredictor, m_bitRateMode <= 4 ? nChannels : 0, nSamplesInFrame) > 0 ||
+      m_specAnalyzer.initSigAnaMemory (&m_linPredictor, m_bitRateMode <= 5 ? nChannels : 0, nSamplesInFrame) > 0 ||
       m_transform.initConstants (m_tempIntBuf, m_timeWindowL, m_timeWindowS, nSamplesInFrame) > 0)
   {
     errorValue |= 1;
