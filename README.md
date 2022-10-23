@@ -31,7 +31,7 @@ ____________________________________________________________________
 Copyright
 ---------
 
-(c) 2021 Christian R. Helmrich, project ecodis. All rights reserved.
+(c) 2022 Christian R. Helmrich, project ecodis. All rights reserved.
 
 
 License
@@ -41,7 +41,7 @@ exhale is being made available under an open-source license which is
 based on the 3-clause BSD license but modified to address particular
 aspects dictated by the nature and the output of this application.
 
-The license text and release notes for the current version 1.1.9 can
+The license text and release notes for the current version 1.2.0 can
 be found in the `include` subdirectory of the exhale distribution.
 
 

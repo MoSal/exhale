@@ -1,5 +1,5 @@
 /* entropyCoding.cpp - source file for class with lossless entropy coding capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -254,13 +254,18 @@ static const uint16_t arithCumFreqR[3][4] = { // arith_cf_r
 };
 
 static const uint8_t arithFastPkIndex[32] = {
-  1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58, 0, 58, 3, 0, 49, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62
+  1, 4, 0, 49, 0, 0, 0, 0, 0, 0, 0, 0, 58, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 58, 3, 0, 62
 };
 
 // static helper functions
-static inline unsigned arithGetPkIndex (const unsigned ctx) // cumul. frequency table index pki = arith_get_pk(c)
+static inline uint8_t arithGetPkIndex (const unsigned ctx) // cumul. frequency table index pki = arith_get_pk(c)
 {
-  if ((ctx & 0xEEEEE) == 0) return arithFastPkIndex[((ctx >> 12) & 16) | ((ctx >> 9) & 8) | ((ctx >> 6) & 4) | ((ctx >> 3) & 2) | (ctx & 1)];
+  if ((ctx & 0xEEEEE) == 0)
+  {
+    const unsigned tmp = ctx | (ctx >> 6);
+
+    return arithFastPkIndex[(tmp | (tmp >> 9)) & 31];
+  }
 
   int32_t iMax = ARITH_SIZE - 1;
   int32_t iMin = -1;
@@ -534,10 +539,113 @@ unsigned EntropyCoder::arithCodeSigMagn (const uint8_t* const magn, const uint16
     if (sigEnd > 1) m_csCurr |= m_qcCurr[sigEnd - 2] << 26;
     if (sigEnd > 2) m_csCurr |= __min (3, m_qcCurr[sigEnd - 3]) << 30;
   }
-  m_csCurr |= ((unsigned) m_acBits << 17) | c;
+  m_csCurr |= ((unsigned) __min (31, m_acBits) << 17) | c;
 
   return bitCount;
 }
+
+#if EC_TRELLIS_OPT_CODING
+unsigned EntropyCoder::arithCodeSigTest (const uint8_t* const magn, const uint16_t sigOffset, const uint16_t sigLength)
+{
+  const unsigned inAcBits = m_acBits;
+  const uint8_t* a = &magn[sigOffset    ];
+  const uint8_t* b = &magn[sigOffset + 1];
+  unsigned c = m_csCurr & 0x1FFFF;
+  unsigned bitCount = 0;
+  uint16_t r[7];
+  int16_t s = sigOffset >> 1;
+
+  for (uint16_t sigEnd = (uint16_t) s + (sigLength >> 1); s < sigEnd; s++)
+  {
+    uint32_t lev = 0;
+    uint16_t a1 = *a;
+    uint16_t b1 = *b;
+
+    a += 2; b += 2;
+
+    // arith_get_context, cf Scl. 7.4
+    c = arithGetContext (c, (unsigned) s);
+    // arith_update_context, Scl. 7.4
+    m_qcCurr[s] = __min (0xF, a1 + b1 + 1);
+
+    // MSB encoding as in Scl. B.25.3
+    while ((a1 > 3) || (b1 > 3))
+    {
+      // write escaped codeword value
+      bitCount += arithCodeSymbol (ARITH_ESCAPE, arithCumFreqM[arithGetPkIndex (c | (lev << 17))]);
+      // store LSBs in r, right-shift
+      r[lev++] = (a1 & 1) | ((b1 & 1) << 1);
+      a1 >>= 1; b1 >>= 1;
+    }
+    // write the m MSB codeword value
+    bitCount += arithCodeSymbol (a1 | (b1 << 2), arithCumFreqM[arithGetPkIndex (c | (lev << 17))]);
+
+    // LSB encoding, Table 38, B.25.3
+    while (lev--)
+    {
+      const uint16_t rLev = r[lev];
+
+      bitCount += arithCodeSymbol (rLev, arithCumFreqR[a1 == 0 ? 1 : (b1 == 0 ? 0 : 2)]);
+      a1 = (a1 << 1) | (rLev & 1);
+      b1 = (b1 << 1) | ((rLev >> 1) & 1);
+    }
+  } // for s
+
+  m_csCurr = m_qcCurr[--s] << 22;
+  if ((s--) > 0) m_csCurr |= m_qcCurr[s] << 26;
+  if ((s--) > 0) m_csCurr |= __min (3, m_qcCurr[s]) << 30;
+  m_csCurr |= ((unsigned) __min (31, m_acBits) << 17) | c;
+  bitCount += m_acBits;
+
+  return bitCount - __min (inAcBits, bitCount);
+}
+
+unsigned EntropyCoder::arithCodeTupTest (const uint8_t* const magn, const uint16_t sigOffset)
+{
+  const unsigned inAcBits = m_acBits;
+  uint16_t a1 = magn[sigOffset    ];
+  uint16_t b1 = magn[sigOffset + 1];
+  unsigned bitCount = 0;
+  uint32_t lev = 0;
+  uint16_t r[7];
+  int16_t  s = sigOffset >> 1;
+
+  // arith_get_context, cf Scl. 7.4
+  const unsigned c = arithGetContext (m_csCurr & 0x1FFFF, (unsigned) s);
+  // arith_update_context, Scl. 7.4
+  m_qcCurr[s] = __min (0xF, a1 + b1 + 1);
+
+  // MSB encoding as in Scl. B.25.3
+  while ((a1 > 3) || (b1 > 3))
+  {
+    // write escaped codeword value
+    bitCount += arithCodeSymbol (ARITH_ESCAPE, arithCumFreqM[arithGetPkIndex (c | (lev << 17))]);
+    // store LSBs in r, right-shift
+    r[lev++] = (a1 & 1) | ((b1 & 1) << 1);
+    a1 >>= 1; b1 >>= 1;
+  }
+  // write the m MSB codeword value
+  bitCount += arithCodeSymbol (a1 | (b1 << 2), arithCumFreqM[arithGetPkIndex (c | (lev << 17))]);
+
+  // LSB encoding, Table 38, B.25.3
+  while (lev--)
+  {
+    const uint16_t rLev = r[lev];
+
+    bitCount += arithCodeSymbol (rLev, arithCumFreqR[a1 == 0 ? 1 : (b1 == 0 ? 0 : 2)]);
+    a1 = (a1 << 1) | (rLev & 1);
+    b1 = (b1 << 1) | ((rLev >> 1) & 1);
+  }
+
+  m_csCurr = m_qcCurr[s] << 22;
+  if ((s--) > 0) m_csCurr |= m_qcCurr[s] << 26;
+  if ((s--) > 0) m_csCurr |= __min (3, m_qcCurr[s]) << 30;
+  m_csCurr |= ((unsigned) __min (31, m_acBits) << 17) | c;
+  bitCount += m_acBits;
+
+  return bitCount - __min (inAcBits, bitCount);
+}
+#endif // EC_TRELLIS_OPT_CODING
 
 unsigned EntropyCoder::arithGetResetBit (const uint8_t* const magn, const uint16_t sigOffset, const uint16_t sigLength)
 {

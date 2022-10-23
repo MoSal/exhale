@@ -1404,7 +1404,7 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
 
         if ((int) s == steAnaStats * -1) coreConfig.stereoConfig = 2;  // 2: S>M, pred_dir=1
         if (s > (UCHAR_MAX * (6u + m_shiftValSBR)) / 8) coreConfig.stereoMode = 2; // 2: all
-        if (s >= UCHAR_MAX - 2u + (meanSpecFlat >> 6)) coreConfig.stereoConfig |= 8; // mono
+        if (s >= UCHAR_MAX - 2u + (m_bitRateMode / 5) + (meanSpecFlat >> 6)) coreConfig.stereoConfig |= 8; // tuning for mono-in-stereo audio
       }
       else if (nrChannels > 1) m_perCorrHCurr[el] = m_perCorrLCurr[el] = 128; // "mid" value
 

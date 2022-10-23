@@ -1,5 +1,5 @@
 /* quantization.h - header file for class with nonuniform quantization functionality
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -26,6 +26,7 @@
 #else
 #define SFB_QUANT_OFFSET 0.405396 // 1 - 0.5^(3/4)
 #endif
+#define SFB_QUANT_SSE (0 && defined (_MSC_VER))
 
 // class for BL USAC quantization
 class SfbQuantizer

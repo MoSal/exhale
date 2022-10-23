@@ -1,5 +1,5 @@
 /* quantization.cpp - source file for class with nonuniform quantization functionality
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -10,6 +10,9 @@
 
 #include "exhaleLibPch.h"
 #include "quantization.h"
+#if SFB_QUANT_SSE
+# include <xmmintrin.h>
+#endif
 
 #define EC_TRAIN (0 && EC_TRELLIS_OPT_CODING) // for RDOC testing
 
@@ -23,12 +26,9 @@ static inline short getBitCount (EntropyCoder& entrCoder, const int sfIndex, con
   if (groupLength == 1) // include arithmetic coding in bit count
   {
 #if EC_TRELLIS_OPT_CODING
-    const unsigned bitsStart = (entrCoder.arithGetCtxState () >> 17) & 31;
-#endif
+    bitCount += entrCoder.arithCodeSigTest (coeffQuant, coeffOffset, numCoeffs);
+#else
     bitCount += entrCoder.arithCodeSigMagn (coeffQuant, coeffOffset, numCoeffs);
-#if EC_TRELLIS_OPT_CODING
-    bitCount += (entrCoder.arithGetCtxState () >> 17) & 31;
-    bitCount -= __min (bitsStart, bitCount); // +new-old m_acBits
 #endif
   }
 
@@ -46,6 +46,26 @@ static inline double getLagrangeValue (const uint16_t rateIndex) // RD optimizat
 double SfbQuantizer::getQuantDist (const unsigned* const coeffMagn, const uint8_t scaleFactor,
                                    const uint8_t* const coeffQuant, const uint16_t numCoeffs)
 {
+#if SFB_QUANT_SSE
+  const __m128 stepSizeDiv = _mm_set_ps1 ((float) m_lutSfNorm[scaleFactor]); // or _mm_set1_ps ()
+  __m128 sumsSquares = _mm_setzero_ps ();
+  float dist[4];
+
+  for (int i = numCoeffs - 4; i >= 0; i -= 4)
+  {
+    __m128 orig = _mm_set_ps ((float) coeffMagn[i + 0], (float) coeffMagn[i + 1],
+                              (float) coeffMagn[i + 2], (float) coeffMagn[i + 3]);
+    __m128 reco = _mm_set_ps ((float) m_lutXExp43[coeffQuant[i + 0]], (float) m_lutXExp43[coeffQuant[i + 1]],
+                              (float) m_lutXExp43[coeffQuant[i + 2]], (float) m_lutXExp43[coeffQuant[i + 3]]);
+    __m128 diff = _mm_sub_ps (reco, _mm_mul_ps (orig, stepSizeDiv));
+
+    sumsSquares = _mm_add_ps (sumsSquares, _mm_mul_ps (diff, diff));
+  }
+  _mm_storeu_ps (dist, sumsSquares);
+
+  // consider quantization step-size in calculation of distortion
+  return ((double) dist[0] + dist[1] + dist[2] + dist[3]) * m_lut2ExpX4[scaleFactor] * m_lut2ExpX4[scaleFactor];
+#else
   const double stepSizeDiv = m_lutSfNorm[scaleFactor];
   double dDist = 0.0;
 
@@ -58,6 +78,7 @@ double SfbQuantizer::getQuantDist (const unsigned* const coeffMagn, const uint8_
 
   // consider quantization step-size in calculation of distortion
   return dDist * m_lut2ExpX4[scaleFactor] * m_lut2ExpX4[scaleFactor];
+#endif
 }
 
 uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const uint8_t scaleFactor,
@@ -150,11 +171,7 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
 #if EC_TRAIN
     const uint32_t codStart = entrCoder.arithGetCodState ();
     const uint32_t ctxStart = entrCoder.arithGetCtxState ();
-    uint32_t bitCount = entrCoder.arithCodeSigMagn (&coeffQuant[-((int) coeffOffset)], coeffOffset, numCoeffs);
-
-    bitCount += (entrCoder.arithGetCtxState () >> 17) & 31; // refinement: +new-old m_acBits
-    bitCount -= __min ((ctxStart >> 17) & 31, bitCount);
-    bitCount += (uint32_t) numQ;  // add sign bits for completion
+    uint32_t bitCount = entrCoder.arithCodeSigTest (&coeffQuant[-((int) coeffOffset)], coeffOffset, numCoeffs) + (uint32_t) numQ;
 
     entrCoder.arithSetCodState (codStart);  // back to last state
     entrCoder.arithSetCtxState (ctxStart);
@@ -180,21 +197,21 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
             dNum += m_lutXExp43[q] * normalizedMagn;
             dDen += m_lutXExp43[q] * m_lutXExp43[q];
           }
-#if SFB_QUANT_PERCEPT_OPT
+# if SFB_QUANT_PERCEPT_OPT
           else   // assume perceptual transparency for code below
           {
             dNum += normalizedMagn * normalizedMagn;
             dDen += normalizedMagn * normalizedMagn;
           }
-#endif
+# endif
         }
 
         // re-compute least-squares optimal scale factor modifier
         if (dNum > SF_THRESH_POS * dDen) sf++;
-#if !SFB_QUANT_PERCEPT_OPT
+# if !SFB_QUANT_PERCEPT_OPT
         else
         if (dNum < SF_THRESH_NEG * dDen) sf--; // reduces SFB RMS
-#endif
+# endif
       } // if nonzero
 
       if (sigMaxQ) *sigMaxQ = (numQ > 0 ? maxQ : 0); // a new max
@@ -206,6 +223,23 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
 #if SFB_QUANT_PERCEPT_OPT
   if ((numQ > 0) && (sf > 0 && sf <= scaleFactor)) // recover RMS
   {
+# if SFB_QUANT_SSE
+    const __m128 magnNormDiv = _mm_set_ps1 ((float) m_lutSfNorm[sf]); // or _mm_set1_ps ()
+    __m128 sumsSquares = _mm_setzero_ps ();
+    float fl[4]; // dDen has normalized energy after quantization
+
+    for (int i = numCoeffs - 4; i >= 0; i -= 4)
+    {
+      __m128 orig = _mm_set_ps ((float) coeffMagn[i + 0], (float) coeffMagn[i + 1],
+                                (float) coeffMagn[i + 2], (float) coeffMagn[i + 3]);
+      __m128 norm = _mm_mul_ps (orig, magnNormDiv);
+
+      sumsSquares = _mm_add_ps (sumsSquares, _mm_mul_ps (norm, norm));
+    }
+    _mm_storeu_ps (fl, sumsSquares);
+
+    if ((double) fl[0] + fl[1] + fl[2] + fl[3] > SF_THRESH_POS * SF_THRESH_POS * dDen) sf++;
+# else
     const double magnNormDiv = m_lutSfNorm[sf];
 
     dNum = 0.0;  // dDen has normalized energy after quantization
@@ -217,6 +251,7 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
     }
 
     if (dNum > SF_THRESH_POS * SF_THRESH_POS * dDen) sf++;
+# endif
   }
 #endif
   return (uint8_t) __max (0, sf); // optimized scale factor index
@@ -273,7 +308,7 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
 
     for (is = 0; is < numStates; is++)  // populate tuple trellis
     {
-      uint8_t* const mag = (is != 0 ? tempQuant : quantCoeffs) - (int) tupleOffset; // see arithCodeSigMagn()
+      uint8_t* const mag = (is != 0 ? tempQuant : quantCoeffs) - (int) tupleOffset; // see arithCodeTupTest()
       uint8_t*  currRate = &quantRate[(is + tuple * numStates) * numStates];
       double diffA, diffB;
 
@@ -302,13 +337,9 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
       if (tuple == 0) // first tuple, with tupleStart == sfbStart
       {
         entropyCoder.arithSetCodState (codStart); // start of SFB
-        entropyCoder.arithSetCtxState (ctxStart);
-        tempBitCount = entropyCoder.arithCodeSigMagn (mag, tupleOffset, 2);
+        entropyCoder.arithSetCtxState (ctxStart, 0);
 
-        tempBitCount += (entropyCoder.arithGetCtxState () >> 17) & 31;  // +new-old m_acBits
-        tempBitCount -= __min ((ctxStart >> 17) & 31, tempBitCount);
-
-        memset (currRate, tempBitCount + numQ, numStates);
+        memset (currRate, entropyCoder.arithCodeTupTest (mag, tupleOffset) + numQ, numStates); // +- m_acBits
       }
       else // tuple > 0, rate depends on decisions for last tuple
       {
@@ -323,12 +354,8 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
 
           entropyCoder.arithSetCodState (prevCodState[ds]);
           entropyCoder.arithSetCtxState (prevCtxState[ds], tupleOffset);
-          tempBitCount = entropyCoder.arithCodeSigMagn (mag, tupleOffset, 2);
 
-          tempBitCount += (entropyCoder.arithGetCtxState () >> 17) & 31;// +new-old m_acBits
-          tempBitCount -= __min ((prevCtxState[ds] >> 17) & 31, tempBitCount);
-
-          currRate[ds] = uint8_t (tempBitCount + numQ);
+          currRate[ds] = uint8_t (entropyCoder.arithCodeTupTest (mag, tupleOffset) + numQ); // incl. m_acBits
         }
       }
       // statistically best place to save states is after ds == 0
@@ -877,7 +904,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
       if (sfb == 0) // first SFB, having sfbStart - grpStart == 0
       {
         entropyCoder.arithSetCodState (codStart);  // group start
-        entropyCoder.arithSetCtxState (ctxStart, 0);
+        entropyCoder.arithSetCtxState (ctxStart);
         tempBitCount = (maxSnrReached ? USHRT_MAX : numQCurr + getBitCount (entropyCoder, sfBest, UCHAR_MAX, 1, mag, 0, sfbWidth));
 
         for (ds = m_numCStates - 1; ds >= 0; ds--)
@@ -1005,7 +1032,7 @@ unsigned SfbQuantizer::quantizeSpecRDOC (EntropyCoder& entropyCoder, uint8_t* co
     if (grpStats)
     {
       entropyCoder.arithSetCodState (codStart);// set group start
-      entropyCoder.arithSetCtxState (ctxStart, 0);
+      entropyCoder.arithSetCtxState (ctxStart);
 
       tempBitCount = 0;
     }

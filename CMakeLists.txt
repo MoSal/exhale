@@ -1,5 +1,5 @@
 ## CMakeLists.txt - Main CMake file that defines how cmake should process and generate the necessary build files
- # written by C. D. Degawa, last modified in 2021 - see License.htm for legal notices
+ # written by C. D. Degawa, last modified in 2022 - see License.htm for legal notices
  #
  # The copyright in this software is being made available under the exhale Copyright License
  # and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -16,7 +16,7 @@ if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
 
 
-project(exhale VERSION 1.1.9 LANGUAGES CXX)
+project(exhale VERSION 1.2.0 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release

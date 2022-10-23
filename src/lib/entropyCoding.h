@@ -1,5 +1,5 @@
 /* entropyCoding.h - header file for class with lossless entropy coding capability
- * written by C. R. Helmrich, last modified in 2020 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -55,6 +55,10 @@ public:
   // public functions
   unsigned arithCodeSigMagn (const uint8_t* const magn, const uint16_t sigOffset, const uint16_t sigLength,
                              const bool arithFinish = false, OutputStream* const stream = nullptr);
+#if EC_TRELLIS_OPT_CODING
+  unsigned arithCodeSigTest (const uint8_t* const magn, const uint16_t sigOffset, const uint16_t sigLength); // +-m_acBits
+  unsigned arithCodeTupTest (const uint8_t* const magn, const uint16_t sigOffset); // for sigLength of 2 - also +-m_acBits
+#endif
   unsigned arithGetCodState () const                     { return ((unsigned) m_acHigh << 16) | (unsigned) m_acLow; }
   unsigned arithGetCtxState () const                     { return m_csCurr; }
   unsigned arithGetResetBit (const uint8_t* const magn, const uint16_t sigOffset, const uint16_t sigLength);
@@ -70,7 +74,7 @@ public:
   unsigned indexGetHuffCode (const int scaleFactorDelta) const;
 
   unsigned initCodingMemory (const unsigned maxTransfLength);
-  unsigned initWindowCoding (const bool     forceArithReset, const bool shortWin = false);
+  unsigned initWindowCoding (const bool forceArithReset, const bool shortWin = false);
 
   bool     getIsShortWindow () const                     { return m_shortTrafoCurr; }
   void     setIsShortWindow (const bool shortWin)        { m_shortTrafoCurr = shortWin; }
