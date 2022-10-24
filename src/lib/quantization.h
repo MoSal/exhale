@@ -26,7 +26,7 @@
 #else
 #define SFB_QUANT_OFFSET 0.405396 // 1 - 0.5^(3/4)
 #endif
-#define SFB_QUANT_SSE (0 && defined (_MSC_VER))
+#define SFB_QUANT_SSE           0
 
 // class for BL USAC quantization
 class SfbQuantizer

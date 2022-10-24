@@ -280,9 +280,10 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
   double   quantDist[32][4];   // TODO: dynamic memory allocation
   uint8_t* const optimalIs = (uint8_t* const) (quantDist[32-1]);
   uint8_t  tempQuant[4], numQ; // for tuple/SFB sign bit counting
-  unsigned tempBitCount, tuple, is;
+  unsigned tuple, is;
   int ds;
 #if EC_TRAIN
+  unsigned tempBitCount;
   double refSfbDist = 0.0, tempSfbDist = 0.0;
 #else
   const double lambda = getLagrangeValue (m_rateIndex);
@@ -427,8 +428,10 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
 
       memcpy (prevCost, currCost, numStates * sizeof (double)); // TODO: avoid memcpy, use pointer swapping instead for speed
     } // for tuple
-
-    for (tempBitCount = is = 0; is < numStates; is++)  // minimum
+#if EC_TRAIN
+    tempBitCount = 0;
+#endif
+    for (is = 0; is < numStates; is++) // search for minimum path
     {
       if (costMinIs > prevCost[is])
       {
@@ -443,15 +446,15 @@ uint32_t SfbQuantizer::quantizeMagnRDOC (EntropyCoder& entropyCoder, const uint8
       const uint8_t pathMinDs = currPath[pathMinIs];
 
       optimalIs[tuple] = (uint8_t) pathMinIs;
-      tempBitCount    += quantRate[pathMinDs + (pathMinIs + tuple * numStates) * numStates];
 #if EC_TRAIN
+      tempBitCount += quantRate[pathMinDs + (pathMinIs + tuple * numStates) * numStates];
       tempSfbDist += quantDist[tuple][pathMinIs];
 #endif
       pathMinIs = pathMinDs;
     }
     optimalIs[0]  = (uint8_t) pathMinIs;
-    tempBitCount += quantRate[pathMinIs * numStates];
 #if EC_TRAIN
+    tempBitCount += quantRate[pathMinIs * numStates];
     tempSfbDist += quantDist[0][pathMinIs];
 #endif
   } // Viterbi search
