@@ -1,5 +1,5 @@
 /* exhaleApp.cpp - source file with main() routine for exhale application executable
- * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2023 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -477,7 +477,7 @@ int main (const int argc, char* argv[])
   // check arg. list, print usage if needed
   if ((argc < 3) || (argc > 6) || (argc > 1 && argv[1][1] != 0))
   {
-    fprintf_s (stdout, " Copyright 2018-2022 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
+    fprintf_s (stdout, " Copyright 2018-2023 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
     fprintf_s (stdout, " This software is made available under the exhale Copyright License and comes\n");
     fprintf_s (stdout, " with ABSOLUTELY NO WARRANTY. This software may be subject to other third-party\n");
@@ -644,13 +644,17 @@ int main (const int argc, char* argv[])
 #else
   if ((wavReader.open (inFileHandle, startLength, readStdin ? LLONG_MAX : lseek (inFileHandle, 0, 2 /*SEEK_END*/)) != 0) ||
 #endif
-      (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 22050 && enableSbrCoding) || (wavReader.getNumChannels () >= 7))
+      (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 22050 && enableSbrCoding) || (wavReader.getNumChannels () >= (enableSbrCoding ? 3u : 7u)))
   {
     _ERROR1 (" ERROR while trying to open WAVE file: invalid or unsupported audio format!\n\n");
 
     if (wavReader.getSampleRate () >= 1000 && wavReader.getSampleRate () < 22050 && enableSbrCoding)
     {
       _ERROR2 (" The sampling rate is %d kHz but encoding using eSBR requires at least 22 kHz.\n\n", wavReader.getSampleRate () / 1000);
+    }
+    if (wavReader.getNumChannels () >= 3 && enableSbrCoding)
+    {
+      _ERROR2 (" The channel count is %d but exhale can't encode multichannel audio with eSBR.\n\n", wavReader.getNumChannels ());
     }
     i = 8192; // return value
 
@@ -897,7 +901,7 @@ int main (const int argc, char* argv[])
       const unsigned mod3Percent = unsigned ((expectLength * (3 + (coreSbrFrameLengthIndex & 3))) >> 17);
       uint32_t byteCount = 0, bw = (numChannels < 7 ? loudStats : 0);
 #endif
-      uint32_t br, bwMax = 0; // br will be used to hold bytes read and/or bit-rate
+      uint32_t br, bwMax = 0, bwTmp = 0; // br will hold bytes read and/or bit-rate
       uint32_t headerRes = 0;
       // initialize LoudnessEstimator object
       LoudnessEstimator loudnessEst (inPcmData, 24 /*bit*/, sampleRate, numChannels);
@@ -1061,6 +1065,7 @@ int main (const int argc, char* argv[])
         goto mainFinish; // coder-time error
       }
 #endif
+      bwTmp = bw;
 #ifdef NO_PREROLL_DATA
       if (bwMax < bw) bwMax = bw;
 
@@ -1103,7 +1108,9 @@ int main (const int argc, char* argv[])
 #endif
           goto mainFinish; // encoding error
         }
-        if (bwMax < bw) bwMax = bw;
+        bwTmp = (enableSbrCoding ? bw : (bwTmp + bw) >> 1u);
+        if (bwMax < bwTmp) bwMax = bwTmp;
+        bwTmp = bw;
 
         // write new AU, add frame to header
 #if ENABLE_STDOUT_LOAS
@@ -1156,7 +1163,9 @@ int main (const int argc, char* argv[])
 #endif
         goto mainFinish; // coder-time error
       }
-      if (bwMax < bw) bwMax = bw;
+      bwTmp = (enableSbrCoding ? bw : (bwTmp + bw) >> 1u);
+      if (bwMax < bwTmp) bwMax = bwTmp;
+      bwTmp = bw;
 
       // write final AU, add frame to header
 #if ENABLE_STDOUT_LOAS
@@ -1215,7 +1224,9 @@ int main (const int argc, char* argv[])
 #endif
           goto mainFinish; // encoding error
         }
-        if (bwMax < bw) bwMax = bw;
+        bwTmp = (enableSbrCoding ? bw : (bwTmp + bw) >> 1u);
+        if (bwMax < bwTmp) bwMax = bwTmp;
+        bwTmp = bw;
 
         // the flush AU, add frame to header
 #if ENABLE_STDOUT_LOAS
@@ -1319,7 +1330,7 @@ int main (const int argc, char* argv[])
       {
 #endif
       br = uint32_t (((actualLength >> 1) + 8 * (byteCount + 4 * (int64_t) mp4Writer.getFrameCount ()) * sampleRate) / actualLength);
-      bw = uint32_t (((frameLength  >> 1) + 8 * (bwMax + 4u /* maximum AU size + stsz as a bit-rate */) * sampleRate) / frameLength);
+      bw = uint32_t (((frameLength  >> 1) + 8 * (bwMax + 4u /* max. 2048 AU size + stsz as bit-rate */) * sampleRate) / frameLength);
       bw = mp4Writer.finishFile (br, bw, uint32_t (__min (UINT_MAX - startLength, actualLength)), (time (nullptr) + 2082844800) & UINT_MAX,
                                  (i == 0) && (numChannels < 7) ? outAuData : nullptr);
       // print out collected file statistics

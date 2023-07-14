@@ -1,5 +1,5 @@
 /* exhaleEnc.cpp - source file for class providing Extended HE-AAC encoding capability
- * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2023 - see License.htm for legal notices
  * C API corrected and API compilation extended by J. Regan in 2022, see merge request 8
  *
  * The copyright in this software is being made available under the exhale Copyright License
@@ -903,9 +903,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
                                                          &sfbStepSizes[m_numSwbShort * NUM_WINDOW_GROUPS * (ci + 1)]);
         if (errorValue >= 2) // signal M/S with complex prediction
         {
-#if SP_MDST_PRED
-          coreConfig.stereoConfig |= errorValue - 2; // cplx coefs
-#endif
+          coreConfig.stereoConfig |= (errorValue & 7) - 2; // dir.
           coreConfig.stereoMode += 2; errorValue = 0;
         }
         m_specAnaCurr[ci    ] = (m_specAnaCurr[ci    ] & (UINT_MAX - 65504)) | peakIndexSte;

@@ -1,5 +1,5 @@
 /* exhaleApp.rc - resource file for exhale application binaries compiled under Windows
- * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2023 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -13,7 +13,7 @@
 
 0 ICON "exhaleApp.ico"
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,2,0,0
+FILEVERSION 1,2,0,1
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -22,7 +22,7 @@ BEGIN
       VALUE "CompanyName", "ecodis"
       VALUE "FileDescription", "exhale - ecodis extended high-efficiency and low-complexity encoder"
       VALUE "InternalName", "exhaleApp.exe"
-      VALUE "LegalCopyright", "© 2018-2022 C. R. Helmrich, ecodis"
+      VALUE "LegalCopyright", "© 2018-2023 C. R. Helmrich, ecodis"
       VALUE "OriginalFilename", "exhale.exe"
       VALUE "ProductName", "exhaleApp"
       VALUE "ProductVersion", EXHALELIB_VERSION_MAJOR "." EXHALELIB_VERSION_MINOR EXHALELIB_VERSION_BUGFIX
