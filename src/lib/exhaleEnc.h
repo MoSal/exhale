@@ -1,5 +1,5 @@
 /* exhaleEnc.h - header file for class providing Extended HE-AAC encoding capability
- * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2023 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -26,6 +26,7 @@
 
 // constant and experimental macro
 #define WIN_SCALE double (1 << 23)
+#define EE_MORE_MSE              0 // 1-9: MSE optimized encoding with TNS disabled starting at bit-rate mode 1-9
 
 // channelConfigurationIndex setup
 typedef enum USAC_CCI : signed char

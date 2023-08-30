@@ -640,7 +640,11 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const SfbGroupData& grpData, const u
   {
     tnsData.coeffResLow[0] = false;
     tnsData.filterDownward[0] = false; // enforce direction = 0 for now, detection difficult
+#if EE_MORE_MSE
+    tnsData.filterOrder[0] = uint8_t (m_bitRateMode >= EE_MORE_MSE ? 0 : m_specAnalyzer.getLinPredCoeffs (tnsData.coeffParCor[0], channelIndex));
+#else
     tnsData.filterOrder[0] = (uint8_t) m_specAnalyzer.getLinPredCoeffs (tnsData.coeffParCor[0], channelIndex);
+#endif
     tnsData.firstTnsWindow = 0;
 
     if (tnsData.filterOrder[0] > 0) // try to reduce TNS start band as long as SNR increases
@@ -730,7 +734,11 @@ unsigned ExhaleEncoder::getOptParCorCoeffs (const SfbGroupData& grpData, const u
           predGainCurr = predGainPrev;
           predGainPrev = (temp >> (8 * bestOrder - 16)) & UCHAR_MAX;
         }
+#if EE_MORE_MSE
+        tnsData.filterOrder[n] = uint8_t (m_bitRateMode >= EE_MORE_MSE ? 0 : ((bestOrder == 1) && (tnsData.coeffParCor[n][0] == 0) ? 0 : bestOrder));
+#else
         tnsData.filterOrder[n] = uint8_t ((bestOrder == 1) && (tnsData.coeffParCor[n][0] == 0) ? 0 : bestOrder);
+#endif
       }
       n++;
     }
@@ -936,8 +944,34 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           uint8_t*  grpScaleFacs = &grpData.scaleFactors[m_numSwbShort * gr];
           uint32_t* grpStepSizes = &stepSizes[m_numSwbShort * gr];
 
+#if EE_MORE_MSE
+          s = 0;
+          for (unsigned b = grpOff[0]; b < grpOff[maxSfbCh]; b++)
+          {
+            s += unsigned (0.5 + sqrt ((double) abs (m_mdctSignals[ci][b])));
+          }
+          if (el == 0 && nrChannels == 2)
+          {
+            for (unsigned b = grpOff[0]; b < grpOff[maxSfbCh]; b++)
+            {
+              s += unsigned (0.5 + sqrt ((double) abs (m_mdctSignals[1 - ci][b])));
+            }
+            s = (s + 1) >> 1;
+          }
+          if (grpOff[maxSfbCh] > grpOff[0])
+          {
+            s = unsigned ((s * (eightShorts ? (24u + (grpData.windowGroupLength[gr] >> 2)) / grpData.windowGroupLength[gr] : 4u) + 4096u) >> 13);
+          }
+          s = unsigned (__max (1u + (INT32_MAX >> ((eightShorts ? 1 : 2) + (2 + m_bitRateMode / 9) * m_bitRateMode)), s * s));
+#endif
           for (unsigned b = 0; b < maxSfbCh; b++)
           {
+#if EE_MORE_MSE
+            const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
+            const uint64_t sThresh = __max (1u + (INT32_MAX >> 29), (grpRms[b] * uint64_t (__max (16, b * b)) + 32u) >> 6);
+
+            grpStepSizes[b] = uint32_t (!eightShorts && s > sThresh ? sThresh : (eightShorts ? s >> __max (0, 2 - int (b)) : s));
+#else
             const unsigned lfConst = (samplingRate < 27713 && !eightShorts ? 1 : 2); // lfAtten: LF SNR boost, as in my M.Sc. thesis
             const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
@@ -945,6 +979,7 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 
             // scale step-sizes according to VBR mode & derive scale factors from step-sizes
             grpStepSizes[b] = uint32_t (__max (BA_EPS, ((1u << 24) + grpStepSizes[b] * scale) >> 25));
+#endif
 #if !RESTRICT_TO_AAC
             if (!m_noiseFilling[el] || (m_bitRateMode > 0) || (m_shiftValSBR == 0) || (samplingRate < 23004) ||
                 (b + 3 - (meanSpecFlat[ci] >> 6) < m_numSwbLong)) // HF
@@ -1153,8 +1188,12 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong  - 6 + (meanSpecFlat[ci] >> 5)) +
                                             (shortWinCurr ? -3 + (((1 << 5) + meanTempFlat[ci]) >> 6) : -7 + (((1 << 4) + meanTempFlat[ci]) >> 5));
+#if EE_MORE_MSE
+          const unsigned targetBitCount25 = INT32_MAX;
+#else
           const unsigned targetBitCount25 = ((60000 + 20000 * ((m_bitRateMode + m_shiftValSBR) >> (m_frameCount <= 1 ? 2 : 0))) * nSamplesInFrame) /
                                             (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
+#endif
           unsigned b = grpData.sfbsPerGroup - 1;
 
           if ((grpRms[b] >> 16) > 0) lastSfb = b;
@@ -1184,6 +1223,9 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
             }
           }
 #endif
+#if EE_MORE_MSE
+          b = lastSfb;
+#else
           // coarse-quantize near-Nyquist SFB with SBR @ 48-64 kHz
           b = 40 + (samplingRate >> 12);
           if ((m_shiftValSBR == 0) || (samplingRate < 23004) || shortWinCurr || (b > lastSfb)) b = lastSfb;
@@ -1193,6 +1235,7 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
           {
             b--; // search first coarsely quantized high-freq. SFB
           }
+#endif
           lastSOff = b;
 
           for (b++; b <= lastSfb; b++)
@@ -1478,8 +1521,13 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           {
             const uint8_t tonality = (m_specAnaCurr[ci] >> 16) & UCHAR_MAX;
 
+#if EE_MORE_MSE
+            tnsData.filterOrder[n] = (m_bitRateMode >= EE_MORE_MSE ? 0 : m_linPredictor.calcOptTnsCoeffs (tnsData.coeffParCor[n], tnsData.coeff[n], &tnsData.coeffResLow[n],
+                                                                                                          tnsData.filterOrder[n], s, tonality >> (m_tempFlatPrev[ci] >> 5)));
+#else
             tnsData.filterOrder[n] = m_linPredictor.calcOptTnsCoeffs (tnsData.coeffParCor[n], tnsData.coeff[n], &tnsData.coeffResLow[n],
                                                                       tnsData.filterOrder[n], s, tonality >> (m_tempFlatPrev[ci] >> 5));
+#endif
             tnsData.numFilters[n] = (tnsData.filterOrder[n] > 0 ? 1 : 0);
             if ((ch == 0) && (icsCurr.windowSequence == EIGHT_SHORT) && (tnsData.numFilters[n] == 0) && (tnsData.firstTnsWindow == gr))
             {
@@ -1674,9 +1722,12 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         // save maximum spectral flatness of current and neighboring frames for quantization
         m_tempAnaCurr [ci] = (m_tempAnaCurr[ci] & 0xFFFFFF) | (__max (sfCurr, __max (m_specFlatPrev[ci], sfNext)) << 24);
         m_specFlatPrev[ci] = (uint8_t) sfCurr;
-
+#if EE_MORE_MSE
+        const bool lowOlapNext = (m_tranLocNext[ci] >= 0);
+#else
         const bool lowOlapNext = (m_tranLocNext[ci] >= 0) || (sfNext <= UCHAR_MAX / 4 && tfNext > (UCHAR_MAX * 13) / 16) ||
                                  (tsCurr[ch] > (UCHAR_MAX * 5) / 8) || (tsNext[ch] > (UCHAR_MAX * 5) / 8);
+#endif
         const bool sineWinCurr = (sfCurr >= 170) && (sfNext >= 170) && (sfCurr < 221) && (sfNext < 221) && (tsCurr[ch] < 20) &&
                                  (tfCurr >= 153) && (tfNext >= 153) && (tfCurr < 184) && (tfNext < 184) && (tsNext[ch] < 20);
         // set window_sequence
@@ -1686,7 +1737,11 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         }
         else // LONG_START_SEQUENCE, STOP_START_SEQUENCE, EIGHT_SHORT_SEQUENCE - min overlap
         {
+#if EE_MORE_MSE
+          wsCurr = (m_tranLocCurr[ci] >= 0) ? EIGHT_SHORT :
+#else
           wsCurr = (m_tranLocCurr[ci] >= 0) || (tsCurr[ch] > (UCHAR_MAX * 5) / 8) || (tfCurr > tThresh / 16) ? EIGHT_SHORT :
+#endif
 #if RESTRICT_TO_AAC
                    (lowOlapNext ? EIGHT_SHORT : LONG_STOP);
 #else
