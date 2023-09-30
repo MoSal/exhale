@@ -288,6 +288,7 @@ static inline uint8_t brModeAndFsToMaxSfbShort(const unsigned bitRateMode, const
   return (samplingRate > 51200 ? 11 : 13) - 2 + (bitRateMode >> 2);
 }
 
+#if !EE_MORE_MSE
 static inline void findActualBandwidthShort (uint8_t* const maxSfbShort, const uint16_t* sfbOffsets,
                                              const int32_t* mdctSignals, const int32_t* mdstSignals, const unsigned nSamplesInShort)
 {
@@ -322,6 +323,7 @@ static inline void findActualBandwidthShort (uint8_t* const maxSfbShort, const u
 
   if (*maxSfbShort > maxSfb) *maxSfbShort = maxSfb;
 }
+#endif
 
 static inline uint8_t stereoCorrGrouping (const SfbGroupData& grpData, const unsigned nSamplesInFrame, uint8_t* stereoCorrData)
 {
@@ -932,7 +934,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
 #if !RESTRICT_TO_AAC
         const uint8_t numSwbCh = (eightShorts ? m_numSwbShort : m_numSwbLong);
 #endif
+#if !EE_MORE_MSE
         const uint16_t rateFac = m_bitAllocator.getRateCtrlFac (m_rateFactor, samplingRate, meanSpecFlat[ci], coreConfig.icsInfoPrev[ch].windowSequence == EIGHT_SHORT);
+#endif
         uint32_t*    stepSizes = &sfbStepSizes[ci * m_numSwbShort * NUM_WINDOW_GROUPS];
 
         memset (grpData.scaleFactors, 0, (MAX_NUM_SWB_SHORT * NUM_WINDOW_GROUPS) * sizeof (uint8_t));
@@ -956,21 +960,30 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
             {
               s += unsigned (0.5 + sqrt ((double) abs (m_mdctSignals[1 - ci][b])));
             }
-            s = (s + 1) >> 1;
+            s = (s + 1u) >> 1;
           }
           if (grpOff[maxSfbCh] > grpOff[0])
           {
-            s = unsigned ((s * (eightShorts ? (24u + (grpData.windowGroupLength[gr] >> 2)) / grpData.windowGroupLength[gr] : 4u) + 4096u) >> 13);
+            s = unsigned ((s * (eightShorts ? (24u + (grpData.windowGroupLength[gr] >> 2)) / grpData.windowGroupLength[gr] : 3u) + 4096u) >> 13);
           }
-          s = unsigned (__max (1u + (INT32_MAX >> ((eightShorts ? 1 : 2) + (2 + m_bitRateMode / 9) * m_bitRateMode)), s * s));
+          s = __max (1u + ((UINT32_MAX / (eightShorts ? 3u : 8u)) >> ((2 + m_bitRateMode / 9) * m_bitRateMode)), s * s);
 #endif
           for (unsigned b = 0; b < maxSfbCh; b++)
           {
 #if EE_MORE_MSE
             const uint8_t sfbWidth = grpOff[b + 1] - grpOff[b];
-            const uint64_t sThresh = __max (1u + (INT32_MAX >> 29), (grpRms[b] * uint64_t (__max (16, b * b)) + 32u) >> 6);
+            const bool stereoCoded = (nrChannels == 2 && coreConfig.stereoMode > 0 && (coreConfig.stereoDataCurr[b] > 0 || !(coreConfig.stereoMode & 1)));
+            const uint32_t rmsbMax = (stereoCoded ? __max (grpRms[b], coreConfig.groupingData[1 - ch].sfbRmsValues[m_numSwbShort * gr + b]) : grpRms[b]);
+            const uint64_t sThresh = __max (1u + (UINT32_MAX >> 30), (rmsbMax * uint64_t (__max (16, b * b * grpData.numWindowGroups)) + 32u) >> 6);
+            const uint64_t predFac = (eightShorts || coreConfig.stereoMode < 3 || coreConfig.stereoDataCurr[b & 62] == 0 ? (eightShorts && !b ? 48u : 64u) :
+                                      uint64_t (0.5 + 64 - pow (__min (1.0, fabs (coreConfig.stereoDataCurr[b & 62] * 0.1 - 1.6)), 1.5) * 19.0)); // MS
+            grpStepSizes[b] = uint32_t (__min (sThresh, (s * predFac + 32u) >> 6));
+            if (stereoCoded && rmsbMax)
+            {
+              const uint32_t rmsCh = coreConfig.groupingData[1 - ch].sfbRmsValues[m_numSwbShort * gr + b];
 
-            grpStepSizes[b] = uint32_t (!eightShorts && s > sThresh ? sThresh : (eightShorts ? s >> __max (0, 2 - int (b)) : s));
+              grpStepSizes[b] = uint32_t (0.5 + grpStepSizes[b] * (1.0 - sqrt ((double) __min (grpRms[b], rmsCh) / rmsbMax) * 0.29289322));
+            }
 #else
             const unsigned lfConst = (samplingRate < 27713 && !eightShorts ? 1 : 2); // lfAtten: LF SNR boost, as in my M.Sc. thesis
             const unsigned lfAtten = (b <= 5 ? (eightShorts ? 1 : 4) + b * lfConst : 5 * lfConst - 1 + b + ((b + 5) >> 4));
@@ -1080,7 +1093,9 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
   const unsigned nSamplesInFrame  = toFrameLength (m_frameLength);
   const unsigned samplingRate     = toSamplingRate (m_frequencyIdx);
   const unsigned nSamplesTempAna  = (nSamplesInFrame * 25) >> 4; // pre-delay for look-ahead
+#if !EE_MORE_MSE
   const bool     useMaxBandwidth  = (samplingRate < 37566 || m_shiftValSBR > 0);
+#endif
   const unsigned* const coeffMagn = m_sfbQuantizer.getCoeffMagnPtr ();
   uint8_t  meanSpecFlat[USAC_MAX_NUM_CHANNELS];
   uint8_t  meanTempFlat[USAC_MAX_NUM_CHANNELS] = {208, 208, 208, 208, 208, 208, 208, 208};
@@ -1183,14 +1198,14 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
 
         if (grpData.sfbsPerGroup > 0) // rate control part 2 to reach constrained VBR (CVBR)
         {
+#if EE_MORE_MSE
+          const unsigned targetBitCount25 = INT32_MAX;
+#else
           const uint8_t maxSfbLong  = (useMaxBandwidth ? 54 - (samplingRate >> 13) : brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           const uint8_t maxSfbShort = (useMaxBandwidth ? 19 - (samplingRate >> 13) : brModeAndFsToMaxSfbShort(m_bitRateMode, samplingRate));
           const uint16_t peakIndex  = (shortWinCurr ? 0 : (m_specAnaCurr[ci] >> 5) & 2047);
           const unsigned sfmBasedSfbStart = (shortWinCurr ? maxSfbShort - 2 + (meanSpecFlat[ci] >> 6) : maxSfbLong  - 6 + (meanSpecFlat[ci] >> 5)) +
                                             (shortWinCurr ? -3 + (((1 << 5) + meanTempFlat[ci]) >> 6) : -7 + (((1 << 4) + meanTempFlat[ci]) >> 5));
-#if EE_MORE_MSE
-          const unsigned targetBitCount25 = INT32_MAX;
-#else
           const unsigned targetBitCount25 = ((60000 + 20000 * ((m_bitRateMode + m_shiftValSBR) >> (m_frameCount <= 1 ? 2 : 0))) * nSamplesInFrame) /
                                             (samplingRate * ((grpData.numWindowGroups + 1) >> 1));
 #endif
@@ -1475,7 +1490,9 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
             }
             icsCurr.maxSfb = __min (icsCurr.maxSfb, brModeAndFsToMaxSfbLong (m_bitRateMode, samplingRate));
           }
+#if !EE_MORE_MSE
           while (grpSO[icsCurr.maxSfb] > __max (m_bandwidCurr[ci], m_bandwidPrev[ci]) + (icsCurr.maxSfb >> 1)) icsCurr.maxSfb--; // detect BW
+#endif
         }
         else // icsCurr.windowSequence == EIGHT_SHORT
         {
@@ -1506,9 +1523,9 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
             }
           }
           memcpy (grpData.windowGroupLength, windowGroupingTable[icsCurr.windowGrouping], NUM_WINDOW_GROUPS * sizeof (uint8_t));
-
+#if !EE_MORE_MSE
           findActualBandwidthShort (&icsCurr.maxSfb, grpSO, m_mdctSignals[ci], nChannels < 2 ? nullptr : m_mdstSignals[ci], nSamplesInShort);
-
+#endif
           errorValue |= eightShortGrouping (grpData, grpSO, m_mdctSignals[ci], nChannels < 2 ? nullptr : m_mdstSignals[ci]);
         } // if EIGHT_SHORT
 
@@ -1520,14 +1537,26 @@ unsigned ExhaleEncoder::spectralProcessing ()  // complete ics_info(), calc TNS 
           if (grpData.windowGroupLength[gr] == 1)
           {
             const uint8_t tonality = (m_specAnaCurr[ci] >> 16) & UCHAR_MAX;
-
 #if EE_MORE_MSE
-            tnsData.filterOrder[n] = (m_bitRateMode >= EE_MORE_MSE ? 0 : m_linPredictor.calcOptTnsCoeffs (tnsData.coeffParCor[n], tnsData.coeff[n], &tnsData.coeffResLow[n],
-                                                                                                          tnsData.filterOrder[n], s, tonality >> (m_tempFlatPrev[ci] >> 5)));
-#else
+            bool noTnsFilt = (m_bitRateMode >= EE_MORE_MSE || icsCurr.maxSfb <= 40);
+
+            if (!noTnsFilt && samplingRate >= 27713 && samplingRate < 55426 && icsCurr.maxSfb > 40)
+            {
+              errorValue |= m_specAnalyzer.getMeanAbsValues (m_mdctSignals[ci], m_mdstSignals[ci], nSamplesInFrame, ci, &grpSO[29], 12, grpData.sfbRmsValues);
+              if (errorValue == 0)
+              {
+                for (int b = 0; b < 12; b++)
+                {
+                  errorValue += unsigned (0.5 + sqrt ((double) grpData.sfbRmsValues[b]));
+                }
+                noTnsFilt |= (errorValue < ((unsigned) m_bitRateMode << 7)); // avoid clicks
+                errorValue = 0;
+              }
+            }
+            if (noTnsFilt) tnsData.filterOrder[n] = 0; else
+#endif
             tnsData.filterOrder[n] = m_linPredictor.calcOptTnsCoeffs (tnsData.coeffParCor[n], tnsData.coeff[n], &tnsData.coeffResLow[n],
                                                                       tnsData.filterOrder[n], s, tonality >> (m_tempFlatPrev[ci] >> 5));
-#endif
             tnsData.numFilters[n] = (tnsData.filterOrder[n] > 0 ? 1 : 0);
             if ((ch == 0) && (icsCurr.windowSequence == EIGHT_SHORT) && (tnsData.numFilters[n] == 0) && (tnsData.firstTnsWindow == gr))
             {
@@ -1709,13 +1738,19 @@ unsigned ExhaleEncoder::temporalProcessing () // determine time-domain aspects o
         const USAC_WSEQ wsPrev = icsPrev.windowSequence;
              USAC_WSEQ& wsCurr = icsCurr.windowSequence;
         // get temporal signal statistics, then determine overlap config. for the next frame
+#if !EE_MORE_MSE
         const unsigned  plCurr = abs (m_tranLocCurr[ci]) & ((1024 << m_shiftValSBR) - 1);
+#endif
         const unsigned  sfCurr = (m_tempAnaCurr[ci] >> 24) & UCHAR_MAX;
         const unsigned  tfCurr = (m_tempAnaCurr[ci] >> 16) & UCHAR_MAX;
+#if !EE_MORE_MSE
         const unsigned  plNext = abs (m_tranLocNext[ci]) & ((1024 << m_shiftValSBR) - 1);
+#endif
         const unsigned  sfNext = (m_tempAnaNext[ci] >> 24) & UCHAR_MAX;
         const unsigned  tfNext = (m_tempAnaNext[ci] >> 16) & UCHAR_MAX;
+#if !EE_MORE_MSE
         const unsigned tThresh = UCHAR_MAX * (__max (plCurr, plNext) < 614 /*0.6 * 1024*/ ? 16 : 15 - (m_bitRateMode >> 3));
+#endif
 
         tsCurr[ch] = (m_tempAnaCurr[ci] /*R*/) & UCHAR_MAX;
         tsNext[ch] = (m_tempAnaNext[ci] >>  8) & UCHAR_MAX;

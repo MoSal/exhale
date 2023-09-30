@@ -57,9 +57,15 @@
 #define _GETCWD  getcwd
 #define _STRLEN  strlen
 
+#if 0  // change this to "#if 1" to avoid garbage text in some terminals
+#define EXHALE_TEXT_INIT  ""
+#define EXHALE_TEXT_BLUE  ""
+#define EXHALE_TEXT_PINK  ""
+#else
 #define EXHALE_TEXT_INIT  "\x1b[0m"
 #define EXHALE_TEXT_BLUE  "\x1b[36m"
 #define EXHALE_TEXT_PINK  "\x1b[35m"
+#endif
 #endif
 
 // constants, experimental macros
@@ -866,7 +872,7 @@ int main (const int argc, char* argv[])
 #ifdef NO_PREROLL_DATA
     outAuData = (uint8_t*) malloc ((6144 >> 3) * numChannels); // max frame AU size
 #else
-    outAuData = (uint8_t*) malloc ((9216 >> 3) * numChannels); // max frame AU size
+    outAuData = (uint8_t*) malloc ((9984 >> 3) * numChannels); // max frame AU size
 #endif
     if ((inPcmData == nullptr) || (outAuData == nullptr))
     {

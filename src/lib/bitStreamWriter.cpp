@@ -1,5 +1,5 @@
 /* bitStreamWriter.cpp - source file for class with basic bit-stream writing capability
- * written by C. R. Helmrich, last modified in 2021 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2023 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
@@ -1135,7 +1135,7 @@ unsigned BitStreamWriter::createAudioFrame (CoreCoderData** const elementData,  
     }
     else *rate = 0; // insufficient data
   }
-  memcpy (accessUnit, &m_auBitStream.stream.front (), __min (ci * (ipf ? 1152 : 768), bitCount >> 3));
+  memcpy (accessUnit, &m_auBitStream.stream.front (), __min (ci * (ipf ? 1248 : 768), bitCount >> 3));
 #endif
   return (bitCount >> 3);  // byte count
 }
