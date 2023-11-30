@@ -1024,7 +1024,9 @@ int main (const int argc, char* argv[])
           goto mainFinish; // writeout error
         }
       }
-
+#if EE_MORE_MSE
+      std::cout << "\n" << "headerSizeBytes " << (headerRes - 34) << "\n";
+#endif
       i = 1; // for progress bar
 
       // resample initial frame if necessary

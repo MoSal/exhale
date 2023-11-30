@@ -965,6 +965,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           if (grpOff[maxSfbCh] > grpOff[0])
           {
             s = unsigned ((s * (eightShorts ? (24u + (grpData.windowGroupLength[gr] >> 2)) / grpData.windowGroupLength[gr] : 3u) + 4096u) >> 13);
+#ifndef NO_PREROLL_DATA
+            if (((m_frameCount - 1u) % (m_indepPeriod << 1)) == 1 && nrChannels == 1 && !eightShorts) s = (4u + 9u * s) >> 3;
+#endif
           }
           s = __max (1u + ((UINT32_MAX / (eightShorts ? 3u : 8u)) >> ((2 + m_bitRateMode / 9) * m_bitRateMode)), s * s);
 #endif
