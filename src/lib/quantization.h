@@ -1,11 +1,11 @@
 /* quantization.h - header file for class with nonuniform quantization functionality
- * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2023 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2024 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #ifndef _QUANTIZATION_H_
@@ -19,13 +19,8 @@
 #define SF_QUANT_OFFSET 0.4783662 // for scale fac
 #define SF_THRESH_NEG  0.92044821 // round -1.5 dB
 #define SF_THRESH_POS  1.09460356 // round +1.5 dB
-#define SFB_QUANT_FAST_POW      1 // faster pow ()
-#define SFB_QUANT_PERCEPT_OPT   1 // psych. quant.
-#if SFB_QUANT_FAST_POW
 #define SFB_QUANT_OFFSET 0.496094 // 13 - 29^(3/4)
-#else
-#define SFB_QUANT_OFFSET 0.405396 // 1 - 0.5^(3/4)
-#endif
+#define SFB_QUANT_PERCEPT_OPT   1 // psych. quant.
 #define SFB_QUANT_SSE           0
 
 // class for BL USAC quantization

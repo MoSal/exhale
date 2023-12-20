@@ -5,7 +5,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2024 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleAppPch.h"
@@ -483,7 +483,7 @@ int main (const int argc, char* argv[])
   // check arg. list, print usage if needed
   if ((argc < 3) || (argc > 6) || (argc > 1 && argv[1][1] != 0))
   {
-    fprintf_s (stdout, " Copyright 2018-2023 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
+    fprintf_s (stdout, " Copyright 2018-2024 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
     fprintf_s (stdout, " This software is made available under the exhale Copyright License and comes\n");
     fprintf_s (stdout, " with ABSOLUTELY NO WARRANTY. This software may be subject to other third-party\n");
@@ -1024,7 +1024,7 @@ int main (const int argc, char* argv[])
           goto mainFinish; // writeout error
         }
       }
-#if EE_MORE_MSE
+#if 0
       std::cout << "\n" << "headerSizeBytes " << (headerRes - 34) << "\n";
 #endif
       i = 1; // for progress bar

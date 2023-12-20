@@ -1,11 +1,11 @@
 /* quantization.cpp - source file for class with nonuniform quantization functionality
- * written by C. R. Helmrich, last modified in 2022 - see License.htm for legal notices
+ * written by C. R. Helmrich, last modified in 2023 - see License.htm for legal notices
  *
  * The copyright in this software is being made available under the exhale Copyright License
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2024 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -95,7 +95,6 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
   for (int i = numCoeffs - 1; i >= 0; i--)
   {
     const double normalizedMagn = (double) coeffMagn[i] * stepSizeDiv;
-#if SFB_QUANT_FAST_POW
     short q;
 
     if (normalizedMagn < 28.5)  // fast approximate pow (d, 0.75)
@@ -111,11 +110,8 @@ uint8_t SfbQuantizer::quantizeMagnSfb (const unsigned* const coeffMagn, const ui
     }
     else
     {
-      q = short (SFB_QUANT_OFFSET + pow (normalizedMagn, 0.75));
+      q = short (SFB_QUANT_OFFSET + pow (__min (1048544.0, normalizedMagn), 0.75)); // min avoids rare preset-9 overflow
     }
-#else
-    short q = short (SFB_QUANT_OFFSET + pow (normalizedMagn, 0.75));
-#endif
 
     if (q > 0)
     {

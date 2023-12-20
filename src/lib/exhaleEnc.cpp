@@ -6,7 +6,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2024 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "exhaleLibPch.h"
@@ -965,9 +965,9 @@ unsigned ExhaleEncoder::psychBitAllocation () // perceptual bit-allocation via s
           if (grpOff[maxSfbCh] > grpOff[0])
           {
             s = unsigned ((s * (eightShorts ? (24u + (grpData.windowGroupLength[gr] >> 2)) / grpData.windowGroupLength[gr] : 3u) + 4096u) >> 13);
-#ifndef NO_PREROLL_DATA
-            if (((m_frameCount - 1u) % (m_indepPeriod << 1)) == 1 && nrChannels == 1 && !eightShorts) s = (4u + 9u * s) >> 3;
-#endif
+# ifndef NO_PREROLL_DATA
+            if (((m_frameCount - 1u) % (m_indepPeriod << 1)) == 1 && m_numElements == 1 && !eightShorts) s = (4u + 9u * s) >> 3;
+# endif
           }
           s = __max (1u + ((UINT32_MAX / (eightShorts ? 3u : 8u)) >> ((2 + m_bitRateMode / 9) * m_bitRateMode)), s * s);
 #endif
@@ -1184,6 +1184,12 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
             grpRms[b - 1] = 1 + (sfbM1Width >> 3) + entrCoder.indexGetBitCount (b > 1 ? (int) grpScaleFacs[b - 1] - grpScaleFacs[b - 2] : 0);
             // correct entropy coding 2-tuples for the next window
             memset (&arithTuples[lastSOff], 1, (swbM1Size >> 1) * sizeof (char));
+          }
+          // correct next scale factor if the reduction exceeds 60
+          if ((b + 1u < grpData.sfbsPerGroup) && (sfIdxPred < UCHAR_MAX) && (grpLength == 1) &&
+              (grpScaleFacs[b] > grpScaleFacs[b + 1] + INDEX_OFFSET))
+          {
+            grpScaleFacs[b + 1] = grpScaleFacs[b] - INDEX_OFFSET; // avoid preset-9 zero-out
           }
 
           if (b > 0)

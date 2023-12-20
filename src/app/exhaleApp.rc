@@ -5,7 +5,7 @@
  * and comes with ABSOLUTELY NO WARRANTY. This software may be subject to other third-
  * party rights, including patent rights. No such rights are granted under this License.
  *
- * Copyright (c) 2018-2021 Christian R. Helmrich, project ecodis. All rights reserved.
+ * Copyright (c) 2018-2024 Christian R. Helmrich, project ecodis. All rights reserved.
  */
 
 #include "../../include/version.h" // for EXHALELIB_VERSION_... strings
@@ -13,7 +13,7 @@
 
 0 ICON "exhaleApp.ico"
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,2,0,1
+FILEVERSION 1,2,1,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -22,7 +22,7 @@ BEGIN
       VALUE "CompanyName", "ecodis"
       VALUE "FileDescription", "exhale - ecodis extended high-efficiency and low-complexity encoder"
       VALUE "InternalName", "exhaleApp.exe"
-      VALUE "LegalCopyright", "© 2018-2023 C. R. Helmrich, ecodis"
+      VALUE "LegalCopyright", "© 2018-2024 C. R. Helmrich, ecodis"
       VALUE "OriginalFilename", "exhale.exe"
       VALUE "ProductName", "exhaleApp"
       VALUE "ProductVersion", EXHALELIB_VERSION_MAJOR "." EXHALELIB_VERSION_MINOR EXHALELIB_VERSION_BUGFIX
