@@ -1186,8 +1186,8 @@ unsigned ExhaleEncoder::quantizationCoding ()  // apply MDCT quantization and en
             memset (&arithTuples[lastSOff], 1, (swbM1Size >> 1) * sizeof (char));
           }
           // correct next scale factor if the reduction exceeds 60
-          if ((b + 1u < grpData.sfbsPerGroup) && (sfIdxPred < UCHAR_MAX) && (grpLength == 1) &&
-              (grpScaleFacs[b] > grpScaleFacs[b + 1] + INDEX_OFFSET))
+          if ((b + 2u < grpData.sfbsPerGroup) && (sfIdxPred < UCHAR_MAX) && (grpScaleFacs[b + 1]) &&
+              (sfIdxPred > grpScaleFacs[b + 1] + INDEX_OFFSET))
           {
             grpScaleFacs[b + 1] = grpScaleFacs[b] - INDEX_OFFSET; // avoid preset-9 zero-out
           }
