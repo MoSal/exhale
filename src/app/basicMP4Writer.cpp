@@ -270,6 +270,7 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   }
 #if UDTA_BSIZE
   const char ver[] = EXHALELIB_VERSION_MAJOR "." EXHALELIB_VERSION_MINOR EXHALELIB_VERSION_BUGFIX;
+  const char mod[] = "(MoSal Mod)";
 
   push32BitValue (UDTA_BSIZE);
   m_dynamicHeader.push_back (0x75); m_dynamicHeader.push_back (0x64);
@@ -308,6 +309,8 @@ int BasicMP4Writer::finishFile (const unsigned avgBitrate, const unsigned maxBit
   m_dynamicHeader.push_back (0x6C); m_dynamicHeader.push_back (0x65); // exhale
   m_dynamicHeader.push_back (0x20);
   for (i = 0; i < 5; i++) m_dynamicHeader.push_back ((uint8_t) ver[i]);
+  m_dynamicHeader.push_back (0x20);
+  for (i = 0; i < std::size(mod) - 1; i++) m_dynamicHeader.push_back ((uint8_t) mod[i]);
 #endif
   const uint32_t moovAndMdatOverhead = STAT_HEADER_SIZE + (uint32_t) m_dynamicHeader.size () + 8;
   const uint32_t headerPaddingLength = uint32_t (m_mediaOffset - moovAndMdatOverhead);

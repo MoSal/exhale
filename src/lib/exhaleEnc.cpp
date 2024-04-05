@@ -278,8 +278,12 @@ static inline void applyTnsCoeffPreProcessing (LinearPredictor& predictor, TnsDa
 
 static inline uint8_t brModeAndFsToMaxSfbLong (const unsigned bitRateMode, const unsigned samplingRate)
 {
+  // MoSal Mod: Comment below assumes max bitRateMode of 9.
+  //            While we raised the max to 12, we still shouldn't
+  //            bother with > 20kHz for CDDA.
+  unsigned mode = __min(10, bitRateMode);
   // max. for fs of 44 kHz: band 47 (19.3 kHz), 48 kHz: 45 (19.5 kHz), 64 kHz: 39 (22.0 kHz)
-  return __max (39, (0x20A000 + (samplingRate >> 1)) / samplingRate) - 9 + bitRateMode - (samplingRate < 46009 ? bitRateMode >> 3 : 0);
+  return __max (39, (0x20A000 + (samplingRate >> 1)) / samplingRate) - 9 + mode - (samplingRate < 46009 ? mode >> 3 : 0);
 }
 
 static inline uint8_t brModeAndFsToMaxSfbShort(const unsigned bitRateMode, const unsigned samplingRate)
@@ -1909,7 +1913,7 @@ ExhaleEncoder::ExhaleEncoder (int32_t* const inputPcmData,           unsigned ch
                               )
 {
   // adopt basic coding parameters
-  m_bitRateMode  = __min (9, varBitRateMode);
+  m_bitRateMode  = __min (12, varBitRateMode);
   m_channelConf  = (numChannels >= 7 ? CCI_UNDEF : (USAC_CCI) numChannels); // see 23003-3, Tables 73 & 161
   if (m_channelConf == CCI_CONF) m_channelConf = CCI_2_CHM; // passing numChannels = 0 means 2-ch dual-mono
   m_numElements  = elementCountConfig[m_channelConf % USAC_MAX_NUM_ELCONFIGS]; // used in UsacDecoderConfig

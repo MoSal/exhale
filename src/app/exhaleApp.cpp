@@ -390,7 +390,7 @@ int main (const int argc, char* argv[])
 #if defined (__arm__) || defined (__aarch64__) || defined (__arm64__)
     fprintf_s (stdout, "exhale %s.%s%s (ARM",
 #elif defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
-    fprintf_s (stdout, "exhale %s.%s%s (x64",
+    fprintf_s (stdout, "exhale (MoSal Mod) %s.%s%s (x64",
 #else // 32-bit OS
     fprintf_s (stdout, "exhale %s.%s%s (x86",
 #endif
@@ -466,7 +466,7 @@ int main (const int argc, char* argv[])
   fprintf_s (stdout, EXHALE_TEXT_PINK "e");
   fprintf_s (stdout, EXHALE_TEXT_INIT "ncoder |\n");
 #endif
-  fprintf_s (stdout, " |                                                                     |\n");
+  fprintf_s (stdout, " |                                                         (MoSal Mod) |\n");
 #if defined (__arm__) || defined (__aarch64__) || defined (__arm64__)
   fprintf_s (stdout, " | version %s.%s%s (ARM, built on %s) - written by C.R.Helmrich |\n",
 #elif defined (_WIN64) || defined (WIN64) || defined (_LP64) || defined (__LP64__) || defined (__x86_64) || defined (__x86_64__)
@@ -481,7 +481,7 @@ int main (const int argc, char* argv[])
 #endif
 
   // check arg. list, print usage if needed
-  if ((argc < 3) || (argc > 6) || (argc > 1 && argv[1][1] != 0))
+  if ((argc < 3) || (argc > 6))
   {
     fprintf_s (stdout, " Copyright 2018-2024 C.R.Helmrich, project ecodis. See License.htm for details.\n\n");
 
@@ -500,10 +500,10 @@ int main (const int argc, char* argv[])
     fprintf_s (stdout, "%s preset [inputWaveFile.wav] outputMP4File.m4a\n\n where\n\n", exeFileName);
 #endif
 #ifdef EXHALE_APP_WIN
-    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity ISO/MPEG-D Extended HE-AAC at 16ú#+48 kbit/s\n");
+    fprintf_s (stdout, " preset\t=  # (0-12)  low-complexity ISO/MPEG-D Extended HE-AAC at 16ú#+48 kbit/s\n");
     fprintf_s (stdout, " \t     (a-g)  low-complexity Extended HE-AAC using eSBR at 12ú#+36 kbit/s\n");
 #else
-    fprintf_s (stdout, " preset\t=  # (0-9)  low-complexity ISO/MPEG-D Extended HE-AAC at 16*#+48 kbit/s\n");
+    fprintf_s (stdout, " preset\t=  # (0-12)  low-complexity ISO/MPEG-D Extended HE-AAC at 16*#+48 kbit/s\n");
     fprintf_s (stdout, " \t     (a-g)  low-complexity Extended HE-AAC using eSBR at 12*#+36 kbit/s\n");
 #endif
     fprintf_s (stdout, "\n inputWaveFile.wav  lossless WAVE audio input, read from stdin if not specified\n\n");
@@ -533,12 +533,14 @@ int main (const int argc, char* argv[])
   }
 
   // check preset mode, derive coder config
-  if ((*argv[1] >= '0' && *argv[1] <= '9') || (*argv[1] >= 'a' && *argv[1] <= 'g'))
+  if ((argv[1][1] == '\0' && argv[1][0] >= 'a' && argv[1][0] <= 'g') ||
+      (argv[1][1] == '\0' && argv[1][0] >= '0' && argv[1][0] <= '9') ||
+      (argv[1][2] == '\0' && argv[1][0] == '1' && argv[1][1] >= '0' && argv[1][1] <= '2'))
   {
     i = (uint16_t) argv[1][0];
     compatibleExtensionFlag = (i & 0x40) >> 6;
     coreSbrFrameLengthIndex = (i > 0x60 ? 5 : (i & 0x20) >> 5);
-    variableCoreBitRateMode = (i & 0x0F) - (i >> 6);
+    variableCoreBitRateMode = (i > 0x60 ? (i & 0x0F) - (i >> 6) : (uint16_t)std::stoul(argv[1]));
   }
   else if (*argv[1] == '#') // default mode
   {
@@ -553,7 +555,7 @@ int main (const int argc, char* argv[])
   }
   else
   {
-    _ERROR2 (" ERROR reading preset mode: character %s is not supported! Use 0-9 or a-g.\n\n", argv[1]);
+    _ERROR2 (" ERROR reading preset mode: preset %s is not supported! Use 0-12 or a-g.\n\n", argv[1]);
 
     return 16384; // preset isn't supported
   }

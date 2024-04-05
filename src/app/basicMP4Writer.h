@@ -16,7 +16,7 @@
 // constant data sizes in bytes
 #define STAT_HEADER_SIZE   576
 #define STSX_BSIZE        0x10
-#define UDTA_BSIZE        0x61 // udta: 0 to turn off!
+#define UDTA_BSIZE        0x6d // udta: 0 to turn off!
 #define ESDS_BSIZE  0x00, 0x36 // esds: 54 (+ m_ascSizeM5 later)
 #define MP4A_BSIZE  0x00, 0x5A // mp4a: 36 + ESDS_BSIZE
 #define STSD_BSIZE  0x00, 0x6A // mp4a: 16 + MP4A_BSIZE
